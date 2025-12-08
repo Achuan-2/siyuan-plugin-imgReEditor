@@ -15,12 +15,6 @@
     "update-version": "node --no-warnings ./scripts/update_version.js",
     "make-install": "vite build && node --no-warnings ./scripts/make_install.js"
   },
-  "dependencies": {
-    "tui-image-editor": "^3.15.3",
-    "png-chunks-extract": "^1.0.0",
-    "png-chunks-encode": "^1.0.0",
-    "png-chunk-text": "^1.0.0"
-  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.0",
     "@tsconfig/svelte": "^4.0.1",

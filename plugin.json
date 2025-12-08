@@ -1,7 +1,7 @@
 {
-  "name": "siyuan-plugin-image-editor",
+  "name": "siyuan-plugin-templates",
   "author": "Achuan-2",
-  "url": "https://github.com/Achuan-2/siyuan-plugin-image-editor",
+  "url": "https://github.com/Achuan-2/siyuan-plugin-templates",
   "version": "0.0.1",
   "minAppVersion": "3.0.12",
   "backends": [
