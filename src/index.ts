@@ -22,7 +22,7 @@ import {
 import { appendBlock, deleteBlock, setBlockAttrs, getBlockAttrs, pushMsg, pushErrMsg, sql, renderSprig, getChildBlocks, insertBlock, renameDocByID, prependBlock, updateBlock, createDocWithMd, getBlockKramdown, getBlockDOM } from "./api";
 import "@/index.scss";
 
-import SettingPanel from "./setting-example.svelte";
+import SettingPanel from "./Settings.svelte";
 import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
@@ -34,6 +34,7 @@ export const SETTINGS_FILE = "settings.json";
 
 export default class PluginSample extends Plugin {
     _openMenuImageHandler: any;
+    settings: any;
 
 
     async onload() {
@@ -42,7 +43,7 @@ export default class PluginSample extends Plugin {
         setPluginInstance(this);
 
         // 加载设置
-        await this.loadSettings();
+        this.settings = await this.loadSettings();
 
         // 监听图片菜单打开事件, 在右键图片菜单中加入 编辑 菜单项
         this._openMenuImageHandler = this.openMenuImageHandler.bind(this);
@@ -125,7 +126,7 @@ export default class PluginSample extends Plugin {
             height: '700px'
         });
         const target = dialog.element.querySelector('#ImageEditor') as HTMLElement;
-        const comp = new ImageEditorComponent({ target, props: { imagePath, blockId: blockID, onClose: (_saved: boolean) => { dialog.destroy(); comp.$destroy(); } } });
+        const comp = new ImageEditorComponent({ target, props: { imagePath, blockId: blockID, settings: this.settings, onClose: (_saved: boolean) => { dialog.destroy(); comp.$destroy(); } } });
     }
     /**
      * 加载设置

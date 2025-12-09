@@ -1,7 +1,7 @@
 {
-  "name": "siyuan-plugin-image-editor",
+  "name": "siyuan-plugin-imgReEditor",
   "author": "Achuan-2",
-  "url": "https://github.com/Achuan-2/siyuan-plugin-image-editor",
+  "url": "https://github.com/Achuan-2/siyuan-plugin-imgReEditor",
   "version": "0.0.1",
   "minAppVersion": "3.0.12",
   "backends": [
@@ -12,8 +12,8 @@
   ],
   "disabledInPublish": false,
   "displayName": {
-    "default": "Image Editor",
-    "zh_CN": "图片编辑器"
+    "default": "ImgReEditor",
+    "zh_CN": "ImgReEditor"
   },
   "description": {
     "default": "Edit images in SiYuan with crop, shapes, arrows, text, markers and more. Supports re-editing.",

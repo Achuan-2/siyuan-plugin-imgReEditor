@@ -9,6 +9,7 @@
 
     export let imagePath: string;
     export let blockId: string | null = null;
+    export let settings: any;
     export let onClose: (saved: boolean) => void;
 
     let editorEl: HTMLDivElement;
@@ -21,7 +22,7 @@
     let needConvertToPNG = false;
     let lastBlobURL = '';
     let hasExistingMetadata = false; // Track if image already has editor metadata
-    const STORAGE_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-image-editor/backup';
+    const STORAGE_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-imgReEditor/backup';
     
     // Custom crop state
     let cropMode = false;
@@ -86,7 +87,7 @@
         let editorData = null;
         // use locatePNGtEXt to verify PNG and read with readPNGTextChunk
         if (locatePNGtEXt(buffer)) {
-            const meta = readPNGTextChunk(buffer, 'siyuan-image-editor');
+            const meta = readPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor');
             if (meta) {
                 try {
                     editorData = JSON.parse(meta);
@@ -97,34 +98,44 @@
                 }
             }
         }
+
+        // In backup mode try to load the separate JSON file stored in backup folder
+        // (useful when canvasJSON is stored separately from the PNG)
+        if (settings.storageMode === 'backup') {
+            try {
+                const jsonPath = `${STORAGE_BACKUP_DIR}/${originalFileName}.json`;
+                const jb = await getFileBlob(jsonPath);
+                if (jb && jb.size > 0) {
+                    const text = await jb.text();
+                    try {
+                        const saved = JSON.parse(text);
+                        // Merge saved canvas/crop data into editorData for restore
+                        if (!editorData) editorData = {};
+                        if (saved.canvasJSON) editorData.canvasJSON = saved.canvasJSON;
+                        if (saved.cropData) editorData.cropData = saved.cropData;
+                        if (saved.originalImageDimensions) editorData.originalImageDimensions = saved.originalImageDimensions;
+                        console.log('Loaded canvas JSON from backup json:', jsonPath);
+                        hasExistingMetadata = true;
+                    } catch (e) {
+                        console.warn('invalid json in backup json file', e);
+                    }
+                }
+            } catch (e) {
+                // ignore if backup json doesn't exist
+            }
+        }
         
         if (!hasExistingMetadata) {
             console.log('No metadata found, this is a new image to edit');
         }
 
-        // If we have a backup original, use it as base image for editing (so annotations are applied on top of original)
-        const backupPathFromMeta = editorData?.originalBackupPath;
-        let backupBlobUrl: string | null = null;
-        if (backupPathFromMeta) {
-            // If backup is stored in plugin storage, load as data URL
-            if (backupPathFromMeta.startsWith('data/storage/petal/')) {
-                try {
-                    const b = await getFileBlob(backupPathFromMeta);
-                    if (b) {
-                        backupBlobUrl = await blobToDataURL(b);
-                    }
-                } catch (e) {
-                    console.warn('Failed to load backup blob from storage', e);
-                }
-            }
-        }
         // Destroy prior instance
         try {
             imageEditor?.destroy?.();
         } catch (e) {}
         
-        // Convert blob to data URL for loading
-        const dataURL = backupBlobUrl ?? await blobToDataURL(blob);
+        // Convert blob to data URL for loading (always use current image blob)
+        const dataURL = await blobToDataURL(blob);
         lastBlobURL = dataURL;
         
         // Prepare options object first (before initializing editor)
@@ -274,17 +285,20 @@
             const origBackupName = originalFileName;
             const origBackupPath = `${STORAGE_BACKUP_DIR}/${origBackupName}`;
 
+            // Base the saved PNG on the edited image bytes (so edits are preserved)
             const buffer = new Uint8Array(await blob.arrayBuffer());
-            const metaValue = JSON.stringify({
+            const metaObj: any = {
                 version: 1,
                 originalFileName,
-                originalBlockId: blockId,
-                originalBackupPath: origBackupPath,
-                canvasJSON,
                 cropData: isCropped ? cropData : null,
-                originalImageDimensions: originalImageDimensions.width > 0 ? originalImageDimensions : null,
-            });
-            const newBuffer = insertPNGTextChunk(buffer, 'siyuan-image-editor', metaValue);
+                originalImageDimensions: settings.storageMode === 'backup' ? null : (originalImageDimensions.width > 0 ? originalImageDimensions : null),
+            };
+            // Do not embed canvasJSON into PNG metadata when using backup mode
+            if (settings.storageMode !== 'backup') {
+                metaObj.canvasJSON = canvasJSON;
+            }
+            const metaValue = JSON.stringify(metaObj);
+            const newBuffer = insertPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor', metaValue);
             // Convert Uint8Array to ArrayBuffer for Blob constructor
             const newBlob = new Blob([newBuffer as any], { type: 'image/png' });
 
@@ -295,39 +309,25 @@
                 : originalFileName;
             // prepare original backup names already determined above
 
-            // Save original backup if this is the first time editing (no metadata)
-            // Only save backup if the image doesn't have existing metadata
-            if (!hasExistingMetadata) {
-                console.log('First time editing this image, saving original backup');
-                console.log('Ensuring backup directory exists:', STORAGE_BACKUP_DIR);
-                await ensureDirExists(STORAGE_BACKUP_DIR);
-                
+            // (Backup mode no longer stores the original image file.)
+            // In backup mode, store canvasJSON/cropData as a separate JSON file
+            if (settings.storageMode === 'backup') {
                 try {
-                    console.log('Saving original image backup to:', origBackupPath);
-                    console.log('Original image blob size:', imageBlob.size, 'type:', imageBlob.type);
-                    
-                    // Create original file from the initial imageBlob (before any edits)
-                    const origFile = new File([imageBlob], origBackupName, {
-                        type: imageBlob.type || 'image/png',
-                    });
-                    
-                    console.log('Created backup file:', origFile.name, 'size:', origFile.size);
-                    
-                    // Save the backup
-                    const putResult = await putFile(origBackupPath, false, origFile);
-                    console.log('putFile result:', putResult);
-                    
-                    // Wait a bit for file system to sync
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                    console.log('✓ Original image backup saved successfully');
-                    pushMsg(`原始图片已备份`);
+                    const backupJsonPath = `${origBackupPath}.json`;
+                    const jsonObj = {
+                        version: 1,
+                        canvasJSON,
+                        cropData: isCropped ? cropData : null,
+                        originalImageDimensions: originalImageDimensions.width > 0 ? originalImageDimensions : null,
+                        originalFileName,
+                    };
+                    const jsonBlob = new Blob([JSON.stringify(jsonObj)], { type: 'application/json' });
+                    await putFile(backupJsonPath, false, jsonBlob);
+                    console.log('Saved backup json to', backupJsonPath);
                 } catch (e) {
-                    console.error('Error creating backup:', e);
-                    pushErrMsg(`备份失败: ${e.message || e}`);
+                    console.error('Failed saving backup json', e);
+                    // Don't block the main save if json fails
                 }
-            } else {
-                console.log('Image already has metadata, skipping backup (backup should already exist)');
             }
             // create File and upload
             const file = new File([newBlob], saveName, { type: 'image/png' });

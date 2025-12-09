@@ -16,13 +16,13 @@
     "make-install": "vite build && node --no-warnings ./scripts/make_install.js"
   },
   "dependencies": {
-    "fabric": "^5.3.0"
+    "tui-image-editor": "^3.15.3",
+    "tui-color-picker": "^2.2.8"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.0",
     "@tsconfig/svelte": "^4.0.1",
     "@types/node": "^20.3.0",
-    "@types/fabric": "^5.3.0",
     "cross-env": "^7.0.3",
     "fast-glob": "^3.2.12",
     "glob": "^10.0.0",

@@ -38,6 +38,14 @@
                 "option3": "选项 3"
             }
         },
+        "storageMode": {
+            "title": "编辑数据存储方式",
+            "description": "选择如何存储编辑数据",
+            "options": {
+                "embed": "直接存储在当前图片里，图片发送给别人也能保留编辑数据",
+                "backup": "存储在backup文件夹，减少图片体积"
+            }
+        },
         "reset": {
             "title": "重置设置",
             "description": "重置所有设置为默认值",

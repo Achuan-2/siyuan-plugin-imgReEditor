@@ -38,13 +38,21 @@
                 "option3": "Option 3"
             }
         },
+        "storageMode": {
+            "title": "Original Image Storage Method",
+            "description": "Choose how to store the original image",
+            "options": {
+                "embed": "Embed in current image",
+                "backup": "Store original in backup folder"
+            }
+        },
         "reset": {
-            "title": "Reset Settings",
-            "description": "Reset all settings to default values",
-            "label": "Reset",
-            "confirm": "Are you sure you want to reset all settings to default values?",
-            "confirmMessage": "Are you sure you want to reset all settings to default values? This action cannot be undone.",
-            "message": "All settings have been reset to default values"
+            "title": "Original Image Storage",
+            "description": "Choose how to store the original image",
+            "options": {
+                "embed": "Embed directly in the current image",
+                "backup": "Store original in backup folder"
+            }
         }
     },
     "imageEditor": {
