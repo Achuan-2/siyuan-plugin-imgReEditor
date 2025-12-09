@@ -591,35 +591,22 @@
             isDrawing = false;
             
             if (cropRect) {
-                // Make the crop rectangle selectable and editable after drawing
-                cropRect.set({
-                    selectable: true,
-                    evented: true,
-                    hasControls: true,
-                    hasBorders: true,
-                    cornerColor: '#00ff00',
-                    cornerSize: 10,
-                    transparentCorners: false,
-                });
-                
-                // If the rectangle is too small, remove it
+                // If the rectangle is too small, remove it but let user try again
                 const minSize = 10;
                 if ((cropRect.width || 0) < minSize || (cropRect.height || 0) < minSize) {
                     canvas.remove(cropRect);
                     cropRect = null;
                     pushMsg('裁剪区域太小，请重新绘制');
-                } else {
-                    canvas.setActiveObject(cropRect);
-                    pushMsg('调整裁剪区域，按 Enter 确认，按 Esc 取消，或重新绘制');
-                }
+                    return;
+                } 
+                
+                // Auto Apply Crop on Mouse Up
+                exitCropMode(true);
+                
+                // Update UI button state directly since we exited programmatically
+                const cropBtn = editorEl.querySelector('.custom-crop-btn');
+                if (cropBtn) cropBtn.classList.remove('crop-active');
             }
-            
-            // Remove event listeners after first rectangle is drawn
-            canvas.off('mouse:down', onMouseDown);
-            canvas.off('mouse:move', onMouseMove);
-            canvas.off('mouse:up', onMouseUp);
-            
-            canvas.requestRenderAll();
         };
         
         // Attach event listeners
@@ -637,7 +624,7 @@
         canvas.requestRenderAll();
         
         // Show crop instructions
-        pushMsg('拖动鼠标绘制裁剪区域，按 Enter 确认裁剪，按 Esc 取消');
+        pushMsg('拖动鼠标绘制裁剪区域，松开鼠标自动裁剪');
     }
 
     function exitCropMode(apply: boolean = false) {
