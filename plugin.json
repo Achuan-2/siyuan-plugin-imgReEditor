@@ -17,7 +17,7 @@
   },
   "description": {
     "default": "Edit images in SiYuan with crop, shapes, arrows, text, markers and more. Supports re-editing.",
-    "zh_CN": "在思源笔记中编辑图片，支持裁剪、形状、箭头、文字、马克笔等功能，支持二次编辑"
+    "zh_CN": "在思源笔记中编辑图片，支持裁剪、旋转，添加形状、文字等功能，最大亮点是已编辑的图片支持二次编辑！"
   },
   "readme": {
     "default": "README.md",
@@ -29,10 +29,5 @@
     ]
   },
   "keywords": [
-    "image",
-    "editor",
-    "annotation",
-    "screenshot",
-    "markup"
   ]
 }
