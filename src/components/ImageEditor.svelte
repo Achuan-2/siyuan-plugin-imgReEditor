@@ -491,55 +491,179 @@
             canvasHeight = originalImageDimensions.height;
         }
         
-        // Calculate crop rectangle position
-        let rectLeft, rectTop, rectWidth, rectHeight;
+        // Disable selection of existing objects during crop mode
+        const objects = canvas.getObjects();
+        objects.forEach((obj: any) => {
+            obj.selectable = false;
+            obj.evented = false;
+        });
         
+        // If image has been cropped before, show the previous crop rectangle
         if (cropData) {
-            // Restore visual crop box to previous crop area
-            rectLeft = cropData.left;
-            rectTop = cropData.top;
-            rectWidth = cropData.width;
-            rectHeight = cropData.height;
-        } else {
-            // Default crop area (80% of canvas, centered)
-            rectWidth = canvasWidth * 0.8;
-            rectHeight = canvasHeight * 0.8;
-            rectLeft = (canvasWidth - rectWidth) / 2;
-            rectTop = (canvasHeight - rectHeight) / 2;
+            // Create crop rectangle with previous crop area
+            cropRect = new (window as any).fabric.Rect({
+                left: cropData.left,
+                top: cropData.top,
+                width: cropData.width,
+                height: cropData.height,
+                fill: 'rgba(0, 0, 0, 0.3)',
+                stroke: '#00ff00',
+                strokeWidth: 2,
+                strokeDashArray: [5, 5],
+                selectable: true,
+                evented: true,
+                hasControls: true,
+                hasBorders: true,
+                lockRotation: true,
+                cornerColor: '#00ff00',
+                cornerSize: 10,
+                transparentCorners: false,
+            });
+            (cropRect as any)._isCropRect = true;
+            canvas.add(cropRect);
+            canvas.setActiveObject(cropRect);
+            canvas.requestRenderAll();
+            
+            pushMsg('调整裁剪区域，按 Enter 确认，按 Esc 取消，按 Delete 删除并重新绘制');
+            return; // Don't set up drawing mode
         }
         
-        // Create crop rectangle
-        cropRect = new (window as any).fabric.Rect({
-            left: rectLeft,
-            top: rectTop,
-            width: rectWidth,
-            height: rectHeight,
-            fill: 'rgba(0, 0, 0, 0.3)',
-            stroke: '#00ff00',
-            strokeWidth: 2,
-            strokeDashArray: [5, 5],
-            selectable: true,
-            hasControls: true,
-            hasBorders: true,
-            lockRotation: true,
-            cornerColor: '#00ff00',
-            cornerSize: 10,
-            transparentCorners: false,
-        });
-        // temporary flag to identify crop rect
-        (cropRect as any)._isCropRect = true; 
+        // For new images without previous crop, enable drawing mode
+        let isDrawing = false;
+        let startX = 0;
+        let startY = 0;
         
-        canvas.add(cropRect);
-        canvas.setActiveObject(cropRect);
+        const onMouseDown = (e: any) => {
+            if (cropRect) return; // Already have a crop rectangle
+            
+            const pointer = canvas.getPointer(e.e);
+            isDrawing = true;
+            startX = pointer.x;
+            startY = pointer.y;
+            
+            // Create initial crop rectangle
+            cropRect = new (window as any).fabric.Rect({
+                left: startX,
+                top: startY,
+                width: 0,
+                height: 0,
+                fill: 'rgba(0, 0, 0, 0.3)',
+                stroke: '#00ff00',
+                strokeWidth: 2,
+                strokeDashArray: [5, 5],
+                selectable: false,
+                evented: false,
+                lockRotation: true,
+            });
+            (cropRect as any)._isCropRect = true;
+            canvas.add(cropRect);
+        };
+        
+        const onMouseMove = (e: any) => {
+            if (!isDrawing || !cropRect) return;
+            
+            const pointer = canvas.getPointer(e.e);
+            const width = pointer.x - startX;
+            const height = pointer.y - startY;
+            
+            // Handle negative dimensions (dragging in reverse direction)
+            if (width < 0) {
+                cropRect.set({ left: pointer.x });
+                cropRect.set({ width: Math.abs(width) });
+            } else {
+                cropRect.set({ width: width });
+            }
+            
+            if (height < 0) {
+                cropRect.set({ top: pointer.y });
+                cropRect.set({ height: Math.abs(height) });
+            } else {
+                cropRect.set({ height: height });
+            }
+            
+            canvas.requestRenderAll();
+        };
+        
+        const onMouseUp = (e: any) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            if (cropRect) {
+                // Make the crop rectangle selectable and editable after drawing
+                cropRect.set({
+                    selectable: true,
+                    evented: true,
+                    hasControls: true,
+                    hasBorders: true,
+                    cornerColor: '#00ff00',
+                    cornerSize: 10,
+                    transparentCorners: false,
+                });
+                
+                // If the rectangle is too small, remove it
+                const minSize = 10;
+                if ((cropRect.width || 0) < minSize || (cropRect.height || 0) < minSize) {
+                    canvas.remove(cropRect);
+                    cropRect = null;
+                    pushMsg('裁剪区域太小，请重新绘制');
+                } else {
+                    canvas.setActiveObject(cropRect);
+                    pushMsg('调整裁剪区域，按 Enter 确认，按 Esc 取消，或重新绘制');
+                }
+            }
+            
+            // Remove event listeners after first rectangle is drawn
+            canvas.off('mouse:down', onMouseDown);
+            canvas.off('mouse:move', onMouseMove);
+            canvas.off('mouse:up', onMouseUp);
+            
+            canvas.requestRenderAll();
+        };
+        
+        // Attach event listeners
+        canvas.on('mouse:down', onMouseDown);
+        canvas.on('mouse:move', onMouseMove);
+        canvas.on('mouse:up', onMouseUp);
+        
+        // Store event handlers for cleanup
+        (canvas as any)._cropModeHandlers = {
+            onMouseDown,
+            onMouseMove,
+            onMouseUp
+        };
+        
         canvas.requestRenderAll();
         
         // Show crop instructions
-        pushMsg('拖动调整裁剪区域,按 Enter 确认裁剪,按 Esc 取消');
+        pushMsg('拖动鼠标绘制裁剪区域，按 Enter 确认裁剪，按 Esc 取消');
     }
 
     function exitCropMode(apply: boolean = false) {
         const canvas = getCanvasSafe();
-        if (!canvas || !cropRect) {
+        if (!canvas) {
+            cropMode = false;
+            return;
+        }
+        
+        // Clean up event listeners if they exist
+        if ((canvas as any)._cropModeHandlers) {
+            const handlers = (canvas as any)._cropModeHandlers;
+            canvas.off('mouse:down', handlers.onMouseDown);
+            canvas.off('mouse:move', handlers.onMouseMove);
+            canvas.off('mouse:up', handlers.onMouseUp);
+            delete (canvas as any)._cropModeHandlers;
+        }
+        
+        // Restore selectability of all objects
+        const objects = canvas.getObjects();
+        objects.forEach((obj: any) => {
+            if (!obj._isCropRect) {
+                obj.selectable = true;
+                obj.evented = true;
+            }
+        });
+        
+        if (!cropRect) {
             cropMode = false;
             return;
         }
@@ -767,6 +891,19 @@
                         // Remove active class from crop button
                         const cropBtn = editorEl.querySelector('.custom-crop-btn');
                         if (cropBtn) cropBtn.classList.remove('crop-active');
+                    }
+                } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                    if (cropMode && cropRect) {
+                        // Remove current crop rectangle to allow redrawing
+                        const canvas = getCanvasSafe();
+                        if (canvas) {
+                            canvas.remove(cropRect);
+                            cropRect = null;
+                            
+                            // Re-enable drawing mode
+                            enterCropMode();
+                            pushMsg('裁剪框已删除，请重新绘制');
+                        }
                     }
                 }
             });
