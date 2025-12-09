@@ -45,5 +45,10 @@
             "confirmMessage": "确定要将所有设置重置为默认值吗？此操作无法撤销。",
             "message": "已重置所有设置为默认值"
         }
+    },
+    "imageEditor": {
+        "editImage": "编辑图片",
+        "saveSuccess": "图片已保存",
+        "saveFailed": "保存失败"
     }
 }

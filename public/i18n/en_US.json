@@ -46,5 +46,10 @@
             "confirmMessage": "Are you sure you want to reset all settings to default values? This action cannot be undone.",
             "message": "All settings have been reset to default values"
         }
+    },
+    "imageEditor": {
+        "editImage": "Edit image",
+        "saveSuccess": "Image saved",
+        "saveFailed": "Save failed"
     }
 }
