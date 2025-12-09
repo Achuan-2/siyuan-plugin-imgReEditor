@@ -19,7 +19,6 @@
     let originalFileName = '';
     let originalExt = '';
     let needConvertToPNG = false;
-    let lastPublicURL = '';
     let lastBlobURL = '';
     let hasExistingMetadata = false; // Track if image already has editor metadata
     const STORAGE_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-image-editor/backup';
@@ -98,7 +97,6 @@
 
         // If we have a backup original, use it as base image for editing (so annotations are applied on top of original)
         const backupPathFromMeta = editorData?.originalBackupPath;
-        let baseAssetPath = imagePath;
         let backupBlobUrl: string | null = null;
         if (backupPathFromMeta) {
             // If backup is stored in plugin storage, load as data URL
@@ -107,28 +105,10 @@
                     const b = await getFileBlob(backupPathFromMeta);
                     if (b) {
                         backupBlobUrl = await blobToDataURL(b);
-                        baseAssetPath = backupBlobUrl;
                     }
                 } catch (e) {
                     console.warn('Failed to load backup blob from storage', e);
                 }
-            } else {
-                baseAssetPath = backupPathFromMeta;
-            }
-        }
-        // Build a public URL for the image so TUI can load it directly. If baseAssetPath is already a full URL, use it.
-        let publicURL = baseAssetPath;
-        if (
-            !publicURL.startsWith('http') &&
-            !publicURL.startsWith('data:') &&
-            !publicURL.startsWith('blob:')
-        ) {
-            // ensure no leading slash
-            // If dataset contains data/assets/ -> public path is assets/xxx
-            if (publicURL.startsWith('data/')) publicURL = `${publicURL.replace(/^data\//, '')}`;
-            else {
-                const pth = publicURL.replace(/^\//, '');
-                publicURL = pth;
             }
         }
         // Destroy prior instance
@@ -136,10 +116,14 @@
             imageEditor?.destroy?.();
         } catch (e) {}
         
+        // Convert blob to data URL for loading
+        const dataURL = backupBlobUrl ?? await blobToDataURL(blob);
+        lastBlobURL = dataURL;
+        
         // Prepare options object first (before initializing editor)
+        // Don't use loadImage in options, we'll load it manually after init
         const editorOptions = {
             includeUI: {
-                loadImage: { path: publicURL, name: originalFileName },
                 theme: {},
             },
             cssMaxWidth: 700,
@@ -151,12 +135,13 @@
         
         // After init we explicitly load image so we can then restore state
         editorReady = false;
-        lastPublicURL = publicURL;
-        if (backupBlobUrl) lastBlobURL = backupBlobUrl;
 
-        // Prefer to load backup blob if available (backupBlobUrl)
+        // Wait a bit for editor to fully initialize before loading image
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Load image using data URL
         imageEditor
-            .loadImageFromURL(backupBlobUrl ?? publicURL, originalFileName)
+            .loadImageFromURL(dataURL, originalFileName)
             .then(() => {
                 try {
                     const canvas =
@@ -177,31 +162,9 @@
                     editorReady = true;
                 }
             })
-            .catch(async (err: any) => {
-                console.warn('Failed to load image from public URL, fallback to data URL', err);
-                // Wait a bit to make sure image editor's command queue is free
-                await new Promise(resolve => setTimeout(resolve, 80));
-                const dataURL = await blobToDataURL(blob);
-                console.log('Created data URL for blob size:', blob.size, 'blob type:', blob.type);
-                lastBlobURL = dataURL;
-                try {
-                    await imageEditor.loadImageFromURL(dataURL, originalFileName);
-                    const canvas =
-                        imageEditor.getCanvas?.() ?? imageEditor._graphics?.getCanvas?.() ?? null;
-                    if (editorData && editorData.canvasJSON) {
-                        canvas.loadFromJSON(editorData.canvasJSON);
-                        canvas.discardActiveObject();
-                        canvas.renderAll();
-                    }
-                    // Re-activate UI menu to prevent modeChange errors
-                    if (imageEditor.ui && typeof imageEditor.ui.activeMenuEvent === 'function') {
-                        imageEditor.ui.activeMenuEvent();
-                    }
-                    editorReady = true;
-                } catch (e) {
-                    console.error('Fallback load failed', e);
-                    editorReady = true;
-                }
+            .catch((err: any) => {
+                console.error('Failed to load image from data URL', err);
+                editorReady = true;
             });
     }
 
@@ -376,9 +339,8 @@
         <button
             class="btn"
             on:click={() => {
-                console.log('publicURL:', lastPublicURL);
                 console.log('blobURL:', lastBlobURL);
-                pushMsg(`publicURL: ${lastPublicURL}\nblobURL: ${lastBlobURL}`);
+                pushMsg(`blobURL: ${lastBlobURL}`);
             }}
         >
             调试 URL
