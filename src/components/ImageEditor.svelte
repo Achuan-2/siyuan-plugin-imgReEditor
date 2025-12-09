@@ -362,6 +362,31 @@
                     currentActiveMenu = null;
                 }
             });
+            
+            // Add mouse wheel zoom functionality
+            const canvasContainer = editorEl.querySelector('.lower-canvas')?.parentElement;
+            if (canvasContainer) {
+                canvasContainer.addEventListener('wheel', (e: WheelEvent) => {
+                    e.preventDefault();
+                    
+                    const canvas = getCanvasSafe();
+                    if (!canvas) return;
+                    
+                    // Get current zoom level
+                    let zoom = canvas.getZoom();
+                    
+                    // Calculate zoom delta (negative deltaY means zoom in)
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    zoom = Math.min(Math.max(0.1, zoom + delta), 5); // Limit zoom between 0.1x and 5x
+                    
+                    // Get mouse position relative to canvas
+                    const point = new (window as any).fabric.Point(e.offsetX, e.offsetY);
+                    
+                    // Zoom to point
+                    canvas.zoomToPoint(point, zoom);
+                    canvas.renderAll();
+                }, { passive: false });
+            }
         }, 300);
     }
 
@@ -392,15 +417,7 @@
         <button class="btn btn-primary" on:click={handleSave} disabled={!editorReady || saving}>
             {saving ? '保存中...' : '保存'}
         </button>
-        <button
-            class="btn"
-            on:click={() => {
-                console.log('blobURL:', lastBlobURL);
-                pushMsg(`blobURL: ${lastBlobURL}`);
-            }}
-        >
-            调试 URL
-        </button>
+
     </div>
 </div>
 
@@ -453,5 +470,13 @@
     /* Improve submenu item visibility */
     :global(.tui-image-editor-submenu > div) {
         padding: 8px 12px;
+    }
+    
+    /* Hide the filter button */
+    :global(.tui-image-editor-menu .tie-btn-filter){
+        display: none !important;
+    }
+    :global(.tui-image-editor-header-logo){
+        display: none !important;
     }
 </style>
