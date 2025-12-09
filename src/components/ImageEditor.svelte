@@ -21,7 +21,8 @@
     let needConvertToPNG = false;
     let lastPublicURL = '';
     let lastBlobURL = '';
-    const STORAGE_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-image-editor';
+    let hasExistingMetadata = false; // Track if image already has editor metadata
+    const STORAGE_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-image-editor/backup';
 
     async function blobToDataURL(blob: Blob): Promise<string> {
         return new Promise((resolve, reject) => {
@@ -83,10 +84,16 @@
             if (meta) {
                 try {
                     editorData = JSON.parse(meta);
+                    hasExistingMetadata = true; // Image has been edited before
+                    console.log('Found existing metadata, this image has been edited before');
                 } catch (e) {
                     console.warn('invalid metadata');
                 }
             }
+        }
+        
+        if (!hasExistingMetadata) {
+            console.log('No metadata found, this is a new image to edit');
         }
 
         // If we have a backup original, use it as base image for editing (so annotations are applied on top of original)
@@ -236,8 +243,8 @@
             const blob = dataURLToBlob(dataURL);
 
             // Determine backup names and write metadata into PNG
-            const baseName = originalFileName.replace(/\.[^.]+$/, '');
-            const origBackupName = `${baseName}-original.${originalExt}`;
+            // Use original filename without -original suffix
+            const origBackupName = originalFileName;
             const origBackupPath = `${STORAGE_BACKUP_DIR}/${origBackupName}`;
 
             const buffer = new Uint8Array(await blob.arrayBuffer());
@@ -259,35 +266,39 @@
                 : originalFileName;
             // prepare original backup names already determined above
 
-            // Save original backup if not exists
-            // ensure storage directory exists first
-            await ensureDirExists(STORAGE_BACKUP_DIR);
-            // ensure data/assets exists (for saved asset) as well
-            try {
-                let existing = null;
+            // Save original backup if this is the first time editing (no metadata)
+            // Only save backup if the image doesn't have existing metadata
+            if (!hasExistingMetadata) {
+                console.log('First time editing this image, saving original backup');
+                console.log('Ensuring backup directory exists:', STORAGE_BACKUP_DIR);
+                await ensureDirExists(STORAGE_BACKUP_DIR);
+                
                 try {
-                    existing = await getFileBlob(origBackupPath);
-                } catch (e) {
-                    // file doesn't exist
-                }
-                if (!existing) {
-                    console.log('Saving backup to', origBackupPath);
-                    // create original file from fetched imageBlob
+                    console.log('Saving original image backup to:', origBackupPath);
+                    console.log('Original image blob size:', imageBlob.size, 'type:', imageBlob.type);
+                    
+                    // Create original file from the initial imageBlob (before any edits)
                     const origFile = new File([imageBlob], origBackupName, {
-                        type: imageBlob.type,
+                        type: imageBlob.type || 'image/png',
                     });
-                    await putFile(origBackupPath, false, origFile);
-                    console.log('Backup saved');
-                    // verify backup exists
-                    const checkBackup = await getFileBlob(origBackupPath);
-                    console.log('Check backup size:', checkBackup?.size);
-                    if (!checkBackup || checkBackup.size === 0) {
-                        console.warn('backup file not found after put');
-                        pushErrMsg('创建备份文件失败');
-                    }
+                    
+                    console.log('Created backup file:', origFile.name, 'size:', origFile.size);
+                    
+                    // Save the backup
+                    const putResult = await putFile(origBackupPath, false, origFile);
+                    console.log('putFile result:', putResult);
+                    
+                    // Wait a bit for file system to sync
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    console.log('✓ Original image backup saved successfully');
+                    pushMsg(`原始图片已备份`);
+                } catch (e) {
+                    console.error('Error creating backup:', e);
+                    pushErrMsg(`备份失败: ${e.message || e}`);
                 }
-            } catch (e) {
-                console.warn('Error creating backup', e);
+            } else {
+                console.log('Image already has metadata, skipping backup (backup should already exist)');
             }
             // create File and upload
             const file = new File([newBlob], saveName, { type: 'image/png' });
