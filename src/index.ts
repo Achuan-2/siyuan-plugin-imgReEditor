@@ -108,7 +108,7 @@ export default class PluginSample extends Plugin {
         menu.addItem({
             id: 'edit-image',
             icon: 'iconImage',
-            label: 'Edit image',
+            label: '编辑图片',
             index: 1,
             click: () => {
                 // open dialog
