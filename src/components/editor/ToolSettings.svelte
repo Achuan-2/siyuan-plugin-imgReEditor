@@ -17,10 +17,10 @@
     }
 
     // font list state
-    let fonts: string[] = [];
+    let fonts: { family: string; fullName: string }[] = [];
     let loadingFonts = true;
 
-    onMount(() => {
+    onMount(async () => {
         // candidate fonts to check (common cross-platform + Chinese fonts)
         const candidates = [
             'Microsoft Yahei',
@@ -39,11 +39,30 @@
             'Roboto',
             'Segoe UI',
         ];
+
         try {
-            const detected = candidates;
-            fonts = detected && detected.length ? detected : candidates;
+            if ('queryLocalFonts' in window) {
+                const availableFonts = await (window as any).queryLocalFonts();
+                // Filter for "Regular" and get family/fullName
+                const regularFonts = availableFonts
+                    .filter((font: any) => font.style.toLowerCase() === 'regular')
+                    .map((font: any) => ({
+                        family: font.family,
+                        fullName: font.fullName,
+                    }));
+
+                if (regularFonts.length > 0) {
+                    // Sort by fullName
+                    fonts = regularFonts.sort((a, b) => a.fullName.localeCompare(b.fullName));
+                } else {
+                    fonts = candidates.map(name => ({ family: name, fullName: name }));
+                }
+            } else {
+                fonts = candidates.map(name => ({ family: name, fullName: name }));
+            }
         } catch (e) {
-            fonts = candidates;
+            console.warn('queryLocalFonts failed:', e);
+            fonts = candidates.map(name => ({ family: name, fullName: name }));
         } finally {
             loadingFonts = false;
         }
@@ -180,14 +199,16 @@
             <label for="font-family">字体</label>
             <select
                 id="font-family"
-                value={settings.family || settings.fontFamily || fonts[0] || 'Microsoft Yahei'}
+                value={settings.family ||
+                    settings.fontFamily ||
+                    (fonts[0] ? fonts[0].family : 'Microsoft Yahei')}
                 on:change={e => emitChange({ family: getValue(e) })}
             >
                 {#if loadingFonts}
                     <option disabled>检测字体中...</option>
                 {:else}
                     {#each fonts as f}
-                        <option value={f}>{f}</option>
+                        <option value={f.family}>{f.fullName}</option>
                     {/each}
                 {/if}
             </select>
@@ -203,6 +224,27 @@
                 on:input={e => emitChange({ size: +getValue(e) })}
             />
             <span class="val">{settings.size || settings.fontSize || 24}</span>
+        </div>
+        <div class="row">
+            <span class="label">样式</span>
+            <div style="display:flex;gap:4px;">
+                <button
+                    class:active={settings.bold}
+                    on:click={() => emitChange({ bold: !settings.bold })}
+                    style="font-weight:bold; width:32px;"
+                    title="加粗"
+                >
+                    B
+                </button>
+                <button
+                    class:active={settings.italic}
+                    on:click={() => emitChange({ italic: !settings.italic })}
+                    style="font-style:italic; width:32px;"
+                    title="斜体"
+                >
+                    I
+                </button>
+            </div>
         </div>
         <div class="row">
             <label for="font-color">颜色</label>
@@ -229,7 +271,7 @@
                 type="range"
                 min="0"
                 max="10"
-                step="0.5"
+                step="0.2"
                 value={settings.strokeWidth || 0}
                 on:input={e => emitChange({ strokeWidth: +getValue(e) })}
             />
@@ -325,12 +367,31 @@
         gap: 8px;
         margin-bottom: 8px;
     }
-    .row label {
+    .row label,
+    .row .label {
         width: 80px;
         font-size: 13px;
+        display: inline-block;
     }
     .val {
         width: 30px;
         text-align: center;
+    }
+    button {
+        padding: 4px 8px;
+        border: 1px solid #ddd;
+        background: #fff;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #333;
+    }
+    button:hover {
+        background: #f5f5f5;
+    }
+    button.active {
+        background: var(--b3-theme-primary-lightest, #e3f2fd);
+        color: var(--b3-theme-primary, #1976d2);
+        border-color: var(--b3-theme-primary, #1976d2);
     }
 </style>

@@ -678,6 +678,8 @@
                     const fill = activeToolOptions.fill || '#000000';
                     const stroke = activeToolOptions.stroke || '#ffffff';
                     const strokeWidth = activeToolOptions.strokeWidth || 0;
+                    const fontWeight = activeToolOptions.bold ? 'bold' : 'normal';
+                    const fontStyle = activeToolOptions.italic ? 'italic' : 'normal';
 
                     let itext: any = null;
                     // Try common fabric text classes in order of preference
@@ -690,6 +692,8 @@
                             fill,
                             stroke,
                             strokeWidth,
+                            fontWeight,
+                            fontStyle,
                             selectable: true,
                             evented: true,
                             erasable: true,
@@ -708,6 +712,8 @@
                                 fill,
                                 stroke,
                                 strokeWidth,
+                                fontWeight,
+                                fontStyle,
                                 selectable: true,
                                 evented: true,
                                 erasable: true,
@@ -727,6 +733,8 @@
                                 fill,
                                 stroke,
                                 strokeWidth,
+                                fontWeight,
+                                fontStyle,
                                 selectable: true,
                                 evented: true,
                                 erasable: true,
@@ -922,6 +930,8 @@
                             fill: active.fill,
                             stroke: active.stroke,
                             strokeWidth: active.strokeWidth,
+                            bold: (active as any).fontWeight === 'bold',
+                            italic: (active as any).fontStyle === 'italic',
                         },
                         type: active.type,
                     });
@@ -1121,6 +1131,8 @@
             activeToolOptions.fill = activeToolOptions.fill || '#000000';
             activeToolOptions.stroke = activeToolOptions.stroke || '#ffffff';
             activeToolOptions.strokeWidth = activeToolOptions.strokeWidth || 0;
+            activeToolOptions.bold = !!activeToolOptions.bold;
+            activeToolOptions.italic = !!activeToolOptions.italic;
         }
         // update cursor
         if (canvas) {
@@ -2134,6 +2146,10 @@
                         if (typeof options.stroke !== 'undefined') o.set('stroke', options.stroke);
                         if (typeof options.strokeWidth !== 'undefined')
                             o.set('strokeWidth', options.strokeWidth);
+                        if (typeof options.bold !== 'undefined')
+                            o.set('fontWeight', options.bold ? 'bold' : 'normal');
+                        if (typeof options.italic !== 'undefined')
+                            o.set('fontStyle', options.italic ? 'italic' : 'normal');
                         o.setCoords && o.setCoords();
                     } else {
                         // shapes and other objects
