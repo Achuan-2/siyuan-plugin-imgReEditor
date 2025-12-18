@@ -714,14 +714,23 @@
                                 } else if (a.action === 'setCropRatio') {
                                     const label = a.label || 'none';
                                     try {
-                                        if (canvasEditorRef && typeof canvasEditorRef.setCropRatio === 'function') {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.setCropRatio === 'function'
+                                        ) {
                                             canvasEditorRef.setCropRatio(label);
                                         }
                                     } catch (err) {}
-                                    toolSettings = { ...(toolSettings || {}), cropRatioLabel: label };
+                                    toolSettings = {
+                                        ...(toolSettings || {}),
+                                        cropRatioLabel: label,
+                                    };
                                 } else if (a.action === 'applyCrop') {
                                     try {
-                                        if (canvasEditorRef && typeof canvasEditorRef.applyPendingCrop === 'function') {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.applyPendingCrop === 'function'
+                                        ) {
                                             canvasEditorRef.applyPendingCrop();
                                         }
                                     } catch (err) {}

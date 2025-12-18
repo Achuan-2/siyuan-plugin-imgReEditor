@@ -2559,8 +2559,6 @@
 <div class="canvas-editor">
     <canvas bind:this={container}></canvas>
 
-    
-
     <div class="zoom-controls">
         <div class="zoom-info">{zoomDisplay}</div>
         <button on:click={() => handleZoom(1)} title="放大">+</button>
@@ -2612,7 +2610,7 @@
         border: 1px solid var(--b3-theme-surface-lighter);
         user-select: none;
     }
-    
+
     .zoom-info {
         font-size: 10px;
         text-align: center;
