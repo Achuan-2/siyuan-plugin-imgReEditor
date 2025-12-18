@@ -659,7 +659,11 @@
                 <div class="tool-popup-header">
                     <div class="title">
                         {activeTool === 'shape'
-                            ? '形状设置'
+                            ? activeShape === 'rect'
+                                ? '矩形设置'
+                                : activeShape === 'circle' || activeShape === 'ellipse'
+                                  ? '椭圆设置'
+                                  : '形状设置'
                             : activeTool === 'arrow'
                               ? '箭头设置'
                               : activeTool === 'brush'
