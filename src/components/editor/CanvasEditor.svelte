@@ -99,7 +99,11 @@
     function pushHistory() {
         try {
             if (!canvas) return;
-            const json = canvas.toJSON(['selectable']);
+            const bg = canvas.backgroundImage;
+            if (!bg) {
+                console.warn('pushInitialHistory: no background image yet');
+                return;
+            }
             // If recent changes are rapid modifications, merge them into the last step
             const now = Date.now();
             const MERGE_THRESHOLD = 800; // ms
@@ -253,6 +257,7 @@
             // zoom to mouse pointer
             const point = new Point(opt.e.offsetX, opt.e.offsetY);
             canvas!.zoomToPoint(point, zoom);
+            updateZoomDisplay();
 
             opt.e.preventDefault();
             opt.e.stopPropagation();
@@ -506,8 +511,10 @@
                         try {
                             canvas.setActiveObject(hit);
                             // update activeToolOptions to reflect selected object's properties
-                            activeToolOptions.family = hit.fontFamily || activeToolOptions.family;
-                            activeToolOptions.size = hit.fontSize || activeToolOptions.size;
+                            activeToolOptions.family =
+                                (hit as any).fontFamily || activeToolOptions.family;
+                            activeToolOptions.size =
+                                (hit as any).fontSize || activeToolOptions.size;
                             activeToolOptions.fill =
                                 typeof hit.fill !== 'undefined' ? hit.fill : activeToolOptions.fill;
                             canvas.requestRenderAll();
@@ -663,8 +670,8 @@
                 } else if (['i-text', 'textbox', 'text'].includes(active.type)) {
                     dispatch('selection', {
                         options: {
-                            family: active.fontFamily,
-                            size: active.fontSize,
+                            family: (active as any).fontFamily,
+                            size: (active as any).fontSize,
                             fill: active.fill,
                         },
                         type: active.type,
@@ -711,8 +718,9 @@
                 } else if (active.type === 'group') {
                     // detect arrow groups and forward their style as selection options
                     try {
-                        const parts =
-                            typeof active.getObjects === 'function' ? active.getObjects() : [];
+                        const parts = (active as any).getObjects
+                            ? (active as any).getObjects()
+                            : [];
                         const line = parts.find((p: any) => p.type === 'line');
                         const triangleParts = parts.filter((p: any) => p.type === 'triangle');
                         if (line && triangleParts.length > 0) {
@@ -1390,6 +1398,37 @@
         });
     }
 
+    let zoomDisplay = '100%';
+    function updateZoomDisplay() {
+        if (!canvas) return;
+        zoomDisplay = Math.round(canvas.getZoom() * 100) + '%';
+    }
+
+    const handleZoom = (delta: number) => {
+        if (!canvas) return;
+        let zoom = canvas.getZoom();
+        zoom *= 1.2 ** delta;
+        zoom = Math.max(0.1, Math.min(20, zoom));
+        const center = new Point(canvas.getWidth() / 2, canvas.getHeight() / 2);
+        canvas.zoomToPoint(center, zoom);
+        updateZoomDisplay();
+        canvas.requestRenderAll();
+    };
+
+    const handleZoom1to1 = () => {
+        if (!canvas || !canvas.backgroundImage) return;
+        const bg = canvas.backgroundImage;
+        const imgW = (bg.width || 0) * (bg.scaleX || 1);
+        const imgH = (bg.height || 0) * (bg.scaleY || 1);
+        const cw = canvas.getWidth();
+        const ch = canvas.getHeight();
+        const tx = (cw - imgW) / 2;
+        const ty = (ch - imgH) / 2;
+        canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
+        updateZoomDisplay();
+        canvas.requestRenderAll();
+    };
+
     export function fitImageToViewport() {
         if (!canvas) return;
         const bg = canvas.backgroundImage;
@@ -1400,8 +1439,11 @@
 
         const cw = workspace.clientWidth;
         const ch = workspace.clientHeight;
-        const imgW = (bg.width || 0) * (bg.scaleX || 1);
-        const imgH = (bg.height || 0) * (bg.scaleY || 1);
+
+        // Use bounding rect to account for rotation and flipping accurately
+        const boundingRect = bg.getBoundingRect();
+        const imgW = boundingRect.width;
+        const imgH = boundingRect.height;
 
         if (imgW <= 0 || imgH <= 0) return;
 
@@ -1410,10 +1452,15 @@
 
         // Calculate fit scale and center offset
         const scale = Math.min(cw / imgW, ch / imgH, 1);
-        const tx = (cw - imgW * scale) / 2;
-        const ty = (ch - imgH * scale) / 2;
+
+        // Calculate translation: we need to center the bounding box
+        // First, reset transform to [1,0,0,1,0,0] conceptually, then apply scale
+        // and find where the top-left of the bounding box should go.
+        const tx = (cw - imgW * scale) / 2 - boundingRect.left * scale;
+        const ty = (ch - imgH * scale) / 2 - boundingRect.top * scale;
 
         canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
+        updateZoomDisplay();
         canvas.requestRenderAll();
     }
 
@@ -1686,8 +1733,10 @@
         if (!canvas || !canvas.backgroundImage) return null;
 
         const bg = canvas.backgroundImage;
-        const imgW = (bg.width || 0) * (bg.scaleX || 1);
-        const imgH = (bg.height || 0) * (bg.scaleY || 1);
+        // Calculate the actual bounding box of the background image after flip/rotation
+        const boundingRect = bg.getBoundingRect();
+        const imgW = boundingRect.width;
+        const imgH = boundingRect.height;
 
         // Save current state
         const currentVPT = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
@@ -1695,12 +1744,16 @@
         const currentH = canvas.getHeight();
 
         try {
-            // Resize to original image dimensions for export
+            // Resize to the current bounding dimensions for export
             canvas.setDimensions({ width: imgW, height: imgH });
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
+            // Center everything for the export
+            const tx = -boundingRect.left;
+            const ty = -boundingRect.top;
+            canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
             canvas.renderAll();
 
-            // Export the canvas at original dimensions
+            // Export at original quality
             const dataURL = canvas.toDataURL(options);
             return dataURL;
         } finally {
@@ -1714,7 +1767,7 @@
     export function toJSON() {
         if (!canvas) return null;
         // Include selectable and evented properties so they can be restored
-        return canvas.toJSON(['selectable', 'evented']);
+        return (canvas as any).toJSON(['selectable', 'evented']);
     }
 
     export function fromJSON(json: any) {
@@ -1750,9 +1803,11 @@
             }
             canvas!.renderAll();
             // Automatically fit to viewport after loading JSON
+            // We wait for the next tick to ensure background image is ready
             setTimeout(() => {
+                console.log('fromJSON: triggering auto-fit');
                 fitImageToViewport();
-            }, 10);
+            }, 50);
             console.log('fromJSON completed, canvas rendered and fitted');
         });
     }
@@ -1760,47 +1815,30 @@
     // Image transforms: flip and rotate (exposed to host)
     export function flipHorizontal() {
         try {
-            if (!canvas) return;
-            const w = canvas.getWidth();
-            // Flip background if exists
-            const bg = canvas.backgroundImage as any;
-            try {
-                if (bg) {
-                    // flip horizontally around canvas center
-                    const c =
-                        bg.getCenterPoint?.() ||
-                        new Point(
-                            (bg.left || 0) + (bg.width || 0) / 2,
-                            (bg.top || 0) + (bg.height || 0) / 2
-                        );
-                    const newCenterX = w - (c.x || 0);
-                    bg.set('flipX', !bg.flipX);
-                    bg.setPositionByOrigin &&
-                        bg.setPositionByOrigin(new Point(newCenterX, c.y || 0), 'center', 'center');
-                    bg.setCoords && bg.setCoords();
-                }
-            } catch (e) {}
+            if (!canvas || !canvas.backgroundImage) return;
+            const bg = canvas.backgroundImage;
+            const imgW = (bg.width || 0) * (bg.scaleX || 1);
 
-            // Flip all drawable objects
+            // Flip background
+            bg.set('flipX', !bg.flipX);
+            bg.setCoords();
+
+            // Flip all drawable objects relative to image width
             try {
                 const objs = canvas.getObjects ? canvas.getObjects() : [];
                 objs.forEach((o: any) => {
                     try {
-                        if (o._isCropRect) return;
+                        if (o._isCropRect || o === bg) return;
                         const c = o.getCenterPoint();
-                        const newCenterX = w - (c.x || 0);
-                        o.setPositionByOrigin &&
-                            o.setPositionByOrigin(
-                                new Point(newCenterX, c.y || 0),
-                                'center',
-                                'center'
-                            );
+                        const newCenterX = imgW - c.x;
+                        o.setPositionByOrigin(new Point(newCenterX, c.y), 'center', 'center');
                         o.set('flipX', !o.flipX);
-                        o.setCoords && o.setCoords();
+                        o.setCoords();
                     } catch (e) {}
                 });
                 canvas.requestRenderAll();
                 schedulePushWithType('modified');
+                fitImageToViewport();
                 try {
                     dispatch('flipped', { dir: 'horizontal' });
                 } catch (e) {}
@@ -1810,46 +1848,30 @@
 
     export function flipVertical() {
         try {
-            if (!canvas) return;
-            const h = canvas.getHeight();
-            // Flip background if exists
-            const bg = canvas.backgroundImage as any;
-            try {
-                if (bg) {
-                    const c =
-                        bg.getCenterPoint?.() ||
-                        new Point(
-                            (bg.left || 0) + (bg.width || 0) / 2,
-                            (bg.top || 0) + (bg.height || 0) / 2
-                        );
-                    const newCenterY = h - (c.y || 0);
-                    bg.set('flipY', !bg.flipY);
-                    bg.setPositionByOrigin &&
-                        bg.setPositionByOrigin(new Point(c.x || 0, newCenterY), 'center', 'center');
-                    bg.setCoords && bg.setCoords();
-                }
-            } catch (e) {}
+            if (!canvas || !canvas.backgroundImage) return;
+            const bg = canvas.backgroundImage;
+            const imgH = (bg.height || 0) * (bg.scaleY || 1);
 
-            // Flip all drawable objects
+            // Flip background
+            bg.set('flipY', !bg.flipY);
+            bg.setCoords();
+
+            // Flip all drawable objects relative to image height
             try {
                 const objs = canvas.getObjects ? canvas.getObjects() : [];
                 objs.forEach((o: any) => {
                     try {
-                        if (o._isCropRect) return;
+                        if (o._isCropRect || o === bg) return;
                         const c = o.getCenterPoint();
-                        const newCenterY = h - (c.y || 0);
-                        o.setPositionByOrigin &&
-                            o.setPositionByOrigin(
-                                new Point(c.x || 0, newCenterY),
-                                'center',
-                                'center'
-                            );
+                        const newCenterY = imgH - c.y;
+                        o.setPositionByOrigin(new Point(c.x, newCenterY), 'center', 'center');
                         o.set('flipY', !o.flipY);
-                        o.setCoords && o.setCoords();
+                        o.setCoords();
                     } catch (e) {}
                 });
                 canvas.requestRenderAll();
                 schedulePushWithType('modified');
+                fitImageToViewport();
                 try {
                     dispatch('flipped', { dir: 'vertical' });
                 } catch (e) {}
@@ -1857,105 +1879,45 @@
         } catch (e) {}
     }
 
-    // Rotate 90 degrees without flattening objects (keep editable objects)
+    // Rotate 90 degrees non-destructively
     export async function rotate90(clockwise: boolean = true) {
         try {
-            if (!canvas) return;
-            const W = canvas.getWidth();
-            const H = canvas.getHeight();
+            if (!canvas || !canvas.backgroundImage) return;
+            const bg = canvas.backgroundImage;
 
-            // Prepare list of objects to transform (exclude crop rect if present)
-            const objs = (canvas.getObjects ? canvas.getObjects() : []).filter(
-                (o: any) => !o._isCropRect
-            );
+            // Get center point of current background
+            const center = bg.getCenterPoint();
+            const angleDelta = clockwise ? 90 : -90;
 
-            // Temporarily hide objects to export background-only image
-            const prevVisible: boolean[] = [];
+            // 1. Rotate background
+            bg.angle = (bg.angle + angleDelta) % 360;
+            bg.setCoords();
+
+            // 2. Rotate all drawable objects relative to the same center
+            const objs = canvas.getObjects().filter(o => o !== bg && !(o as any)._isCropRect);
             objs.forEach((o: any) => {
-                prevVisible.push(typeof o.visible === 'undefined' ? true : o.visible);
-                o.visible = false;
-            });
-            canvas.renderAll();
+                // Coordinate rotation: (x', y') around (cx, cy)
+                const p = o.getCenterPoint();
+                const dx = p.x - center.x;
+                const dy = p.y - center.y;
 
-            const bgData = toDataURL({ format: 'png', quality: 1 });
+                let newX, newY;
+                if (clockwise) {
+                    newX = center.x - dy;
+                    newY = center.y + dx;
+                } else {
+                    newX = center.x + dy;
+                    newY = center.y - dx;
+                }
 
-            // restore object visibility
-            objs.forEach((o: any, idx: number) => {
-                o.visible = prevVisible[idx];
-            });
-            canvas.renderAll();
-
-            if (!bgData) return;
-
-            // load bg image
-            const imgEl = new Image();
-            imgEl.crossOrigin = 'anonymous';
-            await new Promise<void>((resolve, reject) => {
-                imgEl.onload = () => resolve();
-                imgEl.onerror = err => reject(err);
-                imgEl.src = bgData;
+                o.setPositionByOrigin(new Point(newX, newY), 'center', 'center');
+                o.angle = (o.angle + angleDelta) % 360;
+                o.setCoords();
             });
 
-            // draw onto offscreen canvas rotated
-            const off = document.createElement('canvas');
-            off.width = H;
-            off.height = W;
-            const ctx = off.getContext('2d');
-            if (!ctx) return;
-            if (clockwise) {
-                ctx.translate(H, 0);
-                ctx.rotate((Math.PI / 2) * 1);
-            } else {
-                ctx.translate(0, W);
-                ctx.rotate((-Math.PI / 2) * 1);
-            }
-            ctx.drawImage(imgEl, 0, 0);
+            // 3. Auto fit to show the new orientation
+            fitImageToViewport();
 
-            const rotatedDataURL = off.toDataURL();
-
-            // create rotated image element
-            const rotImg = new Image();
-            rotImg.crossOrigin = 'anonymous';
-            await new Promise<void>((resolve, reject) => {
-                rotImg.onload = () => resolve();
-                rotImg.onerror = err => reject(err);
-                rotImg.src = rotatedDataURL;
-            });
-
-            // set canvas new size
-            canvas.setWidth(H);
-            canvas.setHeight(W);
-
-            // set rotated background
-            const fImg = new FabricImage(rotImg, { selectable: false });
-            (canvas as any).backgroundImage = fImg;
-            canvas.requestRenderAll();
-
-            // transform each object's center and rotate its angle
-            objs.forEach((o: any) => {
-                try {
-                    const c = o.getCenterPoint();
-                    let newCenterX: number, newCenterY: number;
-                    if (clockwise) {
-                        newCenterX = c.y;
-                        newCenterY = W - c.x;
-                    } else {
-                        newCenterX = H - c.y;
-                        newCenterY = c.x;
-                    }
-                    o.setPositionByOrigin &&
-                        o.setPositionByOrigin(
-                            new Point(newCenterX, newCenterY),
-                            'center',
-                            'center'
-                        );
-                    o.angle = ((o.angle || 0) + (clockwise ? 90 : -90)) % 360;
-                    o.setCoords && o.setCoords();
-                } catch (e) {}
-            });
-
-            // reset viewport transform
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
             canvas.requestRenderAll();
             schedulePushWithType('modified');
             try {
@@ -1970,10 +1932,19 @@
 ```
 <div class="canvas-editor">
     <canvas bind:this={container}></canvas>
+
+    <div class="zoom-controls">
+        <div class="zoom-info">{zoomDisplay}</div>
+        <button on:click={() => handleZoom(1)} title="放大">+</button>
+        <button on:click={() => handleZoom1to1()} title="1:1">1:1</button>
+        <button on:click={() => fitImageToViewport()} title="最佳适配">Fit</button>
+        <button on:click={() => handleZoom(-1)} title="缩小">-</button>
+    </div>
 </div>
 
 <style>
     .canvas-editor {
+        position: relative;
         width: 100%;
         height: 100%;
         overflow: hidden;
@@ -1984,5 +1955,54 @@
     }
     canvas {
         display: block;
+    }
+
+    .zoom-controls {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        z-index: 100;
+        background: rgba(var(--b3-theme-surface-rgb), 0.85);
+        backdrop-filter: blur(4px);
+        padding: 4px;
+        border-radius: 6px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        border: 1px solid var(--b3-theme-surface-lighter);
+        user-select: none;
+    }
+    .zoom-info {
+        font-size: 10px;
+        text-align: center;
+        padding: 2px 0;
+        font-family: monospace;
+        color: var(--b3-theme-on-surface);
+        opacity: 0.8;
+    }
+    .zoom-controls button {
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--b3-theme-surface-lighter);
+        background: var(--b3-theme-surface);
+        color: var(--b3-theme-on-surface);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: bold;
+        border-radius: 4px;
+        padding: 0;
+        transition: all 0.2s;
+    }
+    .zoom-controls button:hover {
+        background: var(--b3-theme-primary-lightest);
+        color: var(--b3-theme-primary);
+        border-color: var(--b3-theme-primary-lighter);
+    }
+    .zoom-controls button:active {
+        transform: scale(0.95);
     }
 </style>
