@@ -14,54 +14,60 @@
 </script>
 
 <div class="editor-toolbar">
-    <button class:active={active === 'select'} on:click={() => emit('tool', { tool: 'select' })}>
+    <button class="b3-button" class:active={active === 'select'} class:b3-button--outline={active !== 'select'} on:click={() => emit('tool', { tool: 'select' })}>
         选择
     </button>
-    <button class:active={active === 'crop'} on:click={() => emit('tool', { tool: 'crop' })}>
+    <button class="b3-button" class:active={active === 'crop'} class:b3-button--outline={active !== 'crop'} on:click={() => emit('tool', { tool: 'crop' })}>
         裁剪
     </button>
     <div class="shape-group">
         <button
+            class="b3-button"
             class:active={active === 'shape' && activeShape === 'rect'}
+            class:b3-button--outline={!(active === 'shape' && activeShape === 'rect')}
             on:click={() => emit('tool', { tool: 'shape', shape: 'rect' })}
         >
             矩形
         </button>
         <button
+            class="b3-button"
             class:active={active === 'shape' && activeShape === 'circle'}
+            class:b3-button--outline={!(active === 'shape' && activeShape === 'circle')}
             on:click={() => emit('tool', { tool: 'shape', shape: 'circle' })}
         >
             圆形
         </button>
     </div>
-    <button class:active={active === 'arrow'} on:click={() => emit('tool', { tool: 'arrow' })}>
+    <button class="b3-button" class:active={active === 'arrow'} class:b3-button--outline={active !== 'arrow'} on:click={() => emit('tool', { tool: 'arrow' })}>
         箭头
     </button>
-    <button class:active={active === 'text'} on:click={() => emit('tool', { tool: 'text' })}>
+    <button class="b3-button" class:active={active === 'text'} class:b3-button--outline={active !== 'text'} on:click={() => emit('tool', { tool: 'text' })}>
         文字
     </button>
-    <button class:active={active === 'brush'} on:click={() => emit('tool', { tool: 'brush' })}>
+    <button class="b3-button" class:active={active === 'brush'} class:b3-button--outline={active !== 'brush'} on:click={() => emit('tool', { tool: 'brush' })}>
         画笔
     </button>
-    <button class:active={active === 'eraser'} on:click={() => emit('tool', { tool: 'eraser' })}>
+    <button class="b3-button" class:active={active === 'eraser'} class:b3-button--outline={active !== 'eraser'} on:click={() => emit('tool', { tool: 'eraser' })}>
         橡皮
     </button>
     <button
+        class="b3-button"
         class:active={active === 'transform'}
+        class:b3-button--outline={active !== 'transform'}
         on:click={() => emit('tool', { tool: 'transform' })}
     >
         变换
     </button>
-    <button on:click={() => emit('undo')} disabled={!canUndo}>
+    <button class="b3-button b3-button--outline" on:click={() => emit('undo')} disabled={!canUndo}>
         撤回{#if undoCount > 0}
             ({undoCount}){/if}
     </button>
-    <button on:click={() => emit('redo')} disabled={!canRedo}>
+    <button class="b3-button b3-button--outline" on:click={() => emit('redo')} disabled={!canRedo}>
         恢复{#if redoCount > 0}
             ({redoCount}){/if}
     </button>
-    <button on:click={() => emit('save')}>保存</button>
-    <button on:click={() => emit('cancel')}>取消</button>
+    <button class="b3-button b3-button--outline" on:click={() => emit('save')}>保存</button>
+    <button class="b3-button b3-button--outline" on:click={() => emit('cancel')}>取消</button>
 
     <style>
         .editor-toolbar button.active {
