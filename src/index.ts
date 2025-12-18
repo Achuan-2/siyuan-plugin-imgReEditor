@@ -1,32 +1,14 @@
 import {
     Plugin,
-    showMessage,
-    confirm,
     Dialog,
-    Menu,
-    openTab,
-    adaptHotkey,
-    getFrontend,
-    getBackend,
-    IModel,
-    Protyle,
-    openWindow,
-    IOperation,
-    Constants,
-    openMobileFileById,
-    lockScreen,
-    ICard,
-    ICardData
 } from "siyuan";
 
-import { appendBlock, deleteBlock, setBlockAttrs, getBlockAttrs, pushMsg, pushErrMsg, sql, renderSprig, getChildBlocks, insertBlock, renameDocByID, prependBlock, updateBlock, createDocWithMd, getBlockKramdown, getBlockDOM } from "./api";
 import "@/index.scss";
 
 import SettingPanel from "./Settings.svelte";
 import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
-import LoadingDialog from "./components/LoadingDialog.svelte";
 
 export const SETTINGS_FILE = "settings.json";
 
@@ -118,8 +100,15 @@ export default class PluginSample extends Plugin {
     }
 
     async openImageEditorDialog(imagePath: string, blockID?: string | null) {
+        // derive filename from path/URL and include it in the dialog title
+        const fileName = (typeof imagePath === 'string' && imagePath.length)
+            ? imagePath.split('/').pop() || ''
+            : '';
+        const baseTitle = t('imageEditor.editImage') || 'Edit image';
+        const title = fileName ? `${baseTitle} — ${fileName}` : baseTitle;
+
         const dialog = new Dialog({
-            title: t('imageEditor.editImage') || 'Edit image',
+            title: title,
             content: `<div id='ImageEditor' style='height: 90%;'></div>`,
             destroyCallback: () => { /* component destroyed in callback */ },
             width: '1000px',
