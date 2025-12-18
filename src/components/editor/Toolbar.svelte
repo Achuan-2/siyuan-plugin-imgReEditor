@@ -159,6 +159,7 @@
             <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
         </svg>
     </button>
+    <div class="toolbar-spacer"></div>
     <button class="b3-button b3-button--outline" on:click={() => emit('save')}>
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -200,6 +201,9 @@
         padding: 8px;
         border-bottom: 1px solid rgba(0, 0, 0, 0.06);
         align-items: center;
+    }
+    .toolbar-spacer {
+        flex: 1 1 auto;
     }
     .editor-toolbar button {
         padding: 6px 8px;
