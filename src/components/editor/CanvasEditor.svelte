@@ -15,9 +15,11 @@
         Point,
         PencilBrush,
         FabricObject,
+        Color,
     } from 'fabric';
     import { EraserBrush } from '@erase2d/fabric';
     import Arrow from './Arrow';
+    import NumberMarker from './NumberMarker';
 
     export let dataURL: string | null = null;
     export let fileName: string | undefined;
@@ -29,6 +31,8 @@
     let isDrawingShape = false;
     let shapeStart = { x: 0, y: 0 };
     let tempShape: any = null;
+    // number marker state
+    let currentNumber = 1;
 
     let container: HTMLCanvasElement;
     let canvas: Canvas | null = null;
@@ -46,6 +50,9 @@
         'arrowHead',
         'erasable',
         '_isCropRect',
+        'count', // for NumberMarker
+        'textColor', // for NumberMarker
+        'radius', // for NumberMarker
     ];
     // Flag to prevent recursive history updates during undo/redo
     let isHistoryProcessing = false;
@@ -209,6 +216,7 @@
                     'line',
                     'triangle',
                     'arrow',
+                    'number-marker',
                 ].includes(o.type)
             );
 
@@ -217,7 +225,15 @@
             // Include custom properties like _isArrow to ensure arrows remain editable after paste
             // Map each object to its serialized version
             clipboard = allowed.map((o: any) =>
-                o.toObject(['selectable', 'evented', '_isArrow', 'arrowHead'])
+                o.toObject([
+                    'selectable',
+                    'evented',
+                    '_isArrow',
+                    'arrowHead',
+                    'count',
+                    'textColor',
+                    'radius',
+                ])
             );
 
             try {
@@ -245,6 +261,7 @@
                     'i-text',
                     'textbox',
                     'text',
+                    'number-marker',
                 ].includes(o.type)
             );
             if (allowed.length === 0) return;
@@ -395,12 +412,15 @@
             const key = (e.key || '').toLowerCase();
             if (key === 'c') {
                 e.preventDefault();
+                e.stopPropagation();
                 copySelectedObjects();
             } else if (key === 'v') {
                 e.preventDefault();
+                e.stopPropagation();
                 pasteClipboard();
             } else if (key === 'z') {
                 e.preventDefault();
+                e.stopPropagation();
                 if (e.shiftKey) {
                     redo();
                 } else {
@@ -408,6 +428,7 @@
                 }
             } else if (key === 'y') {
                 e.preventDefault();
+                e.stopPropagation();
                 redo();
             }
         };
@@ -540,6 +561,61 @@
                 });
                 canvas.add(tempArrow);
                 canvas.requestRenderAll();
+                return;
+            }
+
+            // Number marker tool
+            if (activeTool === 'number-marker') {
+                // if clicked on an existing object, select it instead
+                let hit = opt.target;
+                try {
+                    if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
+                        hit = (canvas as any).findTarget(opt.e);
+                    }
+                } catch (e) {}
+
+                if (hit) {
+                    try {
+                        canvas.setActiveObject(hit);
+
+                        // If we clicked a number marker, update activeTool currentNumber to match (optional ux)
+                        // But strictly user request says "edit background and number".
+                        // Selection handler will dispatch props.
+
+                        canvas.requestRenderAll();
+                    } catch (e) {}
+                    return;
+                }
+
+                // Create new NumberMarker
+                const fill = activeToolOptions.fill || '#ff0000';
+                const radius = activeToolOptions.radius || 15;
+                // Use counter then increment
+                const mk = new NumberMarker({
+                    left: pointer.x,
+                    top: pointer.y,
+                    originX: 'center',
+                    originY: 'center',
+                    fill: fill,
+                    count: currentNumber,
+                    textColor: '#ffffff',
+                    selectable: true,
+                    evented: true,
+                    erasable: true,
+                    radius: radius,
+                });
+
+                canvas.add(mk);
+                canvas.setActiveObject(mk);
+                canvas.requestRenderAll();
+
+                currentNumber++;
+                schedulePushWithType('added');
+
+                // Immediately update tool settings UI to reflect incremented currentNumber
+                // Because the new object is selected, we need to re-dispatch the selection event
+                // to update 'nextNumber' in the toolbar.
+                handleSelectionChangeWithType();
                 return;
             }
 
@@ -738,6 +814,17 @@
                         },
                         type: active.type,
                     });
+                } else if (active.type === 'number-marker') {
+                    // Update currentNumber state to be next to this one?
+                    // Or just let user edit properties.
+                    // User requirement: "Support modifying background color and number"
+                    dispatch('selection', {
+                        options: {
+                            fill: active.fill,
+                            count: (active as any).count,
+                        },
+                        type: 'number-marker',
+                    });
                 } else {
                     dispatch('selection', { options: null, type: active.type });
                 }
@@ -833,6 +920,23 @@
                             strokeWidth: active.strokeWidth,
                         },
                         type: active.type,
+                    });
+                } else if (active.type === 'number-marker') {
+                    let fillVal = active.fill;
+                    if (typeof fillVal === 'string') {
+                        try {
+                            fillVal = '#' + new Color(fillVal).toHex();
+                        } catch (e) {}
+                    }
+                    dispatch('selection', {
+                        options: {
+                            fill: fillVal,
+                            count: (active as any).count,
+                            radius: (active as any).radius,
+                            nextNumber: currentNumber,
+                            isSelection: true,
+                        },
+                        type: 'number-marker',
                     });
                 }
             } catch (e) {}
@@ -993,6 +1097,15 @@
     export function setTool(tool: string | null, options: any = {}) {
         activeTool = tool;
         activeToolOptions = options || {};
+
+        if (tool === 'number-marker') {
+            if (typeof options.nextNumber !== 'undefined') {
+                currentNumber = options.nextNumber;
+            } else if (typeof options.count !== 'undefined' && !options.isSelection) {
+                currentNumber = options.count;
+            }
+        }
+
         // provide sensible defaults for text tool
         if (tool === 'text') {
             activeToolOptions.family =
@@ -1009,6 +1122,7 @@
             else if (tool === 'brush') canvas.defaultCursor = 'crosshair';
             else if (tool === 'eraser') canvas.defaultCursor = 'crosshair';
             else if (tool === 'text') canvas.defaultCursor = 'text';
+            else if (tool === 'number-marker') canvas.defaultCursor = 'crosshair';
             else canvas.defaultCursor = 'default';
         }
 
@@ -1586,6 +1700,15 @@
     }
 
     export function getToolOptions() {
+        if (activeTool === 'number-marker') {
+            return {
+                ...(activeToolOptions || {}),
+                radius: activeToolOptions?.radius || 15, // default
+                count: currentNumber,
+                nextNumber: currentNumber, // If selection active, this value might be overridden by updated logic below to show global next
+                isSelection: false,
+            };
+        }
         return activeToolOptions || {};
     }
 
@@ -1726,7 +1849,20 @@
                         if (typeof options.arrowHead !== 'undefined' && 'arrowHead' in o) {
                             o.set('arrowHead', options.arrowHead);
                             // Custom property change doesn't automatically trigger cache invalidation
-                            o.set('dirty', true);
+                            o.dirty = true;
+                        }
+                        // Handle custom NumberMarker class
+                        if (o.type === 'number-marker') {
+                            if (typeof options.count !== 'undefined') {
+                                o.set('count', options.count);
+                                o.dirty = true;
+                            }
+                            if (typeof options.radius !== 'undefined') {
+                                o.set('radius', options.radius);
+                                o.set('width', options.radius * 2);
+                                o.set('height', options.radius * 2);
+                                o.dirty = true;
+                            }
                         }
                         o.setCoords && o.setCoords();
                     }

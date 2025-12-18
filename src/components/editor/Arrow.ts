@@ -16,7 +16,7 @@ export class Arrow extends Line {
 
     constructor(points: [number, number, number, number], options?: ArrowOptions) {
         super(points, options);
-        this.type = 'arrow';
+
         this.arrowHead = options?.arrowHead || 'right';
         this.strokeLineCap = 'butt'; // Flat ends as requested
         this.strokeLineJoin = 'round';

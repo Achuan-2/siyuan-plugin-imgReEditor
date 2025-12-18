@@ -14,10 +14,20 @@
 </script>
 
 <div class="editor-toolbar">
-    <button class="b3-button" class:active={active === 'select'} class:b3-button--outline={active !== 'select'} on:click={() => emit('tool', { tool: 'select' })}>
+    <button
+        class="b3-button"
+        class:active={active === 'select'}
+        class:b3-button--outline={active !== 'select'}
+        on:click={() => emit('tool', { tool: 'select' })}
+    >
         选择
     </button>
-    <button class="b3-button" class:active={active === 'crop'} class:b3-button--outline={active !== 'crop'} on:click={() => emit('tool', { tool: 'crop' })}>
+    <button
+        class="b3-button"
+        class:active={active === 'crop'}
+        class:b3-button--outline={active !== 'crop'}
+        on:click={() => emit('tool', { tool: 'crop' })}
+    >
         裁剪
     </button>
     <div class="shape-group">
@@ -38,16 +48,44 @@
             圆形
         </button>
     </div>
-    <button class="b3-button" class:active={active === 'arrow'} class:b3-button--outline={active !== 'arrow'} on:click={() => emit('tool', { tool: 'arrow' })}>
+    <button
+        class="b3-button"
+        class:active={active === 'arrow'}
+        class:b3-button--outline={active !== 'arrow'}
+        on:click={() => emit('tool', { tool: 'arrow' })}
+    >
         箭头
     </button>
-    <button class="b3-button" class:active={active === 'text'} class:b3-button--outline={active !== 'text'} on:click={() => emit('tool', { tool: 'text' })}>
+    <button
+        class="b3-button"
+        class:active={active === 'number-marker'}
+        class:b3-button--outline={active !== 'number-marker'}
+        on:click={() => emit('tool', { tool: 'number-marker' })}
+    >
+        序号
+    </button>
+    <button
+        class="b3-button"
+        class:active={active === 'text'}
+        class:b3-button--outline={active !== 'text'}
+        on:click={() => emit('tool', { tool: 'text' })}
+    >
         文字
     </button>
-    <button class="b3-button" class:active={active === 'brush'} class:b3-button--outline={active !== 'brush'} on:click={() => emit('tool', { tool: 'brush' })}>
+    <button
+        class="b3-button"
+        class:active={active === 'brush'}
+        class:b3-button--outline={active !== 'brush'}
+        on:click={() => emit('tool', { tool: 'brush' })}
+    >
         画笔
     </button>
-    <button class="b3-button" class:active={active === 'eraser'} class:b3-button--outline={active !== 'eraser'} on:click={() => emit('tool', { tool: 'eraser' })}>
+    <button
+        class="b3-button"
+        class:active={active === 'eraser'}
+        class:b3-button--outline={active !== 'eraser'}
+        on:click={() => emit('tool', { tool: 'eraser' })}
+    >
         橡皮
     </button>
     <button

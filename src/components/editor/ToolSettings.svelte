@@ -235,6 +235,52 @@
             />
             <span class="val">{settings.strokeWidth || 0}</span>
         </div>
+    {:else if tool === 'number-marker'}
+        <div class="row">
+            <label for="num-bg-color">背景颜色</label>
+            <input
+                id="num-bg-color"
+                type="color"
+                value={settings.fill || '#ff0000'}
+                on:input={e => emitChange({ fill: getValue(e) })}
+            />
+        </div>
+        <div class="row">
+            <label for="num-radius">大小</label>
+            <input
+                id="num-radius"
+                type="number"
+                min="5"
+                max="100"
+                value={settings.radius || 15}
+                on:input={e => emitChange({ radius: +getValue(e) })}
+                style="width: 60px;"
+            />
+        </div>
+        <div class="row">
+            <label for="num-count">{settings.isSelection ? '当前编号' : '下个编号'}</label>
+            <input
+                id="num-count"
+                type="number"
+                min="1"
+                value={settings.count || 1}
+                on:input={e => emitChange({ count: +getValue(e) })}
+                style="width: 60px;"
+            />
+        </div>
+        {#if settings.isSelection}
+            <div class="row">
+                <label for="next-num-count">下个编号</label>
+                <input
+                    id="next-num-count"
+                    type="number"
+                    min="1"
+                    value={settings.nextNumber || 1}
+                    on:input={e => emitChange({ nextNumber: +getValue(e) })}
+                    style="width: 60px;"
+                />
+            </div>
+        {/if}
     {:else if tool === 'transform'}
         <div class="row">
             <div class="label">翻转</div>

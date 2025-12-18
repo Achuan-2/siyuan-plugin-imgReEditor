@@ -395,9 +395,15 @@
             const t = e.detail.tool;
             activeTool = t;
             // show popup for tools that have a submenu
-            const hasSubmenu = ['shape', 'arrow', 'brush', 'eraser', 'text', 'transform'].includes(
-                t
-            );
+            const hasSubmenu = [
+                'shape',
+                'arrow',
+                'brush',
+                'eraser',
+                'text',
+                'transform',
+                'number-marker',
+            ].includes(t);
             showToolPopup = hasSubmenu;
             if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
                 if (t === 'shape') {
@@ -610,8 +616,23 @@
                                     )
                                         canvasEditorRef.setTool('arrow', toolSettings);
                                 } catch (err) {}
+                            } else if (type === 'number-marker') {
+                                // auto-open number settings when a number marker is selected
+                                activeTool = 'number-marker';
+                                showToolPopup = true;
+                                toolSettings = e.detail.options || {};
+                                // keep it as number-marker to show specific edit UI
                             } else {
                                 /* don't auto-open for other types */
+                            }
+                        } else {
+                            // Selection cleared, restore default tool options (e.g. for number-marker next count)
+                            if (
+                                activeTool &&
+                                canvasEditorRef &&
+                                typeof canvasEditorRef.getToolOptions === 'function'
+                            ) {
+                                toolSettings = canvasEditorRef.getToolOptions();
                             }
                         }
                     } catch (e) {}
@@ -639,7 +660,9 @@
                                 ? '画笔设置'
                                 : activeTool === 'eraser'
                                   ? '橡皮设置'
-                                  : activeTool}
+                                  : activeTool === 'number-marker'
+                                    ? '序号设置'
+                                    : activeTool}
                     </div>
                     <button
                         class="close"
