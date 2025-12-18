@@ -203,6 +203,7 @@
 
     const schedulePushWithType = (type: string) => {
         if (isHistoryProcessing) return; // Skip if we are currently undoing/redoing
+        if (cropMode) return; // ignore intermediate steps during cropping
         pendingActionType = type;
         clearTimeout((schedulePushWithType as any)._t);
         (schedulePushWithType as any)._t = setTimeout(() => {
@@ -2060,12 +2061,16 @@
             if (!canvas) return;
             if (historyIndex <= 0) return;
 
+            // Exit crop mode if active before undoing
+            if (cropMode) exitCropMode();
+
             isHistoryProcessing = true;
             historyIndex--;
             const json = history[historyIndex];
             await canvas.loadFromJSON(json);
             restoreObjectSelectionStates();
             canvas.renderAll();
+            fitImageToViewport();
             notifyHistoryUpdate();
         } catch (e) {
             console.warn('CanvasEditor: undo failed', e);
@@ -2080,12 +2085,16 @@
             if (!canvas) return;
             if (historyIndex >= history.length - 1) return;
 
+            // Exit crop mode if active before redoing
+            if (cropMode) exitCropMode();
+
             isHistoryProcessing = true;
             historyIndex++;
             const json = history[historyIndex];
             await canvas.loadFromJSON(json);
             restoreObjectSelectionStates();
             canvas.renderAll();
+            fitImageToViewport();
             notifyHistoryUpdate();
         } catch (e) {
             console.warn('CanvasEditor: redo failed', e);
