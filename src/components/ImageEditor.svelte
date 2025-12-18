@@ -103,7 +103,6 @@
                     try {
                         editorData = JSON.parse(meta);
                         hasExistingMetadata = true; // Image has been edited before
-                        console.log('Found existing metadata, this image has been edited before');
                     } catch (e) {
                         console.warn('invalid metadata');
                     }
@@ -126,7 +125,6 @@
                             if (saved.cropData) editorData.cropData = saved.cropData;
                             if (saved.originalImageDimensions)
                                 editorData.originalImageDimensions = saved.originalImageDimensions;
-                            console.log('Loaded canvas JSON from backup json:', jsonPath);
                             hasExistingMetadata = true;
                         } catch (e) {
                             console.warn('invalid json in backup json file', e);
@@ -138,11 +136,9 @@
             }
 
             if (!hasExistingMetadata) {
-                console.log('No metadata found, this is a new image to edit');
             } else {
                 // Store editorData for restoration after canvas is ready
                 savedEditorData = editorData;
-                console.log('Saved editor data for restoration:', savedEditorData);
             }
 
             // Destroy prior TUI instance (no-op for Fabric-only flow)
@@ -261,7 +257,6 @@
                         type: 'application/json',
                     });
                     await putFile(backupJsonPath, false, jsonBlob);
-                    console.log('Saved backup json to', backupJsonPath);
                 } catch (e) {
                     console.error('Failed saving backup json', e);
                     // Don't block the main save if json fails
@@ -492,7 +487,6 @@
                 fileName={originalFileName}
                 on:ready={() => {
                     editorReady = true;
-                    console.log('CanvasEditor ready event fired');
                     // If user requested crop before canvas was ready, try now
                     try {
                         if (
@@ -506,7 +500,6 @@
                     } catch (e) {}
                 }}
                 on:loaded={e => {
-                    console.log('CanvasEditor loaded event fired', e.detail);
                     // Store original image dimensions from the loaded event
                     if (e.detail && e.detail.width && e.detail.height) {
                         if (originalImageDimensions.width === 0) {
@@ -514,15 +507,11 @@
                                 width: e.detail.width,
                                 height: e.detail.height,
                             };
-                            console.log(
-                                'Stored original image dimensions:',
-                                originalImageDimensions
-                            );
+                            
                         }
                     }
 
                     if (savedEditorData && savedEditorData.canvasJSON && canvasEditorRef) {
-                        console.log('Attempting to restore saved editor data...');
                         try {
                             canvasEditorRef.fromJSON(savedEditorData.canvasJSON);
                             if (savedEditorData.cropData) {
@@ -536,7 +525,6 @@
                             console.warn('Failed to restore canvas JSON to CanvasEditor', e);
                         }
                     } else {
-                        console.log('No saved editor data to restore');
                         // For new images without saved data, fit to viewport now
                         if (
                             canvasEditorRef &&
@@ -544,7 +532,6 @@
                         ) {
                             try {
                                 canvasEditorRef.fitImageToViewport();
-                                console.log('Fitted new image to viewport');
                             } catch (e) {
                                 console.warn('Failed to fit new image to viewport', e);
                             }

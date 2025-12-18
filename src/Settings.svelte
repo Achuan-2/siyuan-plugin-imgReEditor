@@ -80,7 +80,6 @@
                                     }
                                 },
                                 () => {
-                                    console.log('user cancelled clear backup');
                                 }
                             );
                         },
@@ -113,8 +112,6 @@
                                     await pushMsg(t('settings.reset.message'));
                                 },
                                 () => {
-                                    // 取消回调（可选）
-                                    console.log('Reset cancelled');
                                 }
                             );
                         },
@@ -133,7 +130,6 @@
     }
 
     const onChanged = ({ detail }: CustomEvent<ChangeEvent>) => {
-        console.log(detail.key, detail.value);
         const setting = settings[detail.key];
         if (setting !== undefined) {
             settings[detail.key] = detail.value;

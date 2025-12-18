@@ -1306,7 +1306,6 @@
                                     console.warn('Error removing object:', e);
                                 }
                             });
-                            console.log('Directly removed objects:', otherObjects.length);
                         }
 
                         canvas?.requestRenderAll();
@@ -2392,14 +2391,12 @@
 
     export async function fromJSON(json: any) {
         if (!canvas) return;
-        console.log('CanvasEditor.fromJSON called with:', json);
 
         // Prevent history updates whilst loading JSON
         isHistoryProcessing = true;
 
         try {
             await canvas.loadFromJSON(json);
-            console.log('loadFromJSON completed, objects count:', canvas!.getObjects().length);
 
             // After loading, ensure all objects (except background) are selectable and evented
             restoreObjectSelectionStates();
@@ -2410,11 +2407,9 @@
             // We wait for the next tick to ensure background image bounding rect is calculated correctly
             // Increased timeout to 100ms to ensure proper calculation for flipped/rotated images
             setTimeout(() => {
-                console.log('fromJSON: triggering auto-fit');
                 fitImageToViewport();
             }, 100);
 
-            console.log('fromJSON completed, canvas rendered and will be fitted');
 
             // Reset history to treat this state as initial
             pushInitialHistory();
@@ -2422,7 +2417,6 @@
             console.error('fromJSON failed:', e);
             // Even if loading fails, try to fit what we have
             setTimeout(() => {
-                console.log('fromJSON error recovery: triggering auto-fit');
                 fitImageToViewport();
             }, 100);
         } finally {
