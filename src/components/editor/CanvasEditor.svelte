@@ -248,8 +248,12 @@
             const delta = opt.e.deltaY;
             let zoom = canvas!.getZoom();
             zoom *= 0.999 ** delta;
-            zoom = Math.max(0.1, Math.min(5, zoom));
-            canvas!.setZoom(zoom);
+            zoom = Math.max(0.1, Math.min(20, zoom));
+
+            // zoom to mouse pointer
+            const point = new Point(opt.e.offsetX, opt.e.offsetY);
+            canvas!.zoomToPoint(point, zoom);
+
             opt.e.preventDefault();
             opt.e.stopPropagation();
         });
