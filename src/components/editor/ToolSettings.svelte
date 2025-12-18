@@ -38,7 +38,7 @@
             'SimHei',
             'SimSun',
             'Roboto',
-            'Segoe UI'
+            'Segoe UI',
         ];
         try {
             const detected = candidates;
@@ -168,7 +168,7 @@
             <label for="font-family">字体</label>
             <select
                 id="font-family"
-                value={settings.family || settings.fontFamily || (fonts[0] || 'Microsoft Yahei')}
+                value={settings.family || settings.fontFamily || fonts[0] || 'Microsoft Yahei'}
                 on:change={e => emitChange({ family: getValue(e) })}
             >
                 {#if loadingFonts}

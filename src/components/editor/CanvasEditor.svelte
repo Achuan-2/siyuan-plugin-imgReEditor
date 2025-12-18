@@ -154,7 +154,18 @@
             if (!objs || objs.length === 0) return;
             // Allow deletion of shapes (rect, ellipse, circle) and other drawable objects
             const allowed = objs.filter((o: any) =>
-                ['rect', 'ellipse', 'circle', 'path', 'group', 'line', 'triangle', 'i-text', 'textbox', 'text'].includes(o.type)
+                [
+                    'rect',
+                    'ellipse',
+                    'circle',
+                    'path',
+                    'group',
+                    'line',
+                    'triangle',
+                    'i-text',
+                    'textbox',
+                    'text',
+                ].includes(o.type)
             );
             if (allowed.length === 0) return;
 
@@ -438,7 +449,11 @@
                 try {
                     // debug info to trace clicks
                     try {
-                        console.debug('CanvasEditor: mouse down (text tool)', { activeTool, activeToolOptions, pointer });
+                        console.debug('CanvasEditor: mouse down (text tool)', {
+                            activeTool,
+                            activeToolOptions,
+                            pointer,
+                        });
                     } catch (e) {}
 
                     // if clicked on an existing text object, select and enter edit mode instead of creating a new one
@@ -456,7 +471,8 @@
                             // update activeToolOptions to reflect selected object's properties
                             activeToolOptions.family = hit.fontFamily || activeToolOptions.family;
                             activeToolOptions.size = hit.fontSize || activeToolOptions.size;
-                            activeToolOptions.fill = typeof hit.fill !== 'undefined' ? hit.fill : activeToolOptions.fill;
+                            activeToolOptions.fill =
+                                typeof hit.fill !== 'undefined' ? hit.fill : activeToolOptions.fill;
                             canvas.requestRenderAll();
                             // try to enter editing mode
                             try {
@@ -467,7 +483,10 @@
                                     (hit as any).enterEdit();
                                 }
                             } catch (e) {
-                                console.warn('CanvasEditor: enter editing failed on existing text', e);
+                                console.warn(
+                                    'CanvasEditor: enter editing failed on existing text',
+                                    e
+                                );
                             }
                         } catch (e) {
                             console.warn('CanvasEditor: failed to select existing text', e);
@@ -476,7 +495,10 @@
                     }
 
                     // Otherwise create a new text object at pointer
-                    const fontFamily = activeToolOptions.family || activeToolOptions.fontFamily || 'Microsoft Yahei';
+                    const fontFamily =
+                        activeToolOptions.family ||
+                        activeToolOptions.fontFamily ||
+                        'Microsoft Yahei';
                     const fontSize = activeToolOptions.size || activeToolOptions.fontSize || 24;
                     const fill = activeToolOptions.fill || '#000000';
 
@@ -535,7 +557,9 @@
 
                     if (!itext) {
                         try {
-                            console.error('CanvasEditor: failed to create any text object (no available factory)');
+                            console.error(
+                                'CanvasEditor: failed to create any text object (no available factory)'
+                            );
                         } catch (e) {}
                         return;
                     }
@@ -838,7 +862,8 @@
         activeToolOptions = options || {};
         // provide sensible defaults for text tool
         if (tool === 'text') {
-            activeToolOptions.family = activeToolOptions.family || activeToolOptions.fontFamily || 'Microsoft Yahei';
+            activeToolOptions.family =
+                activeToolOptions.family || activeToolOptions.fontFamily || 'Microsoft Yahei';
             activeToolOptions.size = activeToolOptions.size || activeToolOptions.fontSize || 24;
             activeToolOptions.fill = activeToolOptions.fill || '#000000';
         }
@@ -1256,14 +1281,16 @@
                 try {
                     // text objects
                     if (['i-text', 'textbox', 'text'].includes(o.type)) {
-                        if (typeof options.family !== 'undefined') o.set('fontFamily', options.family);
+                        if (typeof options.family !== 'undefined')
+                            o.set('fontFamily', options.family);
                         if (typeof options.size !== 'undefined') o.set('fontSize', +options.size);
                         if (typeof options.fill !== 'undefined') o.set('fill', options.fill);
                         o.setCoords && o.setCoords();
                     } else {
                         // shapes and other objects
                         if (typeof options.stroke !== 'undefined') o.set('stroke', options.stroke);
-                        if (typeof options.strokeWidth !== 'undefined') o.set('strokeWidth', options.strokeWidth);
+                        if (typeof options.strokeWidth !== 'undefined')
+                            o.set('strokeWidth', options.strokeWidth);
                         if (typeof options.fill !== 'undefined') {
                             const newFill = options.fill
                                 ? colorWithOpacity(options.fill, options.fillOpacity)
