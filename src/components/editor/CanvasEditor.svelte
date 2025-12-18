@@ -1385,10 +1385,20 @@
             try {
                 if (bg) {
                     // flip horizontally around canvas center
-                    const c = bg.getCenterPoint?.() || new (fabric as any).Point((bg.left || 0) + (bg.width || 0) / 2, (bg.top || 0) + (bg.height || 0) / 2);
+                    const c =
+                        bg.getCenterPoint?.() ||
+                        new (fabric as any).Point(
+                            (bg.left || 0) + (bg.width || 0) / 2,
+                            (bg.top || 0) + (bg.height || 0) / 2
+                        );
                     const newCenterX = w - (c.x || 0);
                     bg.set('flipX', !bg.flipX);
-                    bg.setPositionByOrigin && bg.setPositionByOrigin(new (fabric as any).Point(newCenterX, c.y || 0), 'center', 'center');
+                    bg.setPositionByOrigin &&
+                        bg.setPositionByOrigin(
+                            new (fabric as any).Point(newCenterX, c.y || 0),
+                            'center',
+                            'center'
+                        );
                     bg.setCoords && bg.setCoords();
                 }
             } catch (e) {}
@@ -1401,7 +1411,12 @@
                         if (o._isCropRect) return;
                         const c = o.getCenterPoint();
                         const newCenterX = w - (c.x || 0);
-                        o.setPositionByOrigin && o.setPositionByOrigin(new (fabric as any).Point(newCenterX, c.y || 0), 'center', 'center');
+                        o.setPositionByOrigin &&
+                            o.setPositionByOrigin(
+                                new (fabric as any).Point(newCenterX, c.y || 0),
+                                'center',
+                                'center'
+                            );
                         o.set('flipX', !o.flipX);
                         o.setCoords && o.setCoords();
                     } catch (e) {}
@@ -1423,10 +1438,20 @@
             const bg = canvas.backgroundImage as any;
             try {
                 if (bg) {
-                    const c = bg.getCenterPoint?.() || new (fabric as any).Point((bg.left || 0) + (bg.width || 0) / 2, (bg.top || 0) + (bg.height || 0) / 2);
+                    const c =
+                        bg.getCenterPoint?.() ||
+                        new (fabric as any).Point(
+                            (bg.left || 0) + (bg.width || 0) / 2,
+                            (bg.top || 0) + (bg.height || 0) / 2
+                        );
                     const newCenterY = h - (c.y || 0);
                     bg.set('flipY', !bg.flipY);
-                    bg.setPositionByOrigin && bg.setPositionByOrigin(new (fabric as any).Point(c.x || 0, newCenterY), 'center', 'center');
+                    bg.setPositionByOrigin &&
+                        bg.setPositionByOrigin(
+                            new (fabric as any).Point(c.x || 0, newCenterY),
+                            'center',
+                            'center'
+                        );
                     bg.setCoords && bg.setCoords();
                 }
             } catch (e) {}
@@ -1439,7 +1464,12 @@
                         if (o._isCropRect) return;
                         const c = o.getCenterPoint();
                         const newCenterY = h - (c.y || 0);
-                        o.setPositionByOrigin && o.setPositionByOrigin(new (fabric as any).Point(c.x || 0, newCenterY), 'center', 'center');
+                        o.setPositionByOrigin &&
+                            o.setPositionByOrigin(
+                                new (fabric as any).Point(c.x || 0, newCenterY),
+                                'center',
+                                'center'
+                            );
                         o.set('flipY', !o.flipY);
                         o.setCoords && o.setCoords();
                     } catch (e) {}
@@ -1461,7 +1491,9 @@
             const H = canvas.getHeight();
 
             // Prepare list of objects to transform (exclude crop rect if present)
-            const objs = (canvas.getObjects ? canvas.getObjects() : []).filter((o: any) => !o._isCropRect);
+            const objs = (canvas.getObjects ? canvas.getObjects() : []).filter(
+                (o: any) => !o._isCropRect
+            );
 
             // Temporarily hide objects to export background-only image
             const prevVisible: boolean[] = [];
@@ -1543,7 +1575,12 @@
                         newCenterX = H - c.y;
                         newCenterY = c.x;
                     }
-                    o.setPositionByOrigin && o.setPositionByOrigin(new (fabric as any).Point(newCenterX, newCenterY), 'center', 'center');
+                    o.setPositionByOrigin &&
+                        o.setPositionByOrigin(
+                            new (fabric as any).Point(newCenterX, newCenterY),
+                            'center',
+                            'center'
+                        );
                     o.angle = ((o.angle || 0) + (clockwise ? 90 : -90)) % 360;
                     o.setCoords && o.setCoords();
                 } catch (e) {}

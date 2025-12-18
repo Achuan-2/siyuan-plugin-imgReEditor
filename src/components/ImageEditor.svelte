@@ -449,8 +449,10 @@
             try {
                 const dir = e.detail && e.detail.dir;
                 if (!canvasEditorRef) return;
-                if (dir === 'horizontal') canvasEditorRef.flipHorizontal && canvasEditorRef.flipHorizontal();
-                else if (dir === 'vertical') canvasEditorRef.flipVertical && canvasEditorRef.flipVertical();
+                if (dir === 'horizontal')
+                    canvasEditorRef.flipHorizontal && canvasEditorRef.flipHorizontal();
+                else if (dir === 'vertical')
+                    canvasEditorRef.flipVertical && canvasEditorRef.flipVertical();
             } catch (err) {
                 console.warn('flip handler failed', err);
             }
@@ -700,8 +702,10 @@
                                     if (a.dir === 'horizontal') canvasEditorRef.flipHorizontal();
                                     else if (a.dir === 'vertical') canvasEditorRef.flipVertical();
                                 } else if (a.action === 'rotate') {
-                                    if (a.dir === 'cw') canvasEditorRef.rotate90 && canvasEditorRef.rotate90(true);
-                                    else if (a.dir === 'ccw') canvasEditorRef.rotate90 && canvasEditorRef.rotate90(false);
+                                    if (a.dir === 'cw')
+                                        canvasEditorRef.rotate90 && canvasEditorRef.rotate90(true);
+                                    else if (a.dir === 'ccw')
+                                        canvasEditorRef.rotate90 && canvasEditorRef.rotate90(false);
                                 }
                                 // keep popup open so user can perform multiple transforms
                             } catch (err) {
