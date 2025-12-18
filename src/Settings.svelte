@@ -3,7 +3,7 @@
     import SettingPanel from '@/libs/components/setting-panel.svelte';
     import { t } from './utils/i18n';
     import { getDefaultSettings } from './defaultSettings';
-    import { pushMsg } from './api';
+    import { pushMsg, pushErrMsg, readDir, removeFile } from './api';
     import { confirm } from 'siyuan';
     export let plugin;
 
@@ -29,6 +29,61 @@
                     options: {
                         embed: t('settings.storageMode.options.embed'),
                         backup: t('settings.storageMode.options.backup'),
+                    },
+                },
+                {
+                    key: 'clearBackup',
+                    value: '',
+                    type: 'button',
+                    title: '清空 backup 文件夹',
+                    description:
+                        '清空 data/storage/petal/siyuan-plugin-imgReEditor/backup 下的所有文件（不可恢复）',
+                    button: {
+                        label: '清空 backup',
+                        callback: async () => {
+                            confirm(
+                                '清空 backup 文件夹',
+                                '确认要清空 backup 文件夹吗？此操作不可恢复。',
+                                async () => {
+                                    try {
+                                        const dir =
+                                            'data/storage/petal/siyuan-plugin-imgReEditor/backup';
+                                        const entries: any = await readDir(dir);
+                                        if (
+                                            !entries ||
+                                            !Array.isArray(entries) ||
+                                            entries.length === 0
+                                        ) {
+                                            await pushMsg('backup 文件夹已为空');
+                                            return;
+                                        }
+                                        for (const e of entries) {
+                                            try {
+                                                const filePath =
+                                                    e.path || (e.name ? `${dir}/${e.name}` : null);
+                                                if (!filePath) continue;
+                                                // skip directories if indicated
+                                                if (e.isDir || e.isdir || e.type === 'dir')
+                                                    continue;
+                                                await removeFile(filePath);
+                                            } catch (err) {
+                                                console.warn('remove file failed', err);
+                                            }
+                                        }
+                                        await pushMsg('已清空 backup 文件夹');
+                                    } catch (err) {
+                                        console.error(err);
+                                        await pushErrMsg(
+                                            '清空 backup 失败: ' +
+                                                (err && err.message ? err.message : err)
+                                        );
+                                    }
+                                },
+                                () => {
+                                    console.log('user cancelled clear backup');
+                                }
+                            );
+                        },
                     },
                 },
             ],
