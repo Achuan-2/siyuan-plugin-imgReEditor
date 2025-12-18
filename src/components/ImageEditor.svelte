@@ -403,6 +403,7 @@
                 'text',
                 'transform',
                 'number-marker',
+                'crop',
             ].includes(t);
             showToolPopup = hasSubmenu;
             if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
@@ -427,6 +428,8 @@
                                 canvasEditorRef.enterCropMode();
                             }
                             pendingCropRequested = false;
+                            // initialize tool settings for crop submenu
+                            toolSettings = { ...(toolSettings || {}), cropRatioLabel: 'none' };
                         }
                     } catch (err) {
                         console.warn('enterCropMode failed', err);
@@ -708,10 +711,24 @@
                                         canvasEditorRef.rotate90 && canvasEditorRef.rotate90(true);
                                     else if (a.dir === 'ccw')
                                         canvasEditorRef.rotate90 && canvasEditorRef.rotate90(false);
+                                } else if (a.action === 'setCropRatio') {
+                                    const label = a.label || 'none';
+                                    try {
+                                        if (canvasEditorRef && typeof canvasEditorRef.setCropRatio === 'function') {
+                                            canvasEditorRef.setCropRatio(label);
+                                        }
+                                    } catch (err) {}
+                                    toolSettings = { ...(toolSettings || {}), cropRatioLabel: label };
+                                } else if (a.action === 'applyCrop') {
+                                    try {
+                                        if (canvasEditorRef && typeof canvasEditorRef.applyPendingCrop === 'function') {
+                                            canvasEditorRef.applyPendingCrop();
+                                        }
+                                    } catch (err) {}
                                 }
                                 // keep popup open so user can perform multiple transforms
                             } catch (err) {
-                                console.warn('transform action handler failed', err);
+                                console.warn('action handler failed', err);
                             }
                         }}
                     />

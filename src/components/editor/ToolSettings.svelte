@@ -323,6 +323,23 @@
                 />
             </div>
         {/if}
+    {:else if tool === 'crop'}
+        <div class="row">
+            <label>裁剪</label>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class:active={settings.cropRatioLabel==='none'} on:click={() => dispatch('action', { action: 'setCropRatio', label: 'none' })}>无比例</button>
+                    <button class:active={settings.cropRatioLabel==='1:1'} on:click={() => dispatch('action', { action: 'setCropRatio', label: '1:1' })}>1:1</button>
+                    <button class:active={settings.cropRatioLabel==='3:4'} on:click={() => dispatch('action', { action: 'setCropRatio', label: '3:4' })}>3:4</button>
+                    <button class:active={settings.cropRatioLabel==='4:3'} on:click={() => dispatch('action', { action: 'setCropRatio', label: '4:3' })}>4:3</button>
+                    <button class:active={settings.cropRatioLabel==='9:16'} on:click={() => dispatch('action', { action: 'setCropRatio', label: '9:16' })}>9:16</button>
+                    <button class:active={settings.cropRatioLabel==='16:9'} on:click={() => dispatch('action', { action: 'setCropRatio', label: '16:9' })}>16:9</button>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button on:click={() => dispatch('action', { action: 'applyCrop' })}>应用</button>
+                </div>
+            </div>
+        </div>
     {:else if tool === 'transform'}
         <div class="row">
             <div class="label">翻转</div>

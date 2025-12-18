@@ -1034,6 +1034,31 @@
                 }
             }
         });
+        // Enforce fixed crop ratio when resizing crop rect via controls
+        canvas.on('object:scaling', (opt: any) => {
+            try {
+                const obj = opt.target;
+                if (!obj) return;
+                if (!(obj as any)._isCropRect) return;
+                if (!cropRatio) return;
+
+                const ratio = cropRatio.h / cropRatio.w; // height / width
+                // current width/height in canvas pixels after scaling
+                const curWidth = (obj.width || 0) * (obj.scaleX || 1);
+                const desiredHeight = Math.abs(curWidth * ratio);
+                const baseHeight = obj.height || 1;
+                const newScaleY = desiredHeight / baseHeight;
+
+                // Apply scaleY to enforce ratio
+                obj.scaleY = newScaleY;
+
+                // Update coords and re-render
+                obj.setCoords && obj.setCoords();
+                canvas.requestRenderAll();
+            } catch (e) {
+                // ignore
+            }
+        });
         canvas.on('mouse:move', opt => {
             const pointer = canvas.getPointer(opt.e);
 
@@ -1297,6 +1322,9 @@
     let _cropHandlers: any = null;
     let _cropKeyHandler: ((e: KeyboardEvent) => void) | null = null;
     let cropRestoreData: any = null; // To track if we need to undo a restore on cancel
+    // crop ratio state: null => free, otherwise {w:number,h:number}
+    let cropRatio: { w: number; h: number } | null = null;
+    let cropRatioLabel: string = 'none';
 
     // Crop helpers (exported)
     export function enterCropMode(
@@ -1428,8 +1456,16 @@
         const onMouseMove = (opt: any) => {
             if (!isDrawing || !cropRect) return;
             const pointer = canvas.getPointer(opt.e);
-            const width = pointer.x - startX;
-            const height = pointer.y - startY;
+            let width = pointer.x - startX;
+            let height = pointer.y - startY;
+
+            // If a fixed ratio is set, constrain height based on width and ratio
+            if (cropRatio) {
+                const ratio = cropRatio.h / cropRatio.w; // height / width
+                const signH = Math.sign(height) || 1;
+                height = Math.abs(width) * ratio * signH;
+            }
+
             if (width < 0) {
                 cropRect.set({ left: pointer.x, width: Math.abs(width) });
             } else {
@@ -1645,6 +1681,47 @@
             }
         };
         document.addEventListener('keydown', _cropKeyHandler as any);
+    }
+
+    // Set crop ratio helper (label like 'none' or '1:1' or '3:4')
+    export function setCropRatio(label: string) {
+        cropRatioLabel = label;
+        if (!label || label === 'none') {
+            cropRatio = null;
+            return;
+        }
+        const parts = label.split(':');
+        if (parts.length === 2) {
+            const w = parseFloat(parts[0]) || 1;
+            const h = parseFloat(parts[1]) || 1;
+            cropRatio = { w, h };
+        } else {
+            cropRatio = null;
+        }
+
+        // If there's an existing cropRect, adjust it to the new ratio keeping left/top
+        try {
+            if (cropRect && cropRatio && canvas) {
+                // compute absolute width (considering scale)
+                const absW = (cropRect.width || 0) * (cropRect.scaleX || 1);
+                const desiredH = Math.abs(absW * (cropRatio.h / cropRatio.w));
+
+                // Preserve left/top origin: reset scales and set explicit width/height
+                const left = cropRect.left || 0;
+                const top = cropRect.top || 0;
+
+                cropRect.set({
+                    left,
+                    top,
+                    width: Math.max(1, absW),
+                    height: Math.max(1, desiredH),
+                    scaleX: 1,
+                    scaleY: 1,
+                });
+                cropRect.setCoords && cropRect.setCoords();
+                canvas.requestRenderAll();
+            }
+        } catch (e) {}
     }
 
     export function exitCropMode() {
@@ -2482,6 +2559,8 @@
 <div class="canvas-editor">
     <canvas bind:this={container}></canvas>
 
+    
+
     <div class="zoom-controls">
         <div class="zoom-info">{zoomDisplay}</div>
         <button on:click={() => handleZoom(1)} title="放大">+</button>
@@ -2533,6 +2612,7 @@
         border: 1px solid var(--b3-theme-surface-lighter);
         user-select: none;
     }
+    
     .zoom-info {
         font-size: 10px;
         text-align: center;
