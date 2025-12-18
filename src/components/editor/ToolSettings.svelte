@@ -15,7 +15,6 @@
     function getChecked(e: Event) {
         return (e.target as HTMLInputElement).checked;
     }
-    let localArrowHead = settings.arrowHead || 'right';
 
     // font list state
     let fonts: string[] = [];
@@ -154,8 +153,8 @@
             <label for="arrow-head">箭头</label>
             <select
                 id="arrow-head"
-                bind:value={localArrowHead}
-                on:change={() => emitChange({ arrowHead: localArrowHead })}
+                value={settings.arrowHead || 'right'}
+                on:change={e => emitChange({ arrowHead: getValue(e) })}
             >
                 <option value="none">无</option>
                 <option value="left">左边</option>
