@@ -401,7 +401,16 @@
             }
             schedulePushWithType('modified');
         });
-        canvas.on('object:removed', () => schedulePushWithType('removed'));
+        canvas.on('object:removed', (opt: any) => {
+            schedulePushWithType('removed');
+            try {
+                const target = opt && opt.target;
+                if (target && (target as any)._isCropRect) {
+                    // If the crop rect was deleted, exit crop mode to clean up handlers/state
+                    exitCropMode();
+                }
+            } catch (e) {}
+        });
 
         // Handle path creation (for brush)
         canvas.on('path:created', (opt: any) => {
@@ -1752,26 +1761,8 @@
             }
         } catch (e) {}
 
-        if (cropRestoreData) {
-            try {
-                const { left, top, finalWidth, finalHeight } = cropRestoreData;
-                canvas.getObjects().forEach((obj: any) => {
-                    obj.left = (obj.left || 0) - left;
-                    obj.top = (obj.top || 0) - top;
-                    obj.setCoords();
-                });
-                if (canvas.backgroundImage) {
-                    const bg = canvas.backgroundImage;
-                    bg.left = (bg.left || 0) - left;
-                    bg.top = (bg.top || 0) - top;
-                    bg.setCoords();
-                }
-                canvas.setWidth(finalWidth);
-                canvas.setHeight(finalHeight);
-            } catch (e) {}
-        }
         cropRestoreData = null;
-
+        fitImageToViewport();
         cropMode = false;
         try {
             document.removeEventListener('keydown', _cropKeyHandler as any);
