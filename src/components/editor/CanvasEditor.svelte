@@ -686,15 +686,6 @@
             // Text tool: create or select an editable text object
             if (activeTool === 'text') {
                 try {
-                    // debug info to trace clicks
-                    try {
-                        console.debug('CanvasEditor: mouse down (text tool)', {
-                            activeTool,
-                            activeToolOptions,
-                            pointer,
-                        });
-                    } catch (e) {}
-
                     // if clicked on an existing text object, select and enter edit mode instead of creating a new one
                     let hit = opt.target;
                     try {
