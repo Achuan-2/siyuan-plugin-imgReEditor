@@ -54,6 +54,8 @@
         'count', // for NumberMarker
         'textColor', // for NumberMarker
         'radius', // for NumberMarker
+        '_originalSrc',
+        '_cropOffset',
     ];
     // Flag to prevent recursive history updates during undo/redo
     let isHistoryProcessing = false;
@@ -1331,10 +1333,12 @@
     let cropRatioLabel: string = 'none';
 
     // Crop helpers (exported)
-    export function enterCropMode(
-        restoreCrop?: { left: number; top: number; width: number; height: number },
-        originalSize?: { width: number; height: number }
-    ) {
+    export function enterCropMode(restoreCrop?: {
+        left: number;
+        top: number;
+        width: number;
+        height: number;
+    }) {
         if (!canvas) return;
         if (cropMode && cropRect) return;
         cropMode = true;
@@ -1358,63 +1362,75 @@
         });
 
         // If we are re-cropping, restore the full canvas view
-        if (restoreCrop && originalSize) {
+        if (restoreCrop && (canvas.backgroundImage as any)?._originalSrc) {
             try {
-                const { left, top } = restoreCrop;
+                const bg = canvas.backgroundImage as any;
+                const originalSrc = bg._originalSrc;
+                const offset = bg._cropOffset || { x: 0, y: 0 };
 
-                // Clear clipPath to reveal full image
-                const bg = canvas.backgroundImage;
-                if (bg) {
-                    bg.set({ clipPath: null });
-                    bg.dirty = true;
-                }
+                // 1. Reload the original image to reveal full context
+                const imgEl = new Image();
+                imgEl.src = originalSrc;
+                imgEl.onload = () => {
+                    if (!canvas) return;
+                    const origImg = new FabricImage(imgEl, {
+                        selectable: false,
+                        evented: false,
+                        left: 0,
+                        top: 0,
+                    });
 
-                // Shift all objects back
-                canvas.getObjects().forEach((obj: any) => {
-                    obj.left = (obj.left || 0) + left;
-                    obj.top = (obj.top || 0) + top;
-                    obj.setCoords();
-                });
-                if (canvas.backgroundImage) {
-                    const bg = canvas.backgroundImage;
-                    bg.left = (bg.left || 0) + left;
-                    bg.top = (bg.top || 0) + top;
-                    bg.setCoords();
-                }
+                    // Keep the metadata
+                    (origImg as any)._originalSrc = originalSrc;
+                    (origImg as any)._cropOffset = { x: 0, y: 0 }; // Reset offset while viewing original
 
-                // Store restore data so we can revert if cancelled
+                    // 2. Shift all objects BACK to their original positions
+                    canvas.getObjects().forEach((obj: any) => {
+                        if (obj._isCropRect) return;
+                        obj.left = (obj.left || 0) + offset.x;
+                        obj.top = (obj.top || 0) + offset.y;
+                        obj.setCoords();
+                    });
+
+                    // 3. Replace background
+                    canvas.remove(canvas.backgroundImage as any);
+                    canvas.backgroundImage = origImg;
+
+                    // 4. Create and show the crop rectangle at its previous position
+                    cropRect = new CropRect({
+                        left: offset.x,
+                        top: offset.y,
+                        width: restoreCrop.width,
+                        height: restoreCrop.height,
+                        fill: 'rgba(0,0,0,0.25)',
+                        stroke: '#00ff00',
+                        strokeWidth: 2,
+                        strokeDashArray: [5, 5],
+                        selectable: true,
+                        evented: true,
+                        lockRotation: true,
+                        hasControls: true,
+                        hasBorders: true,
+                        transparentCorners: false,
+                        cornerColor: 'white',
+                        cornerStrokeColor: 'black',
+                        cornerSize: 10,
+                    });
+                    (cropRect as any)._isCropRect = true;
+                    canvas.add(cropRect);
+                    canvas.setActiveObject(cropRect);
+
+                    fitImageToViewport();
+                    canvas.requestRenderAll();
+                };
+
+                // Store restore data
                 cropRestoreData = {
-                    left,
-                    top,
+                    left: offset.x,
+                    top: offset.y,
                     finalWidth: restoreCrop.width,
                     finalHeight: restoreCrop.height,
                 };
-
-                // Create initial crop rect
-                cropRect = new CropRect({
-                    left: left,
-                    top: top,
-                    width: restoreCrop.width,
-                    height: restoreCrop.height,
-                    fill: 'rgba(0,0,0,0.25)',
-                    stroke: '#00ff00',
-                    strokeWidth: 2,
-                    strokeDashArray: [5, 5],
-                    selectable: true, // Allow selecting to adjust
-                    evented: true,
-                    lockRotation: true,
-                    hasControls: true,
-                    hasBorders: true,
-                    transparentCorners: false,
-                    cornerColor: 'white',
-                    cornerStrokeColor: 'black',
-                    cornerSize: 10,
-                });
-                (cropRect as any)._isCropRect = true;
-                canvas.add(cropRect);
-                canvas.setActiveObject(cropRect);
-                canvas.requestRenderAll();
-                fitImageToViewport(); // Fit restored original view to viewport
             } catch (e) {
                 console.warn('Failed to restore pre-crop view', e);
             }
@@ -1491,106 +1507,83 @@
         };
 
         const applyCrop = async () => {
-            if (!cropRect || !canvas.backgroundImage) {
-                if (cropRect) canvas.remove(cropRect);
+            if (!cropRect || !canvas || !canvas.backgroundImage) {
+                if (cropRect && canvas) canvas.remove(cropRect);
                 return;
             }
 
             try {
-                // Ensure positive dimensions
-                const rWidth = (cropRect.width || 0) * (cropRect.scaleX || 1);
-                const rHeight = (cropRect.height || 0) * (cropRect.scaleY || 1);
-                const rLeft = cropRect.left || 0;
-                const rTop = cropRect.top || 0;
+                // 1. Get positions in canvas coordinates
+                // We use getBoundingRect to handle any scale/rotation of the crop rect itself
+                const boundingRect = cropRect.getBoundingRect();
+                const { left, top, width, height } = boundingRect;
 
                 const minSize = 6;
-                if (rWidth < minSize || rHeight < minSize) {
+                if (width < minSize || height < minSize) {
                     canvas.remove(cropRect);
                     cropRect = null;
                     return;
                 }
 
-                // Remove crop rect from UI
-                canvas.remove(cropRect);
+                const bg = canvas.backgroundImage as FabricImage;
 
-                const bg = canvas.backgroundImage;
+                // 2. Create a temporary canvas to bake the cropped image
+                // This bakes the current transformation (flip, rotate, etc.) into the result
+                const cropCanvas = document.createElement('canvas');
+                cropCanvas.width = width;
+                cropCanvas.height = height;
+                const ctx = cropCanvas.getContext('2d');
+                if (!ctx) return;
 
-                // Calculate clipRect position relative to the background image's center
-                // Fabric's clipPath is relative to the object's center
+                // Shift context so the crop area is at (0,0) of the temp canvas
+                ctx.translate(-left, -top);
 
-                // 1. Get absolute coordinates of crop rect
-                const absoluteLeft = rLeft;
-                const absoluteTop = rTop;
+                // Temporarily clear any live clipPath or offsets if we are adjusting
+                const oldClip = bg.clipPath;
 
-                // 2. Adjust for background image's position
-                // Note: This simple calculation assumes 0 rotation and specific origin.
-                // For robust implementation with transforms, we might need invertTransform.
-                // Assuming bg.originX/Y is 'left'/'top' or 'center'/'center'
+                // Clear clipPath for the bake so we get the full visual content
+                // (if we were already clipped, we want to re-clip from the original source)
+                bg.set({ clipPath: null });
+                bg.render(ctx);
+                bg.set({ clipPath: oldClip });
 
-                // Let's assume standard image placement (left/top at 0,0 or similar) for now,
-                // but better to rely on what Fabric expects for clipPath.
+                const dataURL = cropCanvas.toDataURL('image/png');
 
-                // Important: clipPath on an object is positioned relative to that object's center.
-                // We need to translate the absolute crop coordinates to object-relative coordinates.
+                // 3. Store metadata for future re-cropping before we replace the image
+                const originalSrc = (bg as any)._originalSrc || dataURL; // Initial load sets this
+                const prevOffset = (bg as any)._cropOffset || { x: 0, y: 0 };
+                const newOffset = {
+                    x: prevOffset.x + left,
+                    y: prevOffset.y + top,
+                };
 
-                const bgCenter = bg.getCenterPoint();
-                const bgLeft = bgCenter.x - (bg.width * bg.scaleX) / 2;
-                const bgTop = bgCenter.y - (bg.height * bg.scaleY) / 2;
-
-                const clipLeft = absoluteLeft - bgCenter.x + rWidth / 2;
-                const clipTop = absoluteTop - bgCenter.y + rHeight / 2;
-
-                // Create clip path (Rect)
-                const clipPath = new Rect({
-                    left: clipLeft / bg.scaleX, // Scale back to unscaled image coordinates
-                    top: clipTop / bg.scaleY,
-                    width: rWidth / bg.scaleX,
-                    height: rHeight / bg.scaleY,
-                    originX: 'center',
-                    originY: 'center',
+                // 4. Create the new baked image
+                const newImg = new FabricImage(cropCanvas, {
+                    left: 0,
+                    top: 0,
+                    selectable: false,
+                    evented: false,
                 });
 
-                // Apply clipPath
-                bg.set({
-                    clipPath: clipPath,
-                });
+                // Transfer metadata
+                (newImg as any)._originalSrc = originalSrc;
+                (newImg as any)._cropOffset = newOffset;
 
-                // Now we need to resize the canvas to match the cropped area size
-                // And shift the background image (and all other objects?) so the cropped area is at (0,0) of canvas
+                // 5. Shift all other objects to the new local coordinate system
+                const shiftX = -left;
+                const shiftY = -top;
 
-                // Move everything so crop-top-left becomes 0,0
-                const shiftX = -rLeft;
-                const shiftY = -rTop;
-
-                // Shift Image
-                bg.left += shiftX;
-                bg.top += shiftY;
-                bg.setCoords();
-
-                // Shift all other objects
                 canvas.getObjects().forEach((obj: any) => {
-                    if (obj === bg) return;
-                    if (obj._isCropRect) return;
-                    obj.left += shiftX;
-                    obj.top += shiftY;
+                    if (obj === bg || obj === cropRect || obj._isCropRect) return;
+                    obj.left = (obj.left || 0) + shiftX;
+                    obj.top = (obj.top || 0) + shiftY;
                     obj.setCoords();
                 });
 
-                canvas.requestRenderAll();
-
-                // Record crop data
-                // For restoration, we'll need to know the shift we applied to everything
-                // Or we keep track of the cumulative crop?
-                // The current architecture expects 'cropData' to help restore.
-                // restore logic currently expects 'restoreCrop' (prev crop) + 'originalSize'.
-
-                const cropData = { left: rLeft, top: rTop, width: rWidth, height: rHeight };
-
-                try {
-                    dispatch('cropApplied', { cropData });
-                } catch (e) {}
-
-                fitImageToViewport();
+                // 6. Cleanup and Switch
+                canvas.remove(bg);
+                canvas.remove(cropRect);
+                canvas.backgroundImage = newImg;
 
                 // Cleanup listeners
                 canvas.off('mouse:down', onMouseDown);
@@ -1602,20 +1595,24 @@
                 }
                 _cropHandlers = null;
 
-                // Clear active object (so crop rect is not selected)
                 canvas.discardActiveObject();
-
-                // Switch to select tool
                 setTool(null);
 
                 cropRestoreData = null;
                 cropMode = false;
                 cropRect = null;
 
-                // restore selectability
                 canvas.getObjects().forEach((obj: any) => {
                     obj.selectable = true;
                     obj.evented = true;
+                });
+
+                canvas.requestRenderAll();
+                setTimeout(() => fitImageToViewport(), 50); // Small delay to ensure render
+
+                // Record final crop dimensions to parent
+                dispatch('cropApplied', {
+                    cropData: { left: newOffset.x, top: newOffset.y, width, height },
                 });
 
                 schedulePushWithType('modified');
@@ -1820,16 +1817,16 @@
 
                         const fImg = new FabricImage(imgEl, { selectable: false });
                         fImg.set({ left: 0, top: 0, selectable: false });
+
+                        // Initialize metadata for cropping
+                        (fImg as any)._originalSrc = url;
+                        (fImg as any)._cropOffset = { x: 0, y: 0 };
+
                         (canvas as any).backgroundImage = fImg;
 
                         canvas!.requestRenderAll();
 
-                        // Don't fit image to viewport here - it will be done after fromJSON
-                        // if there's saved data, or can be triggered manually with the Fit button
-                        // fitImageToViewport();
-
                         dispatch('loaded', { width: imgEl.width, height: imgEl.height, name });
-                        // Mark image as loaded to prevent duplicate loads from reactive statement
                         imageLoaded = true;
                         // after background image is set, push initial history snapshot
                         try {
@@ -1910,30 +1907,19 @@
 
         // Check if canvas dimensions match workspace (Uncropped / Artboard mode)
         // or if we have a custom size (Cropped / True Resolution mode)
-        // Use a small tolerance for pixel differences
         const isCustomSize = Math.abs(w - cw) > 2 || Math.abs(h - ch) > 2;
 
         if (isCustomSize) {
-            // Custom Size Mode (e.g. Cropped):
-            // Do NOT resize backstore (logical pixels). Use CSS scaling to fit viewport.
-
-            // 1. Reset viewport transform to identity (ensure 1:1 logical mapping)
+            // Custom Size Mode: Use CSS scaling
             canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-
-            // 2. Calculate CSS scale to fit
-            const scale = Math.min(cw / w, ch / h, 1) * 0.98; // 98% fit to leave tiny margin
-
+            const scale = Math.min(cw / w, ch / h, 1) * 0.98;
             const finalCssW = w * scale;
             const finalCssH = h * scale;
-
-            // 3. Apply CSS dimensions
             canvas.setDimensions({ width: finalCssW, height: finalCssH }, { cssOnly: true });
 
-            // 4. Center the canvas container
             const containerEl = canvas.getElement().parentNode as HTMLElement;
             if (containerEl && containerEl.classList.contains('canvas-container')) {
-                containerEl.style.margin = '0 auto'; // Horizontal center
-                // Vertical center
+                containerEl.style.margin = '0 auto';
                 if (finalCssH < ch) {
                     containerEl.style.marginTop = `${(ch - finalCssH) / 2}px`;
                 } else {
@@ -1943,16 +1929,10 @@
             updateZoomDisplay();
             canvas.requestRenderAll();
         } else {
-            // Uncropped / Artboard Mode:
-            // Canvas fills the workspace. We zoom the content (backgroundImage) to fit.
-
-            // Ensure logical size matches workspace
+            // Artboard Mode: Zoom the content to fit
             canvas.setDimensions({ width: cw, height: ch });
-
-            // Ensure CSS size matches workspace (reset any previous CSS scaling)
             canvas.setDimensions({ width: cw, height: ch }, { cssOnly: true });
 
-            // Reset margins
             const containerEl = canvas.getElement().parentNode as HTMLElement;
             if (containerEl && containerEl.classList.contains('canvas-container')) {
                 containerEl.style.margin = '0';
@@ -1961,38 +1941,15 @@
 
             const bg = canvas.backgroundImage;
             if (bg) {
-                let imgW, imgH, imgCenterX, imgCenterY;
-
-                if (bg.clipPath && bg.clipPath.type === 'rect') {
-                    // For cropped images, always use clipPath dimensions
-                    // This works correctly even when the image is flipped or rotated
-                    const cp = bg.clipPath;
-                    imgW = cp.width * (bg.scaleX || 1);
-                    imgH = cp.height * (bg.scaleY || 1);
-
-                    // When flipped or rotated, we need to get the actual center from bounding rect
-                    const hasTransforms =
-                        bg.flipX || bg.flipY || (bg.angle && bg.angle % 360 !== 0);
-                    if (hasTransforms) {
-                        const boundingRect = bg.getBoundingRect();
-                        imgCenterX = boundingRect.left + boundingRect.width / 2;
-                        imgCenterY = boundingRect.top + boundingRect.height / 2;
-                    } else {
-                        imgCenterX = imgW / 2;
-                        imgCenterY = imgH / 2;
-                    }
-                } else {
-                    // No crop - use getBoundingRect for uncropped images (handles flip/rotate)
-                    const boundingRect = bg.getBoundingRect();
-                    imgW = boundingRect.width;
-                    imgH = boundingRect.height;
-                    imgCenterX = boundingRect.left + imgW / 2;
-                    imgCenterY = boundingRect.top + imgH / 2;
-                }
+                // Get the actual bounding box of the background image (handles flip and rotate)
+                const boundingRect = bg.getBoundingRect();
+                const imgW = boundingRect.width;
+                const imgH = boundingRect.height;
+                const imgCenterX = boundingRect.left + imgW / 2;
+                const imgCenterY = boundingRect.top + imgH / 2;
 
                 if (imgW > 0 && imgH > 0) {
-                    // Calculate fit scale and center offset for the CONTENT
-                    const scale = Math.min(cw / imgW, ch / imgH, 1);
+                    const scale = Math.min(cw / imgW, ch / imgH, 1) * 0.98;
                     const tx = cw / 2 - imgCenterX * scale;
                     const ty = ch / 2 - imgCenterY * scale;
 
@@ -2323,51 +2280,14 @@
 
         const bg = canvas.backgroundImage;
 
-        // Check if cropped
-        if (bg.clipPath && bg.clipPath.type === 'rect') {
-            // We need to export strictly the cropped area.
-            // If we loaded from JSON, the canvas buffer might be larger than the crop (viewport size),
-            // while the content is shifted/clipped.
-            // We need to resize the canvas to the strict crop dimensions before export.
+        // Since we now use destructive cropping (baking),
+        // the backgroundImage on the canvas always represents the exact visible area.
+        // The complicated clipPath logic is no longer needed.
 
-            const cp = bg.clipPath as any; // Fabric Rect
-            // Calculate visual dimensions of the clip (crop size in canvas pixels)
-            // clipPath dimensions are relative to object.
-            const cropWidth = cp.width * (cp.scaleX || 1) * (bg.scaleX || 1);
-            const cropHeight = cp.height * (cp.scaleY || 1) * (bg.scaleY || 1);
+        // Standard export logic follows:
 
-            const currentVPT = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
-            const currentW = canvas.getWidth();
-            const currentH = canvas.getHeight();
-
-            try {
-                // 1. Resize canvas to precise crop size
-                canvas.setDimensions({ width: cropWidth, height: cropHeight });
-
-                // 2. Reset zoom to 1:1.
-                // Since objects were shifted in applyCrop so (0,0) is top-left of crop, this should align perfectly.
-                canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-                canvas.renderAll();
-
-                // 3. Calculate multiplier for original resolution export
-
-                return canvas.toDataURL({
-                    ...options,
-                    multiplier: 1,
-                    enableRetinaScaling: false,
-                });
-            } finally {
-                // Restore state
-                canvas.setDimensions({ width: currentW, height: currentH });
-                if (currentVPT) canvas.setViewportTransform(currentVPT);
-                canvas.renderAll();
-            }
-        }
-
-        // Original logic for uncropped images (full artboard export)
-
-        // Save current state
-        const currentVPT = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
+        // 1. Save current state
+        const currentVPT = canvas.viewportTransform ? ([...canvas.viewportTransform] as any) : null;
         const currentW = canvas.getWidth();
         const currentH = canvas.getHeight();
 
@@ -2401,17 +2321,24 @@
                 enableRetinaScaling: false,
             });
         } finally {
-            // Restore workspace state
+            // Restore state
             canvas.setDimensions({ width: currentW, height: currentH });
-            if (currentVPT) canvas.setViewportTransform(currentVPT);
+            if (currentVPT) (canvas as any).setViewportTransform(currentVPT);
             canvas.renderAll();
         }
     }
 
     export function toJSON() {
         if (!canvas) return null;
-        // Include selectable and evented properties so they can be restored
-        return (canvas as any).toJSON(['selectable', 'evented']);
+        // Standard toJSON includes HISTORY_PROPS for top-level objects.
+        // We also want to ensure custom metadata on backgroundImage is included.
+        const json = (canvas as any).toJSON(HISTORY_PROPS);
+        if (canvas.backgroundImage && json.backgroundImage) {
+            const bg = canvas.backgroundImage as any;
+            json.backgroundImage._originalSrc = bg._originalSrc;
+            json.backgroundImage._cropOffset = bg._cropOffset;
+        }
+        return json;
     }
 
     export async function fromJSON(json: any) {
@@ -2423,14 +2350,19 @@
         try {
             await canvas.loadFromJSON(json);
 
+            // Manually restore metadata to the background image
+            if (canvas.backgroundImage && json.backgroundImage) {
+                const bg = canvas.backgroundImage as any;
+                bg._originalSrc = json.backgroundImage._originalSrc;
+                bg._cropOffset = json.backgroundImage._cropOffset;
+            }
+
             // After loading, ensure all objects (except background) are selectable and evented
             restoreObjectSelectionStates();
 
             canvas!.renderAll();
 
             // Automatically fit to viewport after loading JSON
-            // We wait for the next tick to ensure background image bounding rect is calculated correctly
-            // Increased timeout to 100ms to ensure proper calculation for flipped/rotated images
             setTimeout(() => {
                 fitImageToViewport();
             }, 100);
@@ -2438,8 +2370,7 @@
             // Reset history to treat this state as initial
             pushInitialHistory();
         } catch (e) {
-            console.error('fromJSON failed:', e);
-            // Even if loading fails, try to fit what we have
+            console.error('CanvasEditor: fromJSON failed:', e);
             setTimeout(() => {
                 fitImageToViewport();
             }, 100);
