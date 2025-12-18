@@ -1740,7 +1740,6 @@
         // so it can update the toolbar selection state.
         dispatch('cropCancel');
 
-
         // remove handlers
         if (_cropHandlers) {
             try {
@@ -1779,7 +1778,7 @@
         try {
             setTool(null);
         } catch (e) {}
-        dispatch('cropApplied', null );
+        dispatch('cropApplied', null);
         canvas.getObjects().forEach((obj: any) => {
             obj.selectable = true;
             obj.evented = true;
