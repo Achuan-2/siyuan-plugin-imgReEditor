@@ -395,7 +395,9 @@
             const t = e.detail.tool;
             activeTool = t;
             // show popup for tools that have a submenu
-            const hasSubmenu = ['shape', 'arrow', 'brush', 'text', 'transform'].includes(t);
+            const hasSubmenu = ['shape', 'arrow', 'brush', 'eraser', 'text', 'transform'].includes(
+                t
+            );
             showToolPopup = hasSubmenu;
             if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
                 if (t === 'shape') {
@@ -623,7 +625,9 @@
                               ? '箭头设置'
                               : activeTool === 'brush'
                                 ? '画笔设置'
-                                : activeTool}
+                                : activeTool === 'eraser'
+                                  ? '橡皮设置'
+                                  : activeTool}
                     </div>
                     <button
                         class="close"

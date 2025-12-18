@@ -13,7 +13,10 @@
         Textbox,
         FabricText as Text,
         Point,
+        PencilBrush,
+        FabricObject,
     } from 'fabric';
+    import { EraserBrush } from '@erase2d/fabric';
 
     export let dataURL: string | null = null;
     export let fileName: string | undefined;
@@ -277,6 +280,7 @@
             preserveObjectStacking: true,
             renderOnAddRemove: true,
         });
+        canvas.freeDrawingBrush = new PencilBrush(canvas);
 
         // basic wheel zoom
         canvas.on('mouse:wheel', (opt: any) => {
@@ -300,6 +304,14 @@
         canvas.on('object:added', () => schedulePushWithType('added'));
         canvas.on('object:modified', () => schedulePushWithType('modified'));
         canvas.on('object:removed', () => schedulePushWithType('removed'));
+
+        // Handle path creation (for brush)
+        canvas.on('path:created', (opt: any) => {
+            if (activeTool === 'brush' && opt.path) {
+                // Set erasable property so eraser can remove brush strokes
+                opt.path.set('erasable', true);
+            }
+        });
 
         // key handlers for panning (space)
         onDocKeyDown = (e: KeyboardEvent) => {
@@ -419,6 +431,7 @@
                         evented: false,
                         hasBorders: false,
                         hasControls: false,
+                        erasable: true,
                     });
                 } else {
                     // use ellipse for circle-like drawing
@@ -439,6 +452,7 @@
                         evented: false,
                         hasBorders: false,
                         hasControls: false,
+                        erasable: true,
                     });
                 }
                 if (tempShape) {
@@ -471,6 +485,7 @@
                     strokeWidth: activeToolOptions.strokeWidth || 4,
                     selectable: false,
                     evented: false,
+                    erasable: true,
                 });
                 // Determine arrow heads presence
                 const headLeftNeeded =
@@ -492,6 +507,7 @@
                           fill: activeToolOptions.stroke || '#ff0000',
                           selectable: false,
                           evented: false,
+                          erasable: true,
                       })
                     : undefined;
                 const headLeft = headLeftNeeded
@@ -507,6 +523,7 @@
                           fill: activeToolOptions.stroke || '#ff0000',
                           selectable: false,
                           evented: false,
+                          erasable: true,
                       })
                     : undefined;
                 arrowTemp = { line, headLeft, headRight };
@@ -586,6 +603,7 @@
                             strokeWidth,
                             selectable: true,
                             evented: true,
+                            erasable: true,
                         });
                     } catch (e) {
                         console.warn('CanvasEditor: IText creation failed', e);
@@ -603,6 +621,7 @@
                                 strokeWidth,
                                 selectable: true,
                                 evented: true,
+                                erasable: true,
                             });
                         } catch (e) {
                             console.warn('CanvasEditor: Textbox creation failed', e);
@@ -621,6 +640,7 @@
                                 strokeWidth,
                                 selectable: true,
                                 evented: true,
+                                erasable: true,
                             });
                         } catch (e) {
                             console.error('CanvasEditor: Text creation failed', e);
@@ -1114,8 +1134,10 @@
         // configure brush mode
         if (canvas) {
             if (tool === 'brush') {
+                // Always create a new PencilBrush to ensure clean state when switching from eraser
+                canvas.freeDrawingBrush = new PencilBrush(canvas);
                 canvas.isDrawingMode = true;
-                const brush: any = (canvas as any).freeDrawingBrush;
+                const brush: any = canvas.freeDrawingBrush;
                 if (brush) {
                     brush.width = options.strokeWidth || options.size || 4;
                     brush.color = options.stroke || '#ff0000';
@@ -1124,17 +1146,55 @@
                     } catch (e) {}
                 }
             } else if (tool === 'eraser') {
+                const eraser = new EraserBrush(canvas);
+                eraser.width = options.width || options.strokeWidth || options.size || 10;
+                canvas.freeDrawingBrush = eraser;
+                canvas.freeDrawingCursor = 'default';
                 canvas.isDrawingMode = true;
-                const brush: any = (canvas as any).freeDrawingBrush;
-                if (brush) {
-                    brush.width = options.strokeWidth || options.size || 16;
+
+                eraser.on('end', async (e: any) => {
                     try {
-                        brush.globalCompositeOperation = 'destination-out';
-                    } catch (e) {
-                        // fallback: draw white
-                        brush.color = '#ffffff';
+                        e.preventDefault();
+
+                        const targets = e.detail.targets;
+                        if (!targets || targets.length === 0) return;
+
+                        // Separate paths from other objects
+                        const paths: FabricObject[] = [];
+                        const otherObjects: FabricObject[] = [];
+
+                        targets.forEach((target: FabricObject) => {
+                            if (target.type === 'path') {
+                                paths.push(target);
+                            } else {
+                                otherObjects.push(target);
+                            }
+                        });
+
+                        // For paths: use commit to partially erase
+                        if (paths.length > 0) {
+                            // Commit the erase operation to modify the paths
+                            await eraser.commit(e.detail);
+                        }
+
+                        // For other objects (shapes, arrows, text): directly remove
+                        if (otherObjects.length > 0) {
+                            otherObjects.forEach((obj: FabricObject) => {
+                                try {
+                                    (obj as any).group?.remove(obj) || canvas?.remove(obj);
+                                } catch (e) {
+                                    console.warn('Error removing object:', e);
+                                }
+                            });
+                            console.log('Directly removed objects:', otherObjects.length);
+                        }
+
+                        canvas?.requestRenderAll();
+                        schedulePushWithType('modified');
+                    } catch (err) {
+                        console.error('Error in eraser end handler:', err);
                     }
-                }
+                });
             } else {
                 canvas.isDrawingMode = false;
             }

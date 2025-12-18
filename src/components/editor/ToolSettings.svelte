@@ -127,6 +127,19 @@
             />
             <span class="val">{settings.strokeWidth || settings.size || 4}</span>
         </div>
+    {:else if tool === 'eraser'}
+        <div class="row">
+            <label for="eraser-size">粗细</label>
+            <input
+                id="eraser-size"
+                type="range"
+                min="1"
+                max="100"
+                value={settings.strokeWidth || settings.size || 16}
+                on:input={e => emitChange({ strokeWidth: +getValue(e), size: +getValue(e) })}
+            />
+            <span class="val">{settings.strokeWidth || settings.size || 16}</span>
+        </div>
     {:else if tool === 'arrow'}
         <div class="row">
             <label for="arrow-color">颜色</label>

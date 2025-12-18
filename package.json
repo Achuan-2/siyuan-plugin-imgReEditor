@@ -16,6 +16,7 @@
     "make-install": "vite build && node --no-warnings ./scripts/make_install.js"
   },
   "dependencies": {
+    "@erase2d/fabric": "^1.1.8",
     "fabric": "^6.9.1",
     "tui-code-snippet": "^2.3.3",
     "tui-color-picker": "^2.2.8"
