@@ -598,6 +598,18 @@
                                     )
                                         canvasEditorRef.setTool('text', toolSettings);
                                 } catch (err) {}
+                            } else if (type === 'arrow') {
+                                // auto-open arrow settings when an arrow is selected
+                                activeTool = 'arrow';
+                                showToolPopup = true;
+                                toolSettings = e.detail.options || {};
+                                try {
+                                    if (
+                                        canvasEditorRef &&
+                                        typeof canvasEditorRef.setTool === 'function'
+                                    )
+                                        canvasEditorRef.setTool('arrow', toolSettings);
+                                } catch (err) {}
                             } else {
                                 /* don't auto-open for other types */
                             }

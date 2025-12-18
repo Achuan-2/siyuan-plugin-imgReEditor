@@ -17,6 +17,7 @@
         FabricObject,
     } from 'fabric';
     import { EraserBrush } from '@erase2d/fabric';
+    import Arrow from './Arrow';
 
     export let dataURL: string | null = null;
     export let fileName: string | undefined;
@@ -172,6 +173,7 @@
                     'text',
                     'line',
                     'triangle',
+                    'arrow',
                 ].includes(o.type)
             );
 
@@ -179,7 +181,9 @@
 
             // Include custom properties like _isArrow to ensure arrows remain editable after paste
             // Map each object to its serialized version
-            clipboard = allowed.map((o: any) => o.toObject(['selectable', 'evented', '_isArrow']));
+            clipboard = allowed.map((o: any) =>
+                o.toObject(['selectable', 'evented', '_isArrow', 'arrowHead'])
+            );
 
             try {
                 dispatch('copied', { count: allowed.length });
@@ -202,6 +206,7 @@
                     'group',
                     'line',
                     'triangle',
+                    'arrow',
                     'i-text',
                     'textbox',
                     'text',
@@ -461,7 +466,7 @@
                 }
                 return;
             }
-            // Arrow tool: start drawing a line
+            // Arrow tool: start drawing using custom Arrow class
             if (activeTool === 'arrow') {
                 // if clicked on an existing object, select it instead of starting a new arrow
                 let hit = opt.target;
@@ -479,57 +484,16 @@
                 }
 
                 arrowStart = { x: pointer.x, y: pointer.y };
-                // create temporary line
-                const line = new Line([pointer.x, pointer.y, pointer.x, pointer.y], {
+                // Create temporary arrow using custom Arrow class
+                tempArrow = new Arrow([pointer.x, pointer.y, pointer.x, pointer.y], {
                     stroke: activeToolOptions.stroke || '#ff0000',
                     strokeWidth: activeToolOptions.strokeWidth || 4,
+                    arrowHead: activeToolOptions.arrowHead || 'right',
                     selectable: false,
                     evented: false,
                     erasable: true,
                 });
-                // Determine arrow heads presence
-                const headLeftNeeded =
-                    (activeToolOptions.arrowHead || 'right') === 'left' ||
-                    (activeToolOptions.arrowHead || 'right') === 'both';
-                const headRightNeeded =
-                    (activeToolOptions.arrowHead || 'right') === 'right' ||
-                    (activeToolOptions.arrowHead || 'right') === 'both';
-                const headRight = headRightNeeded
-                    ? new Triangle({
-                          left: pointer.x,
-                          top: pointer.y,
-                          originX: 'center',
-                          originY: 'center',
-                          width: Math.max(8, (activeToolOptions.strokeWidth || 4) * 2.2),
-                          height: Math.max(8, (activeToolOptions.strokeWidth || 4) * 2.6),
-                          // triangle default points up; we'll rotate during move to match line direction
-                          angle: 0,
-                          fill: activeToolOptions.stroke || '#ff0000',
-                          selectable: false,
-                          evented: false,
-                          erasable: true,
-                      })
-                    : undefined;
-                const headLeft = headLeftNeeded
-                    ? new Triangle({
-                          left: pointer.x,
-                          top: pointer.y,
-                          originX: 'center',
-                          originY: 'center',
-                          width: Math.max(8, (activeToolOptions.strokeWidth || 4) * 2.2),
-                          height: Math.max(8, (activeToolOptions.strokeWidth || 4) * 2.6),
-                          // start rotated opposite; will be adjusted during move
-                          angle: 180,
-                          fill: activeToolOptions.stroke || '#ff0000',
-                          selectable: false,
-                          evented: false,
-                          erasable: true,
-                      })
-                    : undefined;
-                arrowTemp = { line, headLeft, headRight };
-                canvas.add(line);
-                if (headLeft) canvas.add(headLeft);
-                if (headRight) canvas.add(headRight);
+                canvas.add(tempArrow);
                 canvas.requestRenderAll();
                 return;
             }
@@ -768,8 +732,21 @@
                         },
                         type: active.type,
                     });
+                } else if (
+                    active.type === 'arrow' ||
+                    (active.type === 'line' && (active as any).arrowHead)
+                ) {
+                    // Custom Arrow class (extends Line with arrowHead property)
+                    dispatch('selection', {
+                        options: {
+                            stroke: active.stroke,
+                            strokeWidth: active.strokeWidth,
+                            arrowHead: (active as any).arrowHead,
+                        },
+                        type: 'arrow',
+                    });
                 } else if (active.type === 'group') {
-                    // detect arrow groups and forward their style as selection options
+                    // detect arrow groups (legacy) and forward their style as selection options
                     try {
                         const parts = (active as any).getObjects
                             ? (active as any).getObjects()
@@ -840,70 +817,11 @@
             }
 
             // if arrow drawing in progress
-            if (activeTool === 'arrow' && arrowTemp && arrowTemp.line) {
-                const ln = arrowTemp.line;
+            if (activeTool === 'arrow' && tempArrow) {
                 const pointer = canvas.getPointer(opt.e);
-
-                // Calculate angle and direction
-                const x1 = arrowStart.x;
-                const y1 = arrowStart.y;
-                const x2 = pointer.x;
-                const y2 = pointer.y;
-
-                const dx = x2 - x1;
-                const dy = y2 - y1;
-                const angleRad = Math.atan2(dy, dx);
-                const angleDeg = (angleRad * 180) / Math.PI;
-
-                // Get arrow head dimensions
-                const headH =
-                    (arrowTemp.headRight && arrowTemp.headRight.height) ||
-                    Math.max(8, (activeToolOptions.strokeWidth || 4) * 2.6);
-
-                // For a triangle with originX/Y='center', when rotated to point along the line,
-                // we need to offset it backwards by half its height so the tip touches the endpoint
-                const headOffset = headH / 2;
-
-                // Update line endpoint - shorten it so it doesn't extend beyond the arrow tip
-                ln.set({
-                    x2: pointer.x - Math.cos(angleRad) * headOffset,
-                    y2: pointer.y - Math.sin(angleRad) * headOffset,
-                });
-
-                // For left arrow, shorten from the start
-                if (arrowTemp.headLeft) {
-                    ln.set({
-                        x1: x1 + Math.cos(angleRad) * headOffset,
-                        y1: y1 + Math.sin(angleRad) * headOffset,
-                    });
-                }
-
-                // Fabric.js triangle points up by default (angle 0 = -90° in standard coords)
-                // So we add 90° to align with the line direction
-                const fabricAngle = angleDeg + 90;
-
-                // Position right arrow head
-                // Offset backwards along the line direction by half the triangle height
-                if (arrowTemp.headRight) {
-                    arrowTemp.headRight.set({
-                        left: pointer.x - Math.cos(angleRad) * headOffset,
-                        top: pointer.y - Math.sin(angleRad) * headOffset,
-                        angle: fabricAngle,
-                    });
-                    arrowTemp.headRight.setCoords();
-                }
-
-                // Position left arrow head
-                if (arrowTemp.headLeft) {
-                    arrowTemp.headLeft.set({
-                        left: x1 + Math.cos(angleRad) * headOffset,
-                        top: y1 + Math.sin(angleRad) * headOffset,
-                        angle: fabricAngle + 180,
-                    });
-                    arrowTemp.headLeft.setCoords();
-                }
-
-                ln.setCoords();
+                // Simply update the arrow's endpoint
+                tempArrow.set({ x2: pointer.x, y2: pointer.y });
+                tempArrow.setCoords();
                 canvas.requestRenderAll();
                 return;
             }
@@ -934,103 +852,21 @@
             }
 
             // finish arrow
-            if (activeTool === 'arrow' && arrowTemp && arrowTemp.line) {
+            if (activeTool === 'arrow' && tempArrow) {
                 try {
-                    const ln: any = arrowTemp.line;
-                    const x1 = arrowStart.x;
-                    const y1 = arrowStart.y;
-                    const x2 = ln.x2 || x1;
-                    const y2 = ln.y2 || y1;
-
-                    const dx = x2 - x1;
-                    const dy = y2 - y1;
-                    const angleRad = Math.atan2(dy, dx);
-                    const angleDeg = (angleRad * 180) / Math.PI;
-
-                    // Get arrow head dimensions
-                    const headH =
-                        (arrowTemp.headRight && arrowTemp.headRight.height) ||
-                        Math.max(8, (activeToolOptions.strokeWidth || 4) * 2.6);
-
-                    // Offset to align arrow centerline with line
-                    const headOffset = headH / 2;
-
-                    // Calculate actual endpoints (where the arrow tips should be)
-                    const actualEndX = x2 + Math.cos(angleRad) * headOffset;
-                    const actualEndY = y2 + Math.sin(angleRad) * headOffset;
-                    const actualStartX = arrowTemp.headLeft
-                        ? x1 - Math.cos(angleRad) * headOffset
-                        : x1;
-                    const actualStartY = arrowTemp.headLeft
-                        ? y1 - Math.sin(angleRad) * headOffset
-                        : y1;
-
-                    // Update line endpoints
-                    ln.set({
-                        x1:
-                            actualStartX +
-                            (arrowTemp.headLeft ? Math.cos(angleRad) * headOffset : 0),
-                        y1:
-                            actualStartY +
-                            (arrowTemp.headLeft ? Math.sin(angleRad) * headOffset : 0),
-                        x2: actualEndX - Math.cos(angleRad) * headOffset,
-                        y2: actualEndY - Math.sin(angleRad) * headOffset,
-                    });
-
-                    // Fabric.js triangle points up by default, add 90° to align with line direction
-                    const fabricAngle = angleDeg + 90;
-
-                    // Finalize arrow head positions and make them selectable
-                    if (arrowTemp.headRight) {
-                        arrowTemp.headRight.set({
-                            left: actualEndX - Math.cos(angleRad) * headOffset,
-                            top: actualEndY - Math.sin(angleRad) * headOffset,
-                            angle: fabricAngle,
-                            selectable: true,
-                            evented: true,
-                        });
-                        arrowTemp.headRight.setCoords();
-                    }
-
-                    if (arrowTemp.headLeft) {
-                        arrowTemp.headLeft.set({
-                            left: actualStartX + Math.cos(angleRad) * headOffset,
-                            top: actualStartY + Math.sin(angleRad) * headOffset,
-                            angle: fabricAngle + 180,
-                            selectable: true,
-                            evented: true,
-                        });
-                        arrowTemp.headLeft.setCoords();
-                    }
-
-                    ln.setCoords();
-
-                    const parts: any[] = [];
-                    arrowTemp.line.set({ selectable: true, evented: true });
-                    parts.push(arrowTemp.line);
-                    if (arrowTemp.headLeft) {
-                        parts.push(arrowTemp.headLeft);
-                    }
-                    if (arrowTemp.headRight) {
-                        parts.push(arrowTemp.headRight);
-                    }
-                    const group = new Group(parts, {
+                    // Make arrow selectable and evented
+                    tempArrow.set({
                         selectable: true,
                         evented: true,
                     });
-                    // mark as arrow so we can identify and edit later
-                    try {
-                        (group as any)._isArrow = true;
-                    } catch (e) {}
-                    if (arrowTemp.line) canvas.remove(arrowTemp.line);
-                    if (arrowTemp.headLeft) canvas.remove(arrowTemp.headLeft);
-                    if (arrowTemp.headRight) canvas.remove(arrowTemp.headRight);
-                    canvas.add(group);
-                    canvas.setActiveObject(group);
+                    tempArrow.setCoords();
+                    canvas.setActiveObject(tempArrow);
                     canvas.requestRenderAll();
                     schedulePushWithType('added');
-                } catch (e) {}
-                arrowTemp = {};
+                } catch (e) {
+                    console.warn('Failed to finalize arrow', e);
+                }
+                tempArrow = null;
                 return;
             }
 
@@ -1202,7 +1038,7 @@
     }
 
     // Arrow drawing state
-    let arrowTemp: { line?: Line; headLeft?: Triangle; headRight?: Triangle } = {};
+    let tempArrow: Arrow | null = null;
     let arrowStart = { x: 0, y: 0 };
 
     // Crop mode state
@@ -1826,6 +1662,12 @@
                                 ? colorWithOpacity(options.fill, options.fillOpacity)
                                 : null;
                             o.set('fill', newFill);
+                        }
+                        // Handle custom Arrow class (extends Line but has arrowHead)
+                        if (typeof options.arrowHead !== 'undefined' && 'arrowHead' in o) {
+                            o.set('arrowHead', options.arrowHead);
+                            // Custom property change doesn't automatically trigger cache invalidation
+                            o.set('dirty', true);
                         }
                         o.setCoords && o.setCoords();
                     }
