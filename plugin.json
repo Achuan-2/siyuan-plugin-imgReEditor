@@ -10,7 +10,7 @@
   "frontends": [
     "all"
   ],
-  "disabledInPublish": false,
+  "disabledInPublish": true,
   "displayName": {
     "default": "ImgReEditor",
     "zh_CN": "ImgReEditor"

@@ -1,8 +1,3 @@
-
-
-
-
-
 ## 📝更新日志
 
 见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-imgReEditor@main/CHANGELOG.md)
@@ -20,8 +15,6 @@
 
 - 支持裁剪翻转图片，支持添加文字、添加矩形椭圆、添加箭头、添加数字序号、画笔等功能
 - 保存png图片支持二次编辑插件添加的图片修改和标注内容
-
-![](preview.png)
 
 
 ## 设置
