@@ -1962,13 +1962,27 @@
             const bg = canvas.backgroundImage;
             if (bg) {
                 let imgW, imgH, imgCenterX, imgCenterY;
+
                 if (bg.clipPath && bg.clipPath.type === 'rect') {
+                    // For cropped images, always use clipPath dimensions
+                    // This works correctly even when the image is flipped or rotated
                     const cp = bg.clipPath;
                     imgW = cp.width * (bg.scaleX || 1);
                     imgH = cp.height * (bg.scaleY || 1);
-                    imgCenterX = imgW / 2;
-                    imgCenterY = imgH / 2;
+
+                    // When flipped or rotated, we need to get the actual center from bounding rect
+                    const hasTransforms =
+                        bg.flipX || bg.flipY || (bg.angle && bg.angle % 360 !== 0);
+                    if (hasTransforms) {
+                        const boundingRect = bg.getBoundingRect();
+                        imgCenterX = boundingRect.left + boundingRect.width / 2;
+                        imgCenterY = boundingRect.top + boundingRect.height / 2;
+                    } else {
+                        imgCenterX = imgW / 2;
+                        imgCenterY = imgH / 2;
+                    }
                 } else {
+                    // No crop - use getBoundingRect for uncropped images (handles flip/rotate)
                     const boundingRect = bg.getBoundingRect();
                     imgW = boundingRect.width;
                     imgH = boundingRect.height;
