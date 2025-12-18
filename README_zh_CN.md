@@ -5,7 +5,7 @@
 
 ## 📝更新日志
 
-见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-copilot@main/CHANGELOG.md)
+见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-imgReEditor@main/CHANGELOG.md)
 
 
 ## 开发背景
@@ -16,12 +16,12 @@
 
 ## 功能介绍
 
-在思源笔记中编辑图片，这次
+在思源笔记中编辑图片，支持：
 
 - 支持裁剪翻转图片，支持添加文字、添加矩形椭圆、添加箭头、添加数字序号、画笔等功能
 - 保存png图片支持二次编辑插件添加的图片修改和标注内容
 
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251209155326-2025-12-09.png)
+![](preview.png)
 
 
 ## 设置
@@ -48,7 +48,6 @@ pnpm run dev
 ## 🙏 致谢
 
 - 基于 [plugin-sample-vite-svelte](https://github.com/siyuan-note/plugin-sample-vite-svelte/) 模板开发
-- 基于[tui-image-editor](https://github.com/nhn/tui.image-editor)
 
 ## ❤️用爱发电
 
@@ -60,4 +59,5 @@ pnpm run dev
 
 累积赞赏50元的朋友如果想加我微信，可以发邮件到<span data-type="a" data-href="mailto:achuan-2@outlook.com">achuan-2@outlook.com</span>来进行好友申请（赞赏达不到50元的，我不会回复邮件和加好友哦，因为不想当免费客服）
 
-![image](https://camo.githubusercontent.com/8052f6f2e7dafba534e781934efa9bcb084fa3a9dfa5c221a85ac63db8b043cb/68747470733a2f2f6173736574732e62336c6f6766696c652e636f6d2f73697975616e2f313631303230353735393030352f6173736574732f6e6574776f726b2d61737365742d696d6167652d32303235303631343132333535382d667568697235762e706e67)
+
+<img alt="image" src="https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20241128221208-2024-11-28.png" />
