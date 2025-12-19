@@ -664,6 +664,10 @@
                                 activeShape =
                                     type === 'ellipse' || type === 'circle' ? 'circle' : 'rect';
                                 showToolPopup = true;
+                                if (!popupPositioned) {
+                                    updatePopupPosition();
+                                    popupPositioned = true;
+                                }
                                 try {
                                     if (
                                         canvasEditorRef &&
@@ -682,6 +686,10 @@
                                 // auto-open text settings when a text object is selected
                                 activeTool = 'text';
                                 showToolPopup = true;
+                                if (!popupPositioned) {
+                                    updatePopupPosition();
+                                    popupPositioned = true;
+                                }
                                 toolSettings = e.detail.options || {};
                                 try {
                                     if (
@@ -695,6 +703,10 @@
                                 // auto-open arrow settings when an arrow is selected
                                 activeTool = 'arrow';
                                 showToolPopup = true;
+                                if (!popupPositioned) {
+                                    updatePopupPosition();
+                                    popupPositioned = true;
+                                }
                                 toolSettings = e.detail.options || {};
                                 try {
                                     if (
@@ -708,6 +720,10 @@
                                 // auto-open number settings when a number marker is selected
                                 activeTool = 'number-marker';
                                 showToolPopup = true;
+                                if (!popupPositioned) {
+                                    updatePopupPosition();
+                                    popupPositioned = true;
+                                }
                                 toolSettings = e.detail.options || {};
                                 // keep it as number-marker to show specific edit UI
                                 saveToolSettings('number-marker', toolSettings);
