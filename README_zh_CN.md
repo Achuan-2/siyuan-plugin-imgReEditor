@@ -74,7 +74,12 @@
   - 删除backup文件夹里的json文件，将无法二次编辑backup模式下编辑保存的图片
   - 保存的图片经过外部软件压缩等处理之后，也可能会丢失与backup里的json的链接关系，无法二次编辑
 
+## 博客
 
+- 文章
+  - [思源笔记插件 ImgReEditor：让思源笔记成为你的图文笔记神器](https://zhuanlan.zhihu.com/p/1985459256305152111)
+- 视频
+  - [思源笔记插件 ImgReEditor ：编辑保存的图片还可再编辑，让思源笔记成为你的图文笔记神器](https://www.bilibili.com/video/BV11wBFBvEn8/?vd_source=b4a1fcb6dce305e26d8d16d9cbb71304#reply285851298256)
 
 ## 📄 许可证
 
