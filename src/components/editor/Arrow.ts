@@ -11,7 +11,7 @@ import {
     TPointerEvent,
     Transform,
 } from 'fabric';
-import edgeImg from '../../assets/editor/edgecontrol.svg';
+import edgeImg from './assets/edgecontrol.svg';
 
 const edgeImgIcon = document.createElement('img');
 edgeImgIcon.src = edgeImg;
@@ -84,6 +84,7 @@ interface ArrowOptions extends TOptions<FabricObjectProps> {
     headStyle?: ArrowHeadStyle;
     lineStyle?: ArrowLineStyle;
     thicknessStyle?: ArrowThicknessStyle;
+    useCustomSelection?: boolean;
 }
 
 /**
@@ -96,6 +97,7 @@ export class Arrow extends Line {
     headStyle: ArrowHeadStyle;
     lineStyle: ArrowLineStyle;
     thicknessStyle: ArrowThicknessStyle;
+    useCustomSelection: boolean;
 
     constructor(points: [number, number, number, number], options?: ArrowOptions) {
         super(points, options);
@@ -104,47 +106,50 @@ export class Arrow extends Line {
         this.headStyle = options?.headStyle || 'sharp';
         this.lineStyle = options?.lineStyle || 'solid';
         this.thicknessStyle = options?.thicknessStyle || 'uniform';
+        this.useCustomSelection = options?.useCustomSelection || false;
         this.strokeLineCap = 'butt'; // Flat ends as requested
         this.strokeLineJoin = 'round';
         this.objectCaching = false;
-        this.hasBorders = false;
+        this.hasBorders = !this.useCustomSelection;
 
-        // Define custom controls for arrow endpoints
-        this.controls = {
-            p1: new Control({
-                actionHandler: lineActionHandler,
-                cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-                actionName: 'modifyLine',
-                render: createIconRenderer(edgeImgIcon, 25, 25),
-                positionHandler: p1PositionHandler,
-            }),
-            p2: new Control({
-                actionHandler: lineActionHandler,
-                cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-                actionName: 'modifyLine',
-                render: createIconRenderer(edgeImgIcon, 25, 25),
-                positionHandler: p2PositionHandler,
-            }),
-            deleteControl: new Control({
-                x: 0.5,
-                y: -0.5,
-                offsetY: -16,
-                offsetX: 16,
-                cursorStyle: 'pointer',
-                mouseUpHandler: (_eventData, transform: any) => {
-                    const target = transform.target;
-                    const canvas = target.canvas;
-                    if (canvas) {
-                        canvas.remove(target);
-                        canvas.requestRenderAll();
-                    }
-                    return true;
-                },
-                render: createIconRenderer(delImgIcon, 24, 24),
-                sizeX: 24,
-                sizeY: 24,
-            }),
-        };
+        if (this.useCustomSelection) {
+            // Define custom controls for arrow endpoints
+            this.controls = {
+                p1: new Control({
+                    actionHandler: lineActionHandler,
+                    cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
+                    actionName: 'modifyLine',
+                    render: createIconRenderer(edgeImgIcon, 25, 25),
+                    positionHandler: p1PositionHandler,
+                }),
+                p2: new Control({
+                    actionHandler: lineActionHandler,
+                    cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
+                    actionName: 'modifyLine',
+                    render: createIconRenderer(edgeImgIcon, 25, 25),
+                    positionHandler: p2PositionHandler,
+                }),
+                deleteControl: new Control({
+                    x: 0.5,
+                    y: -0.5,
+                    offsetY: -16,
+                    offsetX: 16,
+                    cursorStyle: 'pointer',
+                    mouseUpHandler: (_eventData, transform: any) => {
+                        const target = transform.target;
+                        const canvas = target.canvas;
+                        if (canvas) {
+                            canvas.remove(target);
+                            canvas.requestRenderAll();
+                        }
+                        return true;
+                    },
+                    render: createIconRenderer(delImgIcon, 24, 24),
+                    sizeX: 24,
+                    sizeY: 24,
+                }),
+            };
+        }
     }
 
     /**
@@ -359,7 +364,7 @@ export class Arrow extends Line {
      * Override toObject to include custom properties
      */
     toObject(propertiesToInclude: any[] = []): any {
-        return super.toObject(['arrowHead', 'headStyle', 'lineStyle', 'thicknessStyle', ...propertiesToInclude] as any);
+        return super.toObject(['arrowHead', 'headStyle', 'lineStyle', 'thicknessStyle', 'useCustomSelection', ...propertiesToInclude] as any);
     }
 }
 
