@@ -23,7 +23,10 @@
     import NumberMarker from './NumberMarker';
     import CropRect from './CropRect';
     import SelectCanvasSizeRect from './SelectCanvasSizeRect';
-    import initControls, { createCropControls, createSelectCanvasSizeControls } from './initControls';
+    import initControls, {
+        createCropControls,
+        createSelectCanvasSizeControls,
+    } from './initControls';
     import initControlsRotate from './initControlsRotate';
 
     export let dataURL: string | null = null;
@@ -45,6 +48,9 @@
     const dispatch = createEventDispatcher();
     // Track if image has been loaded to prevent duplicate loads
     let imageLoaded = false;
+    // Logical canvas size for canvas mode
+    let logicalWidth = 800;
+    let logicalHeight = 600;
     // History (undo/redo)
     let history: any[] = [];
     let historyIndex = -1;
@@ -1657,6 +1663,7 @@
     let selectCanvasSizeMode = false;
     let selectCanvasSizeRect: any = null;
     let _selectCanvasSizeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+    let _selectCanvasSizeVPT: any = null;
 
     // Crop helpers (exported)
     export function enterCropMode(restoreCrop?: {
@@ -2152,6 +2159,10 @@
         selectCanvasSizeMode = true;
         dispatch('selectCanvasSizeModeChanged', true);
 
+        // Save current viewport transform
+        _selectCanvasSizeVPT = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
+        canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
         // Ensure no existing rect
         if (selectCanvasSizeRect) {
             canvas.remove(selectCanvasSizeRect);
@@ -2170,8 +2181,8 @@
         });
 
         // Create rectangle with current canvas size
-        const canvasWidth = canvas.getWidth();
-        const canvasHeight = canvas.getHeight();
+        const canvasWidth = logicalWidth;
+        const canvasHeight = logicalHeight;
         selectCanvasSizeRect = new SelectCanvasSizeRect({
             left: 0,
             top: 0,
@@ -2240,6 +2251,12 @@
         } catch (e) {}
         _selectCanvasSizeKeyHandler = null;
 
+        // Restore viewport transform
+        if (_selectCanvasSizeVPT) {
+            canvas.setViewportTransform(_selectCanvasSizeVPT);
+            _selectCanvasSizeVPT = null;
+        }
+
         canvas.getObjects().forEach((obj: any) => {
             obj.selectable = true;
             obj.evented = true;
@@ -2261,7 +2278,22 @@
         const height = Math.max(0, Math.round(bounding.height || 0));
 
         const minSize = 50;
-        console.log('SelectCanvas.applySelection', { rectLeft, rectTop, width, height, canvasW: canvas.getWidth(), canvasH: canvas.getHeight(), bg: canvas.backgroundImage ? { bw: (canvas.backgroundImage as any).width, bh: (canvas.backgroundImage as any).height, scaleX: (canvas.backgroundImage as any).scaleX, scaleY: (canvas.backgroundImage as any).scaleY } : null });
+        console.log('SelectCanvas.applySelection', {
+            rectLeft,
+            rectTop,
+            width,
+            height,
+            canvasW: canvas.getWidth(),
+            canvasH: canvas.getHeight(),
+            bg: canvas.backgroundImage
+                ? {
+                      bw: (canvas.backgroundImage as any).width,
+                      bh: (canvas.backgroundImage as any).height,
+                      scaleX: (canvas.backgroundImage as any).scaleX,
+                      scaleY: (canvas.backgroundImage as any).scaleY,
+                  }
+                : null,
+        });
         if (width < minSize || height < minSize) {
             try {
                 canvas.remove(selectCanvasSizeRect);
@@ -2321,6 +2353,8 @@
             // Initialize default blank canvas size
             const imgW = 800;
             const imgH = 600;
+            logicalWidth = imgW;
+            logicalHeight = imgH;
             canvas.setDimensions({ width: imgW, height: imgH });
 
             // Set a neutral background color for canvas mode
@@ -2439,15 +2473,19 @@
     };
 
     const handleZoom1to1 = () => {
-        if (!canvas || !canvas.backgroundImage) return;
-        const bg = canvas.backgroundImage;
-        const imgW = (bg.width || 0) * (bg.scaleX || 1);
-        const imgH = (bg.height || 0) * (bg.scaleY || 1);
-        const cw = canvas.getWidth();
-        const ch = canvas.getHeight();
-        const tx = (cw - imgW) / 2;
-        const ty = (ch - imgH) / 2;
-        canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
+        if (!canvas) return;
+        if (isCanvasMode) {
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        } else if (canvas.backgroundImage) {
+            const bg = canvas.backgroundImage;
+            const imgW = (bg.width || 0) * (bg.scaleX || 1);
+            const imgH = (bg.height || 0) * (bg.scaleY || 1);
+            const cw = canvas.getWidth();
+            const ch = canvas.getHeight();
+            const tx = (cw - imgW) / 2;
+            const ty = (ch - imgH) / 2;
+            canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
+        }
         updateZoomDisplay();
         canvas.requestRenderAll();
     };
@@ -2463,62 +2501,42 @@
         const w = canvas.getWidth();
         const h = canvas.getHeight();
 
-        // For canvas mode, always use custom size mode to show the full canvas with boundaries
-        // Check if canvas dimensions match workspace (Uncropped / Artboard mode)
-        // or if we have a custom size (Cropped / True Resolution mode / Canvas mode)
-        const isCustomSize = isCanvasMode || Math.abs(w - cw) > 2 || Math.abs(h - ch) > 2;
+        canvas.setDimensions({ width: cw, height: ch });
+        canvas.setDimensions({ width: cw, height: ch }, { cssOnly: true });
 
-        if (isCustomSize) {
-            // Custom Size Mode: Use CSS scaling
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            const scale = Math.min(cw / w, ch / h, 1) * 0.98;
-            const finalCssW = w * scale;
-            const finalCssH = h * scale;
-            canvas.setDimensions({ width: finalCssW, height: finalCssH }, { cssOnly: true });
-
-            const containerEl = canvas.getElement().parentNode as HTMLElement;
-            if (containerEl && containerEl.classList.contains('canvas-container')) {
-                containerEl.style.margin = '0 auto';
-                if (finalCssH < ch) {
-                    containerEl.style.marginTop = `${(ch - finalCssH) / 2}px`;
-                } else {
-                    containerEl.style.marginTop = '0px';
-                }
-            }
-            updateZoomDisplay();
-            canvas.requestRenderAll();
-        } else {
-            // Artboard Mode: Zoom the content to fit
-            canvas.setDimensions({ width: cw, height: ch });
-            canvas.setDimensions({ width: cw, height: ch }, { cssOnly: true });
-
-            const containerEl = canvas.getElement().parentNode as HTMLElement;
-            if (containerEl && containerEl.classList.contains('canvas-container')) {
-                containerEl.style.margin = '0';
-                containerEl.style.marginTop = '0';
-            }
-
-            const bg = canvas.backgroundImage;
-            if (bg) {
-                // Get the actual bounding box of the background image (handles flip and rotate)
-                let boundingRect = bg.getBoundingRect();
-
-                const imgW = boundingRect.width;
-                const imgH = boundingRect.height;
-                const imgCenterX = boundingRect.left + imgW / 2;
-                const imgCenterY = boundingRect.top + imgH / 2;
-
-                if (imgW > 0 && imgH > 0) {
-                    const scale = Math.min(cw / imgW, ch / imgH, 1) * 0.98;
-                    const tx = cw / 2 - imgCenterX * scale;
-                    const ty = ch / 2 - imgCenterY * scale;
-
-                    canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
-                }
-            }
-            updateZoomDisplay();
-            canvas.requestRenderAll();
+        const containerEl = canvas.getElement().parentNode as HTMLElement;
+        if (containerEl && containerEl.classList.contains('canvas-container')) {
+            containerEl.style.width = cw + 'px';
+            containerEl.style.height = ch + 'px';
+            containerEl.style.margin = '0';
+            containerEl.style.marginTop = '0';
         }
+
+        const bg = canvas.backgroundImage;
+        if (isCanvasMode) {
+            // Canvas mode: fit logical canvas size
+            const contentW = logicalWidth;
+            const contentH = logicalHeight;
+            const scale = Math.min(cw / contentW, ch / contentH, 1) * 0.98;
+            const tx = (cw - contentW * scale) / 2;
+            const ty = (ch - contentH * scale) / 2;
+            canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
+        } else if (bg) {
+            // Edit mode: fit current background image bounding rect
+            let boundingRect = bg.getBoundingRect();
+            const imgW = boundingRect.width;
+            const imgH = boundingRect.height;
+            const imgCenterX = boundingRect.left + imgW / 2;
+            const imgCenterY = boundingRect.top + imgH / 2;
+            const scale = Math.min(cw / imgW, ch / imgH, 1) * 0.98;
+            const tx = cw / 2 - imgCenterX * scale;
+            const ty = ch / 2 - imgCenterY * scale;
+            canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
+        } else {
+            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        }
+        updateZoomDisplay();
+        canvas.requestRenderAll();
     }
 
     async function updateImageBorder(options: any) {
@@ -3200,8 +3218,8 @@
 
             if (isCanvasMode && !bg) {
                 // Export entire canvas area
-                imgW = canvas.getWidth();
-                imgH = canvas.getHeight();
+                imgW = logicalWidth;
+                imgH = logicalHeight;
                 tx = 0;
                 ty = 0;
             } else {
@@ -3271,8 +3289,8 @@
 
         // For canvas mode, add canvas dimensions and remove backgroundImage to avoid blob URL issues
         if (isCanvasMode) {
-            json.width = canvas.getWidth();
-            json.height = canvas.getHeight();
+            json.width = logicalWidth;
+            json.height = logicalHeight;
             if (json.backgroundImage) {
                 console.log('CanvasEditor: Removing backgroundImage for canvas mode');
                 delete json.backgroundImage;
@@ -3315,6 +3333,8 @@
                     'x',
                     json.height
                 );
+                logicalWidth = json.width;
+                logicalHeight = json.height;
                 canvas.setDimensions({ width: json.width, height: json.height });
             } else {
                 console.log(
@@ -3519,6 +3539,8 @@
     export function resizeCanvas(width: number, height: number) {
         if (!canvas || !isCanvasMode) return;
 
+        logicalWidth = width;
+        logicalHeight = height;
         try {
             // Update canvas dimensions
             canvas.setDimensions({ width, height });

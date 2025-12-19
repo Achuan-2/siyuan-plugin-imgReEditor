@@ -103,8 +103,6 @@
         }
     }
 
-
-
     async function blobToDataURL(blob: Blob): Promise<string> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -208,7 +206,6 @@
                 // Store editorData for restoration after canvas is ready
                 savedEditorData = editorData;
 
-
                 // If metadata contains isCanvasMode flag, update the component's mode
                 if (editorData && editorData.isCanvasMode === true) {
                     isCanvasMode = true;
@@ -311,7 +308,6 @@
                           ? originalImageDimensions
                           : null,
             };
-
 
             // Do not embed canvasJSON into PNG metadata when using backup mode
             if (settings.storageMode !== 'backup') {
@@ -656,7 +652,6 @@
                 on:ready={() => {
                     editorReady = true;
 
-
                     // For canvas mode with saved JSON, restore it now
                     if (
                         isCanvasMode &&
@@ -703,7 +698,6 @@
 
                     if (savedEditorData && savedEditorData.canvasJSON && canvasEditorRef) {
                         try {
-
                             // For canvas mode with saved JSON, restore from JSON instead of using background
                             // This prevents showing the exported image as background
                             canvasEditorRef.fromJSON(savedEditorData.canvasJSON);
@@ -718,7 +712,6 @@
                             console.warn('Failed to restore canvas JSON to CanvasEditor', e);
                         }
                     } else {
-
                         // For new images without saved data, fit to viewport now
                         if (
                             canvasEditorRef &&
@@ -1003,7 +996,7 @@
                         tool={activeTool}
                         settings={toolSettings}
                         recentColors={settings.recentColors || {}}
-                        selectCanvasSizeMode={selectCanvasSizeMode}
+                        {selectCanvasSizeMode}
                         on:action={e => {
                             const { action } = e.detail;
                             try {
@@ -1035,7 +1028,8 @@
                                     try {
                                         const currentMode =
                                             canvasEditorRef &&
-                                            typeof canvasEditorRef.getSelectCanvasSizeMode === 'function'
+                                            typeof canvasEditorRef.getSelectCanvasSizeMode ===
+                                                'function'
                                                 ? canvasEditorRef.getSelectCanvasSizeMode()
                                                 : selectCanvasSizeMode;
                                         if (currentMode) {
