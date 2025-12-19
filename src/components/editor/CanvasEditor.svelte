@@ -2157,6 +2157,7 @@
                 strokeDashArray: [10, 5],
                 selectable: false,
                 evented: false,
+                hoverCursor: 'default',
                 excludeFromExport: true,
             });
             (boundaryRect as any)._isCanvasBoundary = true;
@@ -3094,6 +3095,7 @@
                     strokeDashArray: [10, 5],
                     selectable: false,
                     evented: false,
+                    hoverCursor: 'default',
                     excludeFromExport: true,
                 });
                 (boundaryRect as any)._isCanvasBoundary = true;
