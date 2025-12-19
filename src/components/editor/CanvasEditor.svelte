@@ -22,7 +22,8 @@
     import Arrow from './Arrow';
     import NumberMarker from './NumberMarker';
     import CropRect from './CropRect';
-    import initControls, { createCropControls } from './initControls';
+    import SelectCanvasSizeRect from './SelectCanvasSizeRect';
+    import initControls, { createCropControls, createSelectCanvasSizeControls } from './initControls';
     import initControlsRotate from './initControlsRotate';
 
     export let dataURL: string | null = null;
@@ -496,7 +497,6 @@
 
         dispatch('ready');
 
-
         // Attach basic history listeners (use typed scheduling for merging)
         canvas.on('object:added', (opt: any) => {
             if (opt.target && (opt.target as any)._isCanvasBoundary) return;
@@ -550,9 +550,10 @@
             }
         });
         canvas.on('object:removed', (opt: any) => {
+            const target = opt && opt.target;
+            if (target && (target as any)._isCanvasBoundary) return;
             schedulePushWithType('removed');
             try {
-                const target = opt && opt.target;
                 if (target && (target as any)._isCropRect) {
                     // If the crop rect was deleted, exit crop mode to clean up handlers/state
                     exitCropMode();
@@ -661,7 +662,7 @@
 
             // If shape tool active, start drawing on mouse down
             if (activeTool === 'shape') {
-                // Only allow selecting shapes that match the current tool (rect/ellipse/circle)
+                // If user clicked on an existing object, allow selection/move instead of starting a new draw
                 let hit = opt.target;
                 try {
                     if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
@@ -1538,10 +1539,18 @@
         return canvas;
     }
 
+    export function getSelectCanvasSizeMode() {
+        return selectCanvasSizeMode;
+    }
+
     export function setTool(tool: string | null, options: any = {}) {
         // If we were in crop mode and switching to another tool, exit it properly
         if (cropMode && tool !== 'crop' && tool !== null) {
             exitCropMode();
+        }
+        // If we were in select canvas size mode and switching to another tool, exit it properly
+        if (selectCanvasSizeMode && tool !== 'canvas' && tool !== null) {
+            exitSelectCanvasSizeMode();
         }
 
         activeTool = tool;
@@ -1680,6 +1689,11 @@
     let cropRatio: { w: number; h: number } | null = null;
     let cropRatioLabel: string = 'none';
     let cropRestoreData: any = null; // To track if we need to undo a restore on cancel
+
+    // Select canvas size mode state
+    let selectCanvasSizeMode = false;
+    let selectCanvasSizeRect: any = null;
+    let _selectCanvasSizeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
     // Crop helpers (exported)
     export function enterCropMode(restoreCrop?: {
@@ -2166,6 +2180,167 @@
             obj.evented = true;
         });
         canvas.requestRenderAll();
+    }
+
+    // Select canvas size mode
+    export function enterSelectCanvasSizeMode() {
+        if (!canvas || !isCanvasMode) return;
+        if (selectCanvasSizeMode && selectCanvasSizeRect) return;
+        selectCanvasSizeMode = true;
+        dispatch('selectCanvasSizeModeChanged', true);
+
+        // Ensure no existing rect
+        if (selectCanvasSizeRect) {
+            canvas.remove(selectCanvasSizeRect);
+            selectCanvasSizeRect = null;
+        }
+
+        // Deselect all objects
+        try {
+            canvas.discardActiveObject();
+        } catch (e) {}
+
+        // Disable selectability for existing objects during selection
+        canvas.getObjects().forEach((obj: any) => {
+            obj.selectable = false;
+            obj.evented = false;
+        });
+
+        // Create rectangle with current canvas size
+        const canvasWidth = canvas.getWidth();
+        const canvasHeight = canvas.getHeight();
+        selectCanvasSizeRect = new SelectCanvasSizeRect({
+            left: 0,
+            top: 0,
+            width: canvasWidth,
+            height: canvasHeight,
+            fill: 'transparent',
+            stroke: '#007bff',
+            strokeWidth: 2,
+            strokeDashArray: [5, 5],
+            selectable: true,
+            evented: true,
+            hasControls: true,
+            hasBorders: true,
+            transparentCorners: false,
+            cornerColor: 'white',
+            cornerStrokeColor: 'black',
+            cornerSize: 10,
+            lockRotation: true,
+        });
+        canvas.add(selectCanvasSizeRect);
+
+        // Add custom controls with confirm and cancel buttons
+        const selectCanvasSizeControls = createSelectCanvasSizeControls(
+            () => {
+                applySelection();
+                return true;
+            },
+            () => {
+                exitSelectCanvasSizeMode();
+                return true;
+            }
+        );
+        selectCanvasSizeRect.setCustomControls(selectCanvasSizeControls);
+
+        canvas.setActiveObject(selectCanvasSizeRect);
+
+        // Keyboard shortcuts for select canvas size
+        _selectCanvasSizeKeyHandler = (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applySelection();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                exitSelectCanvasSizeMode();
+            }
+        };
+        document.addEventListener('keydown', _selectCanvasSizeKeyHandler as any);
+
+        canvas.requestRenderAll();
+    }
+
+    export function exitSelectCanvasSizeMode() {
+        if (!canvas || !selectCanvasSizeMode) return;
+
+        try {
+            if (selectCanvasSizeRect) {
+                canvas.remove(selectCanvasSizeRect);
+            }
+        } catch (e) {}
+        selectCanvasSizeRect = null;
+
+        selectCanvasSizeMode = false;
+        dispatch('selectCanvasSizeModeChanged', false);
+        try {
+            document.removeEventListener('keydown', _selectCanvasSizeKeyHandler as any);
+        } catch (e) {}
+        _selectCanvasSizeKeyHandler = null;
+
+        canvas.getObjects().forEach((obj: any) => {
+            obj.selectable = true;
+            obj.evented = true;
+        });
+        canvas.requestRenderAll();
+    }
+
+    function applySelection() {
+        if (!selectCanvasSizeRect || !canvas) {
+            if (selectCanvasSizeRect && canvas) canvas.remove(selectCanvasSizeRect);
+            return;
+        }
+
+        // Use bounding rect to take into account object scaling and transforms
+        const bounding = selectCanvasSizeRect.getBoundingRect(true);
+        const rectLeft = Math.round(bounding.left || 0);
+        const rectTop = Math.round(bounding.top || 0);
+        const width = Math.max(0, Math.round(bounding.width || 0));
+        const height = Math.max(0, Math.round(bounding.height || 0));
+
+        const minSize = 50;
+        console.log('SelectCanvas.applySelection', { rectLeft, rectTop, width, height, canvasW: canvas.getWidth(), canvasH: canvas.getHeight(), bg: canvas.backgroundImage ? { bw: (canvas.backgroundImage as any).width, bh: (canvas.backgroundImage as any).height, scaleX: (canvas.backgroundImage as any).scaleX, scaleY: (canvas.backgroundImage as any).scaleY } : null });
+        if (width < minSize || height < minSize) {
+            try {
+                canvas.remove(selectCanvasSizeRect);
+            } catch (e) {}
+            selectCanvasSizeRect = null;
+            canvas.requestRenderAll();
+            return;
+        }
+
+        // Shift all objects to be relative to the new canvas origin.
+        // Use bounding rect left/top which are in canvas coordinates.
+        canvas.getObjects().forEach((obj: any) => {
+            if (!obj) return;
+            if (obj === selectCanvasSizeRect || obj._isCanvasBoundary) return; // Skip the selection rect and boundary
+
+            // If the object has an origin different than 'left,top' (rare here), we still adjust left/top
+            obj.left = (obj.left || 0) - rectLeft;
+            obj.top = (obj.top || 0) - rectTop;
+            obj.setCoords();
+        });
+
+        // Resize canvas to selected size (logical pixels)
+        resizeCanvas(width, height);
+
+        // Cleanup
+        try {
+            canvas.remove(selectCanvasSizeRect);
+        } catch (e) {}
+        selectCanvasSizeRect = null;
+        selectCanvasSizeMode = false;
+        try {
+            document.removeEventListener('keydown', _selectCanvasSizeKeyHandler as any);
+        } catch (e) {}
+        _selectCanvasSizeKeyHandler = null;
+
+        canvas.getObjects().forEach((obj: any) => {
+            obj.selectable = true;
+            obj.evented = true;
+        });
+
+        canvas.requestRenderAll();
+        schedulePushWithType('modified');
     }
 
     // If there's a pending crop rectangle, apply it (used by host before save)
@@ -3391,6 +3566,9 @@
             fitImageToViewport();
             canvas.requestRenderAll();
             schedulePushWithType('modified');
+            try {
+                dispatch('canvasResized', { width, height });
+            } catch (e) {}
         } catch (e) {
             console.error('CanvasEditor: resizeCanvas failed:', e);
         }
