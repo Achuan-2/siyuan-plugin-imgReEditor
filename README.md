@@ -8,11 +8,6 @@ When taking notes or writing blog posts, there is often a need to annotate and e
 
 Therefore, I developed the ImgReEditor plugin, finally achieving the ability to re-edit images that have already been edited.
 
-## How to Use
-
-Right-click on an image and select the "ImgReEditor Edit" button from the menu.
-
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251219120448-2025-12-19.png)
 
 ## Features
 
