@@ -55,7 +55,7 @@
         '_isCropRect',
         'count', // for NumberMarker
         'textColor', // for NumberMarker
-        'fontSize', // for NumberMarker
+        'radius', // for NumberMarker
         '_originalSrc',
         '_cropOffset',
     ];
@@ -85,21 +85,6 @@
                             if (obj.type === 'textbox') {
                                 obj.set('width', obj.width * obj.scaleX);
                             }
-                        }
-                    }
-                    // Ensure NumberMarker objects have correct fontSize and dimensions
-                    if (obj.type === 'number-marker') {
-                        if (obj.scaleX !== 1 || obj.scaleY !== 1) {
-                            const avgScale = (obj.scaleX + obj.scaleY) / 2;
-                            const newFontSize = Math.round(obj.fontSize * avgScale);
-                            const newRadius = newFontSize * 0.8;
-                            obj.set({
-                                fontSize: newFontSize,
-                                width: newRadius * 2,
-                                height: newRadius * 2,
-                                scaleX: 1,
-                                scaleY: 1,
-                            });
                         }
                     }
                 }
@@ -272,7 +257,7 @@
                     'arrowHead',
                     'count',
                     'textColor',
-                    'fontSize',
+                    'radius',
                 ])
             );
 
@@ -436,38 +421,31 @@
                     const arrow = target as any;
                     const visualStrokeWidth = Math.round(arrow.getVisualStrokeWidth());
 
+                    // Get visual endpoints in absolute canvas coordinates
+                    const p1 = { x: arrow.x1, y: arrow.y1 };
+                    const p2 = { x: arrow.x2, y: arrow.y2 };
+                    const matrix = arrow.calcTransformMatrix();
+                    const vP1 = util.transformPoint(p1 as Point, matrix);
+                    const vP2 = util.transformPoint(p2 as Point, matrix);
+
                     // Reset scaling and update coordinates
                     arrow.set({
-                        strokeWidth: visualStrokeWidth,
-                    });
-
-                    arrow.setCoords();
-                    canvas?.requestRenderAll();
-
-                    // Update UI
-                    handleSelectionChangeWithType();
-                }
-            } else if (target && target.type === 'number-marker') {
-                if (target.scaleX !== 1 || target.scaleY !== 1) {
-                    // Calculate new fontSize from scale
-                    const avgScale = (target.scaleX + target.scaleY) / 2;
-                    const newFontSize = Math.round((target as any).fontSize * avgScale);
-                    const newRadius = newFontSize * 0.8;
-
-                    // Update fontSize and dimensions, reset scale
-                    target.set({
-                        fontSize: newFontSize,
-                        width: newRadius * 2,
-                        height: newRadius * 2,
                         scaleX: 1,
                         scaleY: 1,
+                        strokeWidth: visualStrokeWidth,
+                        x1: vP1.x,
+                        y1: vP1.y,
+                        x2: vP2.x,
+                        y2: vP2.y,
+                        left: 0,
+                        top: 0,
                     });
-                    target.setCoords();
-
-                    // Update tool options so UI stays in sync
-                    if (activeTool === 'number-marker') {
-                        activeToolOptions.fontSize = newFontSize;
+                    if (typeof arrow._setWidthHeight === 'function') {
+                        arrow._setWidthHeight();
                     }
+                    arrow.setCoords();
+
+                    // Update UI
                     handleSelectionChangeWithType();
                 }
             }
@@ -476,14 +454,6 @@
         canvas.on('object:scaling', (opt: any) => {
             const target = opt.target;
             if (target && target.type === 'arrow') {
-                handleSelectionChangeWithType();
-            } else if (target && target.type === 'number-marker') {
-                // Enforce proportional scaling for NumberMarker
-                const avgScale = (target.scaleX + target.scaleY) / 2;
-                target.scaleX = avgScale;
-                target.scaleY = avgScale;
-                target.setCoords();
-                // Update UI to show effective fontSize
                 handleSelectionChangeWithType();
             }
         });
@@ -743,7 +713,7 @@
 
                 // Create new NumberMarker
                 const fill = activeToolOptions.fill || '#ff0000';
-                const fontSize = activeToolOptions.fontSize || 20;
+                const radius = activeToolOptions.radius || 15;
                 // Use counter then increment
                 const mk = new NumberMarker({
                     left: pointer.x,
@@ -756,7 +726,7 @@
                     selectable: true,
                     evented: true,
                     erasable: true,
-                    fontSize: fontSize,
+                    radius: radius,
                 });
 
                 canvas.add(mk);
@@ -1093,15 +1063,11 @@
                             fillVal = '#' + new Color(fillVal).toHex();
                         } catch (e) {}
                     }
-                    const effectiveFontSize =
-                        typeof (active as any).getEffectiveFontSize === 'function'
-                            ? (active as any).getEffectiveFontSize()
-                            : Math.round(((active as any).fontSize || 20) * (active.scaleX || 1));
                     dispatch('selection', {
                         options: {
                             fill: fillVal,
                             count: (active as any).count,
-                            fontSize: effectiveFontSize,
+                            radius: (active as any).radius,
                             nextNumber: currentNumber,
                             isSelection: true,
                         },
@@ -2417,15 +2383,10 @@
                                 o.set('count', options.count);
                                 o.dirty = true;
                             }
-                            if (typeof options.fontSize !== 'undefined') {
-                                // Reset scale and update fontSize
-                                const newFontSize = Math.round(options.fontSize);
-                                o.set('fontSize', newFontSize);
-                                const radius = newFontSize * 0.8;
-                                o.set('width', radius * 2);
-                                o.set('height', radius * 2);
-                                o.set('scaleX', 1);
-                                o.set('scaleY', 1);
+                            if (typeof options.radius !== 'undefined') {
+                                o.set('radius', options.radius);
+                                o.set('width', options.radius * 2);
+                                o.set('height', options.radius * 2);
                                 o.dirty = true;
                             }
                         }

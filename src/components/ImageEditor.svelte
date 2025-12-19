@@ -658,77 +658,106 @@
                     try {
                         const type = e.detail?.type;
                         if (e.detail && e.detail.options) {
+                            // Update toolSettings to reflect selected object's properties
                             toolSettings = e.detail.options;
+
+                            // Auto-activate corresponding tool ONLY if current tool is NOT 'select'
+                            // This allows 'select' tool to freely select multiple shapes without tool switching
+                            // while other tools still auto-activate for convenience
+                            const shouldAutoActivate = activeTool !== 'select';
+
                             if (type === 'rect' || type === 'ellipse' || type === 'circle') {
-                                activeTool = 'shape';
-                                activeShape =
+                                const shapeType =
                                     type === 'ellipse' || type === 'circle' ? 'circle' : 'rect';
-                                showToolPopup = true;
-                                if (!popupPositioned) {
-                                    updatePopupPosition();
-                                    popupPositioned = true;
+
+                                if (shouldAutoActivate) {
+                                    // Auto-activate shape tool
+                                    activeTool = 'shape';
+                                    activeShape = shapeType;
+                                    showToolPopup = true;
+                                    if (!popupPositioned) {
+                                        updatePopupPosition();
+                                        popupPositioned = true;
+                                    }
+                                    try {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.setTool === 'function'
+                                        )
+                                            canvasEditorRef.setTool('shape', {
+                                                shape: shapeType,
+                                                ...e.detail.options,
+                                            });
+                                    } catch (err) {}
                                 }
-                                try {
-                                    if (
-                                        canvasEditorRef &&
-                                        typeof canvasEditorRef.setTool === 'function'
-                                    )
-                                        canvasEditorRef.setTool('shape', {
-                                            shape: activeShape,
-                                            ...e.detail.options,
-                                        });
-                                } catch (err) {}
-                                saveToolSettings('shape', {
-                                    ...e.detail.options,
-                                    shape: activeShape,
-                                });
+
+                                // Save settings if shape tool is active (either already active or just activated)
+                                if (activeTool === 'shape') {
+                                    activeShape = shapeType;
+                                    saveToolSettings('shape', {
+                                        ...e.detail.options,
+                                        shape: shapeType,
+                                    });
+                                }
                             } else if (type === 'i-text' || type === 'textbox' || type === 'text') {
-                                // auto-open text settings when a text object is selected
-                                activeTool = 'text';
-                                showToolPopup = true;
-                                if (!popupPositioned) {
-                                    updatePopupPosition();
-                                    popupPositioned = true;
+                                if (shouldAutoActivate) {
+                                    // Auto-activate text tool
+                                    activeTool = 'text';
+                                    showToolPopup = true;
+                                    if (!popupPositioned) {
+                                        updatePopupPosition();
+                                        popupPositioned = true;
+                                    }
+                                    try {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.setTool === 'function'
+                                        )
+                                            canvasEditorRef.setTool('text', e.detail.options);
+                                    } catch (err) {}
                                 }
-                                toolSettings = e.detail.options || {};
-                                try {
-                                    if (
-                                        canvasEditorRef &&
-                                        typeof canvasEditorRef.setTool === 'function'
-                                    )
-                                        canvasEditorRef.setTool('text', toolSettings);
-                                } catch (err) {}
-                                saveToolSettings('text', toolSettings);
+
+                                // Save settings if text tool is active
+                                if (activeTool === 'text') {
+                                    saveToolSettings('text', e.detail.options);
+                                }
                             } else if (type === 'arrow') {
-                                // auto-open arrow settings when an arrow is selected
-                                activeTool = 'arrow';
-                                showToolPopup = true;
-                                if (!popupPositioned) {
-                                    updatePopupPosition();
-                                    popupPositioned = true;
+                                if (shouldAutoActivate) {
+                                    // Auto-activate arrow tool
+                                    activeTool = 'arrow';
+                                    showToolPopup = true;
+                                    if (!popupPositioned) {
+                                        updatePopupPosition();
+                                        popupPositioned = true;
+                                    }
+                                    try {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.setTool === 'function'
+                                        )
+                                            canvasEditorRef.setTool('arrow', e.detail.options);
+                                    } catch (err) {}
                                 }
-                                toolSettings = e.detail.options || {};
-                                try {
-                                    if (
-                                        canvasEditorRef &&
-                                        typeof canvasEditorRef.setTool === 'function'
-                                    )
-                                        canvasEditorRef.setTool('arrow', toolSettings);
-                                } catch (err) {}
-                                saveToolSettings('arrow', toolSettings);
+
+                                // Save settings if arrow tool is active
+                                if (activeTool === 'arrow') {
+                                    saveToolSettings('arrow', e.detail.options);
+                                }
                             } else if (type === 'number-marker') {
-                                // auto-open number settings when a number marker is selected
-                                activeTool = 'number-marker';
-                                showToolPopup = true;
-                                if (!popupPositioned) {
-                                    updatePopupPosition();
-                                    popupPositioned = true;
+                                if (shouldAutoActivate) {
+                                    // Auto-activate number-marker tool
+                                    activeTool = 'number-marker';
+                                    showToolPopup = true;
+                                    if (!popupPositioned) {
+                                        updatePopupPosition();
+                                        popupPositioned = true;
+                                    }
                                 }
-                                toolSettings = e.detail.options || {};
-                                // keep it as number-marker to show specific edit UI
-                                saveToolSettings('number-marker', toolSettings);
-                            } else {
-                                /* don't auto-open for other types */
+
+                                // Save settings if number-marker tool is active
+                                if (activeTool === 'number-marker') {
+                                    saveToolSettings('number-marker', e.detail.options);
+                                }
                             }
                         } else {
                             // Selection cleared, restore default tool options (e.g. for number-marker next count)
