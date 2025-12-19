@@ -475,6 +475,7 @@
             selection: true,
             preserveObjectStacking: true,
             renderOnAddRemove: true,
+            selectionKey: 'ctrlKey',
         });
 
         // Initialize custom controls
