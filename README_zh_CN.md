@@ -11,7 +11,7 @@
 
 ## 如何使用
 
-图片右键菜单选择「ImgReEditor编辑」按钮
+图片右键菜单选择「ImgReEditor 编辑」按钮
 
 
 ![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251219120448-2025-12-19.png)

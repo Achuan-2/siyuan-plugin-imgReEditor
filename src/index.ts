@@ -95,7 +95,7 @@ export default class PluginSample extends Plugin {
         menu.addItem({
             id: 'edit-image',
             icon: 'iconImage',
-            label: 'ImgReEditor编辑',
+            label: 'ImgReEditor 编辑',
             index: 1,
             click: () => {
                 // open dialog
