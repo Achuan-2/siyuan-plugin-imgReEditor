@@ -416,8 +416,30 @@
                     }
                     handleSelectionChangeWithType();
                 }
+            } else if (target && target.type === 'arrow') {
+                if (target.scaleX !== 1 || target.scaleY !== 1) {
+                    const arrow = target as any;
+                    const visualStrokeWidth = Math.round(arrow.getVisualStrokeWidth());
+
+                    // Reset scaling and update coordinates
+                    arrow.set({
+                        strokeWidth: visualStrokeWidth,
+                    });
+
+                    arrow.setCoords();
+                    canvas?.requestRenderAll();
+
+                    // Update UI
+                    handleSelectionChangeWithType();
+                }
             }
             schedulePushWithType('modified');
+        });
+        canvas.on('object:scaling', (opt: any) => {
+            const target = opt.target;
+            if (target && target.type === 'arrow') {
+                handleSelectionChangeWithType();
+            }
         });
         canvas.on('object:removed', (opt: any) => {
             schedulePushWithType('removed');
@@ -960,7 +982,11 @@
                     dispatch('selection', {
                         options: {
                             stroke: active.stroke,
-                            strokeWidth: active.strokeWidth,
+                            strokeWidth: Math.round(
+                                typeof (active as any).getVisualStrokeWidth === 'function'
+                                    ? (active as any).getVisualStrokeWidth()
+                                    : active.strokeWidth || 0
+                            ),
                             arrowHead: (active as any).arrowHead,
                             headStyle: (active as any).headStyle,
                             lineStyle: (active as any).lineStyle,

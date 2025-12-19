@@ -174,6 +174,20 @@ export class Arrow extends Line {
     }
 
     /**
+     * Calculate the visual stroke width taking scale into account.
+     */
+    getVisualStrokeWidth(): number {
+        const localXDiff = this.x2 - this.x1;
+        const localYDiff = this.y2 - this.y1;
+        const localAngle = Math.atan2(localYDiff, localXDiff);
+        const perpScale = Math.sqrt(
+            Math.pow(this.scaleX * Math.sin(localAngle), 2) +
+            Math.pow(this.scaleY * Math.cos(localAngle), 2)
+        );
+        return this.strokeWidth * (this.strokeUniform ? 1 : perpScale);
+    }
+
+    /**
      * Override _render to draw both the line and arrow heads with scale compensation
      * This prevents the line ends and heads from deforming during non-uniform scaling.
      */
@@ -186,26 +200,16 @@ export class Arrow extends Line {
         // We move to a coordinate system where 1 unit = 1 physical pixel
         ctx.scale(1 / this.scaleX, 1 / this.scaleY);
 
-        // Calculate properties in local space
+        // Visual stroke width on screen
+        const visualStrokeWidth = this.getVisualStrokeWidth();
+
+        // Calculate visual properties for rendering
         const localXDiff = this.x2 - this.x1;
         const localYDiff = this.y2 - this.y1;
-        const localAngle = Math.atan2(localYDiff, localXDiff);
-
-        // Calculate visual properties in pixels
         const xDiff = localXDiff * this.scaleX;
         const yDiff = localYDiff * this.scaleY;
         const visualAngle = Math.atan2(yDiff, xDiff);
         const visualLength = Math.sqrt(xDiff * xDiff + yDiff * yDiff);
-
-        // Calculate the scale factor for the stroke (perpendicular to the line direction)
-        // This ensures the visual thickness matches what the user expects on screen
-        const perpScale = Math.sqrt(
-            Math.pow(this.scaleX * Math.sin(localAngle), 2) +
-            Math.pow(this.scaleY * Math.cos(localAngle), 2)
-        );
-
-        // Visual stroke width on screen
-        const visualStrokeWidth = this.strokeWidth * (this.strokeUniform ? 1 : perpScale);
 
         // Arrow head size based on visual stroke width
         const headLength = Math.max(10, visualStrokeWidth * 2.5);
