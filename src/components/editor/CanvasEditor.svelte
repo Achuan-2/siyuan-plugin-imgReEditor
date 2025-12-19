@@ -1002,6 +1002,11 @@
         function handleSelectionChangeWithType() {
             try {
                 const active = canvas?.getActiveObject?.();
+                // Prevent tool switching when in the middle of a drawing operation
+                if (tempArrow && active !== tempArrow) return;
+                if (isDrawingMosaic && active !== tempMosaic) return;
+                if (isDrawingShape && active !== tempShape) return;
+
                 if (!active) {
                     dispatch('selection', { options: null, type: null });
                     return;
@@ -1187,7 +1192,7 @@
             }
 
             // if arrow drawing in progress
-            if (activeTool === 'arrow' && tempArrow) {
+            if (tempArrow) {
                 const pointer = canvas.getPointer(opt.e);
                 let x2 = pointer.x;
                 let y2 = pointer.y;
@@ -1258,7 +1263,7 @@
             }
 
             // finish arrow
-            if (activeTool === 'arrow' && tempArrow) {
+            if (tempArrow) {
                 try {
                     // Make arrow selectable and evented
                     tempArrow.set({
