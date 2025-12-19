@@ -188,7 +188,7 @@
             <span class="val">{settings.strokeWidth || 4}</span>
         </div>
         <div class="row">
-            <label for="arrow-head">箭头</label>
+            <label for="arrow-head">箭头位置</label>
             <select
                 id="arrow-head"
                 value={settings.arrowHead || 'right'}
@@ -198,6 +198,43 @@
                 <option value="left">左边</option>
                 <option value="right">右边</option>
                 <option value="both">两边</option>
+            </select>
+        </div>
+        <div class="row">
+            <label for="arrow-head-style">箭头样式</label>
+            <select
+                id="arrow-head-style"
+                value={settings.headStyle || 'sharp'}
+                on:change={e => emitChange({ headStyle: getValue(e) })}
+            >
+                <option value="sharp">尖箭头</option>
+                <option value="swallowtail">燕尾箭头</option>
+                <option value="sharp-hollow">尖箭头空心</option>
+                <option value="swallowtail-hollow">燕尾箭头空心</option>
+            </select>
+        </div>
+        <div class="row">
+            <label for="arrow-line-style">线段样式</label>
+            <select
+                id="arrow-line-style"
+                value={settings.lineStyle || 'solid'}
+                on:change={e => emitChange({ lineStyle: getValue(e) })}
+            >
+                <option value="solid">实线</option>
+                <option value="dashed">均匀虚线</option>
+                <option value="dotted">点线</option>
+                <option value="dash-dot">线点线</option>
+            </select>
+        </div>
+        <div class="row">
+            <label for="arrow-thickness-style">线段粗细</label>
+            <select
+                id="arrow-thickness-style"
+                value={settings.thicknessStyle || 'uniform'}
+                on:change={e => emitChange({ thicknessStyle: getValue(e) })}
+            >
+                <option value="uniform">均匀</option>
+                <option value="varying">变化</option>
             </select>
         </div>
     {:else if tool === 'text'}

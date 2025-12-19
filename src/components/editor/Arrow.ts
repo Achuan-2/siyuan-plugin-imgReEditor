@@ -75,9 +75,15 @@ function p2PositionHandler(_dim: any, finalMatrix: any, fabricObject: any) {
 }
 
 export type ArrowHeadType = 'none' | 'left' | 'right' | 'both';
+export type ArrowHeadStyle = 'sharp' | 'swallowtail' | 'sharp-hollow' | 'swallowtail-hollow';
+export type ArrowLineStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot';
+export type ArrowThicknessStyle = 'uniform' | 'varying';
 
 interface ArrowOptions extends TOptions<FabricObjectProps> {
     arrowHead?: ArrowHeadType;
+    headStyle?: ArrowHeadStyle;
+    lineStyle?: ArrowLineStyle;
+    thicknessStyle?: ArrowThicknessStyle;
 }
 
 /**
@@ -87,11 +93,17 @@ interface ArrowOptions extends TOptions<FabricObjectProps> {
 export class Arrow extends Line {
     static type = 'arrow';
     arrowHead: ArrowHeadType;
+    headStyle: ArrowHeadStyle;
+    lineStyle: ArrowLineStyle;
+    thicknessStyle: ArrowThicknessStyle;
 
     constructor(points: [number, number, number, number], options?: ArrowOptions) {
         super(points, options);
 
         this.arrowHead = options?.arrowHead || 'right';
+        this.headStyle = options?.headStyle || 'sharp';
+        this.lineStyle = options?.lineStyle || 'solid';
+        this.thicknessStyle = options?.thicknessStyle || 'uniform';
         this.strokeLineCap = 'butt'; // Flat ends as requested
         this.strokeLineJoin = 'round';
         this.objectCaching = false;
@@ -133,6 +145,27 @@ export class Arrow extends Line {
                 sizeY: 24,
             }),
         };
+    }
+
+    /**
+     * Helper to get dash array based on line style
+     */
+    private getDashArray(visualStrokeWidth: number): number[] {
+        switch (this.lineStyle) {
+            case 'dashed':
+                return [visualStrokeWidth * 3, visualStrokeWidth * 3];
+            case 'dotted':
+                return [visualStrokeWidth, visualStrokeWidth * 2];
+            case 'dash-dot':
+                return [
+                    visualStrokeWidth * 4,
+                    visualStrokeWidth * 2,
+                    visualStrokeWidth,
+                    visualStrokeWidth * 2,
+                ];
+            default:
+                return [];
+        }
     }
 
     /**
@@ -182,30 +215,135 @@ export class Arrow extends Line {
         ctx.lineCap = this.strokeLineCap;
         ctx.lineJoin = this.strokeLineJoin;
 
-        // 1. Draw the line segment
-        // We draw it from -visualLength/2 to +visualLength/2 in the compensated space
-        ctx.beginPath();
-        ctx.moveTo(-visualLength / 2, 0);
-        ctx.lineTo(visualLength / 2, 0);
-        ctx.stroke();
+        // 1. Check for Hollow Integrated Contour Mode
+        const isHollowContour = this.headStyle.endsWith('-hollow');
 
-        // 2. Helper to draw an arrow head
+        if (isHollowContour && (this.arrowHead === 'right' || this.arrowHead === 'left')) {
+            // Draw the entire arrow as a single closed path (Contour)
+            const style = this.headStyle.replace('-hollow', '');
+
+            // Increased multipliers for a much larger hollow area
+            const hL = Math.max(10, visualStrokeWidth * 7.5);
+            const hW = Math.max(6, visualStrokeWidth * 3.5);
+
+            // For sharp triangle, the neck point is at the same X as the wings (flat back)
+            // For swallowtail, the neck is indented towards the tip
+            const indent = style === 'swallowtail' ? hL * 0.75 : hL;
+
+            const bWNeck = visualStrokeWidth * 2.0;
+            const bWStart = this.thicknessStyle === 'varying' ? visualStrokeWidth * 0.2 : bWNeck;
+
+            // Use a thinner stroke for the outline in hollow mode to match user expectation
+            ctx.lineWidth = Math.max(1, visualStrokeWidth * 0.4);
+            ctx.lineJoin = 'miter';
+            ctx.miterLimit = 10;
+
+            ctx.beginPath();
+            const dir = this.arrowHead === 'right' ? 1 : -1;
+            const L = visualLength;
+
+            // Calculate key points
+            const tipX = (L / 2) * dir;
+            const startX = (-L / 2) * dir;
+            const neckX = tipX - indent * dir;
+            const wingX = tipX - hL * dir;
+
+            ctx.moveTo(tipX, 0);
+            ctx.lineTo(wingX, hW);
+            ctx.lineTo(neckX, bWNeck / 2);
+            ctx.lineTo(startX, bWStart / 2);
+            ctx.lineTo(startX, -bWStart / 2);
+            ctx.lineTo(neckX, -bWNeck / 2);
+            ctx.lineTo(wingX, -hW);
+            ctx.closePath();
+
+            const dashes = this.getDashArray(visualStrokeWidth);
+            if (dashes.length > 0) ctx.setLineDash(dashes);
+            ctx.stroke();
+            if (dashes.length > 0) ctx.setLineDash([]);
+
+            ctx.restore();
+            return;
+        }
+
+        // 2. Default Rendering Mode (Solid or traditional hollow heads)
+        const isVarying =
+            this.thicknessStyle === 'varying' &&
+            (this.arrowHead === 'left' || this.arrowHead === 'right');
+
+        if (isVarying) {
+            // Draw tapered line as a filled polygon
+            const startWidth = this.arrowHead === 'right' ? visualStrokeWidth * 0.2 : visualStrokeWidth;
+            const endWidth = this.arrowHead === 'right' ? visualStrokeWidth : visualStrokeWidth * 0.2;
+
+            ctx.beginPath();
+            ctx.moveTo(-visualLength / 2, -startWidth / 2);
+            ctx.lineTo(visualLength / 2, -endWidth / 2);
+            ctx.lineTo(visualLength / 2, endWidth / 2);
+            ctx.lineTo(-visualLength / 2, startWidth / 2);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            const dashes = this.getDashArray(visualStrokeWidth);
+            const hasDashes = dashes.length > 0;
+            if (hasDashes) {
+                ctx.setLineDash(dashes);
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(-visualLength / 2, 0);
+            ctx.lineTo(visualLength / 2, 0);
+            ctx.stroke();
+
+            // Disable dashes for arrow heads
+            if (hasDashes) {
+                ctx.setLineDash([]);
+            }
+        }
+
+        // 3. Helper to draw an arrow head
         const drawArrowHead = (x: number, direction: number) => {
             if (this.arrowHead === 'none') return; // Only draw if arrow heads are enabled
             ctx.save();
             ctx.translate(x, 0);
+
+            const isHollow = this.headStyle.endsWith('-hollow');
+            const style = isHollow ? this.headStyle.replace('-hollow', '') : this.headStyle;
+
+            // Make heads larger for traditional hollow to ensure visibility
+            const currentHeadLength = isHollow ? headLength * 1.5 : headLength;
+            const currentHeadWidth = isHollow ? headWidth * 1.5 : headWidth;
+
             ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(-headLength * direction, headWidth);
-            ctx.lineTo(-headLength * direction, headWidth * -1);
+            if (style === 'swallowtail') {
+                // Swallowtail: indented back
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-currentHeadLength * direction, currentHeadWidth);
+                ctx.lineTo(-currentHeadLength * 0.6 * direction, 0);
+                ctx.lineTo(-currentHeadLength * direction, -currentHeadWidth);
+            } else {
+                // Sharp (default triangle)
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-currentHeadLength * direction, currentHeadWidth);
+                ctx.lineTo(-currentHeadLength * direction, -currentHeadWidth);
+            }
             ctx.closePath();
-            ctx.fill();
-            // Also stroke for sharp tips
-            ctx.stroke();
+
+            if (isHollow) {
+                // Hollow: only stroke and clear background
+                ctx.save();
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.fill();
+                ctx.restore();
+                ctx.stroke();
+            } else {
+                ctx.fill();
+                ctx.stroke();
+            }
             ctx.restore();
         };
 
-        // 3. Draw arrow heads based on direction
+        // 4. Draw arrow heads based on direction
         if (this.arrowHead === 'right' || this.arrowHead === 'both') {
             drawArrowHead(visualLength / 2, 1);
         }
@@ -221,7 +359,7 @@ export class Arrow extends Line {
      * Override toObject to include custom properties
      */
     toObject(propertiesToInclude: any[] = []): any {
-        return super.toObject(['arrowHead', ...propertiesToInclude] as any);
+        return super.toObject(['arrowHead', 'headStyle', 'lineStyle', 'thicknessStyle', ...propertiesToInclude] as any);
     }
 }
 

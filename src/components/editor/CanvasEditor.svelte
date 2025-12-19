@@ -580,6 +580,7 @@
                         hasBorders: false,
                         hasControls: false,
                         erasable: true,
+                        strokeUniform: true, // 控制边框是否随大小放大加粗
                     });
                 } else {
                     // use ellipse for circle-like drawing
@@ -632,6 +633,9 @@
                     stroke: activeToolOptions.stroke || '#ff0000',
                     strokeWidth: activeToolOptions.strokeWidth || 4,
                     arrowHead: activeToolOptions.arrowHead || 'right',
+                    headStyle: activeToolOptions.headStyle || 'sharp',
+                    lineStyle: activeToolOptions.lineStyle || 'solid',
+                    thicknessStyle: activeToolOptions.thicknessStyle || 'uniform',
                     selectable: false,
                     evented: false,
                     erasable: true,
@@ -953,6 +957,9 @@
                             stroke: active.stroke,
                             strokeWidth: active.strokeWidth,
                             arrowHead: (active as any).arrowHead,
+                            headStyle: (active as any).headStyle,
+                            lineStyle: (active as any).lineStyle,
+                            thicknessStyle: (active as any).thicknessStyle,
                         },
                         type: 'arrow',
                     });
@@ -2306,6 +2313,21 @@
                         if (typeof options.arrowHead !== 'undefined' && 'arrowHead' in o) {
                             o.set('arrowHead', options.arrowHead);
                             // Custom property change doesn't automatically trigger cache invalidation
+                            o.dirty = true;
+                        }
+                        if (typeof options.headStyle !== 'undefined' && 'headStyle' in o) {
+                            o.set('headStyle', options.headStyle);
+                            o.dirty = true;
+                        }
+                        if (typeof options.lineStyle !== 'undefined' && 'lineStyle' in o) {
+                            o.set('lineStyle', options.lineStyle);
+                            o.dirty = true;
+                        }
+                        if (
+                            typeof options.thicknessStyle !== 'undefined' &&
+                            'thicknessStyle' in o
+                        ) {
+                            o.set('thicknessStyle', options.thicknessStyle);
                             o.dirty = true;
                         }
                         // Handle custom NumberMarker class
