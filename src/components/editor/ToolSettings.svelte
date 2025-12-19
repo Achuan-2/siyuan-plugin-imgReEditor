@@ -424,6 +424,19 @@
                 </div>
             </div>
         </div>
+    {:else if tool === 'mosaic'}
+        <div class="row">
+            <label for="mosaic-size">马赛克大小</label>
+            <input
+                id="mosaic-size"
+                type="range"
+                min="1"
+                max="50"
+                value={settings.blockSize || 5}
+                on:input={e => emitChange({ blockSize: +getValue(e) })}
+            />
+            <span class="val">{settings.blockSize || 15}</span>
+        </div>
     {:else if tool === 'transform'}
         <div class="row">
             <div class="label">翻转</div>

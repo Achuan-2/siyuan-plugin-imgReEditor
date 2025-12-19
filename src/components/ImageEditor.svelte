@@ -459,6 +459,7 @@
                 'arrow',
                 'brush',
                 'eraser',
+                'mosaic',
                 'text',
                 'transform',
                 'number-marker',
@@ -759,6 +760,28 @@
                                 if (activeTool === 'number-marker') {
                                     saveToolSettings('number-marker', e.detail.options);
                                 }
+                            } else if (type === 'mosaic-rect') {
+                                if (shouldAutoActivate) {
+                                    // Auto-activate mosaic tool
+                                    activeTool = 'mosaic';
+                                    showToolPopup = true;
+                                    if (!popupPositioned) {
+                                        updatePopupPosition();
+                                        popupPositioned = true;
+                                    }
+                                    try {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.setTool === 'function'
+                                        )
+                                            canvasEditorRef.setTool('mosaic', e.detail.options);
+                                    } catch (err) {}
+                                }
+
+                                // Save settings if mosaic tool is active
+                                if (activeTool === 'mosaic') {
+                                    saveToolSettings('mosaic', e.detail.options);
+                                }
                             }
                         } else {
                             // Selection cleared, restore default tool options (e.g. for number-marker next count)
@@ -817,6 +840,8 @@
                             变换设置
                         {:else if activeTool === 'crop'}
                             裁剪设置
+                        {:else if activeTool === 'mosaic'}
+                            马赛克设置
                         {:else}
                             {activeTool}
                         {/if}

@@ -136,6 +136,18 @@
     </button>
     <button
         class="b3-button"
+        class:active={active === 'mosaic'}
+        class:b3-button--outline={active !== 'mosaic'}
+        on:click={() => emit('tool', { tool: 'mosaic' })}
+    >
+        <svg class="fill-icon" viewBox="0 0 1024 1024">
+            <path
+                d="M128 128h256v256H128V128z m0 341.333333h256v256H128V469.333333z m0 341.333334h256v85.333333H128v-85.333333z m341.333333-682.666667h256v256H469.333333V128z m0 341.333333h256v256H469.333333V469.333333z m0 341.333334h256v85.333333H469.333333v-85.333333zM810.666667 128h85.333333v256h-85.333333V128z m0 341.333333h85.333333v256h-85.333333V469.333333z m0 341.333334h85.333333v85.333333h-85.333333v-85.333333z"
+            />
+        </svg>
+    </button>
+    <button
+        class="b3-button"
         class:active={active === 'transform'}
         class:b3-button--outline={active !== 'transform'}
         on:click={() => emit('tool', { tool: 'transform' })}

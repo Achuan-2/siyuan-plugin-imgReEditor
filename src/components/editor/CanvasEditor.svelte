@@ -18,6 +18,7 @@
         Color,
     } from 'fabric';
     import { EraserBrush } from '@erase2d/fabric';
+    import MosaicRect from './MosaicRect';
     import Arrow from './Arrow';
     import NumberMarker from './NumberMarker';
     import CropRect from './CropRect';
@@ -725,6 +726,43 @@
                 return;
             }
 
+            // Mosaic tool: start drawing mosaic rectangle
+            if (activeTool === 'mosaic') {
+                // if clicked on an existing object, select it instead
+                let hit = opt.target;
+                try {
+                    if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
+                        hit = (canvas as any).findTarget(opt.e);
+                    }
+                } catch (e) {}
+                if (hit) {
+                    try {
+                        canvas.setActiveObject(hit);
+                        canvas.requestRenderAll();
+                        return;
+                    } catch (e) {}
+                }
+
+                // Start drawing mosaic rectangle
+                mosaicStart = { x: pointer.x, y: pointer.y };
+                isDrawingMosaic = true;
+                tempMosaic = new MosaicRect({
+                    left: pointer.x,
+                    top: pointer.y,
+                    width: 0,
+                    height: 0,
+                    blockSize: activeToolOptions.blockSize || 15,
+                    stroke: 'transparent',
+                    strokeWidth: 0,
+                    selectable: false,
+                    evented: false,
+                    erasable: true,
+                });
+                canvas.add(tempMosaic);
+                canvas.requestRenderAll();
+                return;
+            }
+
             // Text tool: create or select an editable text object
             if (activeTool === 'text') {
                 try {
@@ -1055,6 +1093,13 @@
                         },
                         type: 'number-marker',
                     });
+                } else if (active.type === 'mosaic-rect') {
+                    dispatch('selection', {
+                        options: {
+                            blockSize: (active as any).blockSize || 15,
+                        },
+                        type: 'mosaic-rect',
+                    });
                 }
             } catch (e) {}
         }
@@ -1153,6 +1198,20 @@
                 return;
             }
 
+            // if mosaic drawing in progress
+            if (isDrawingMosaic && tempMosaic) {
+                const sx = mosaicStart.x;
+                const sy = mosaicStart.y;
+                const left = Math.min(sx, pointer.x);
+                const top = Math.min(sy, pointer.y);
+                const width = Math.abs(pointer.x - sx);
+                const height = Math.abs(pointer.y - sy);
+                tempMosaic.set({ left, top, width, height });
+                tempMosaic.setCoords();
+                canvas.requestRenderAll();
+                return;
+            }
+
             // if shape drawing in progress, update temp shape
             if (isDrawingShape && tempShape) {
                 const sx = shapeStart.x;
@@ -1197,6 +1256,39 @@
                     console.warn('Failed to finalize arrow', e);
                 }
                 tempArrow = null;
+                return;
+            }
+
+            // finish mosaic drawing
+            if (isDrawingMosaic && tempMosaic) {
+                try {
+                    const minSize = 10;
+                    if (tempMosaic.width < minSize || tempMosaic.height < minSize) {
+                        // too small, remove
+                        try {
+                            canvas.remove(tempMosaic);
+                        } catch (e) {}
+                        tempMosaic = null;
+                        isDrawingMosaic = false;
+                        return;
+                    }
+
+                    // finalize
+                    tempMosaic.set({
+                        selectable: true,
+                        evented: true,
+                        hasControls: true,
+                        hasBorders: true,
+                    });
+                    tempMosaic.setCoords();
+                    canvas.setActiveObject(tempMosaic);
+                    canvas.requestRenderAll();
+                    schedulePushWithType('added');
+                } catch (e) {
+                    console.warn('Failed to finalize mosaic', e);
+                }
+                tempMosaic = null;
+                isDrawingMosaic = false;
                 return;
             }
 
@@ -1309,6 +1401,7 @@
             else if (tool === 'arrow') canvas.defaultCursor = 'crosshair';
             else if (tool === 'brush') canvas.defaultCursor = 'crosshair';
             else if (tool === 'eraser') canvas.defaultCursor = 'crosshair';
+            else if (tool === 'mosaic') canvas.defaultCursor = 'crosshair';
             else if (tool === 'text') canvas.defaultCursor = 'text';
             else if (tool === 'number-marker') canvas.defaultCursor = 'crosshair';
             else if (tool === 'hand') canvas.defaultCursor = 'grab';
@@ -1387,6 +1480,11 @@
     // Arrow drawing state
     let tempArrow: any = null;
     let arrowStart = { x: 0, y: 0 };
+
+    // Mosaic drawing state
+    let tempMosaic: any = null;
+    let mosaicStart = { x: 0, y: 0 };
+    let isDrawingMosaic = false;
 
     // Crop mode state
     let cropMode = false;
@@ -2263,6 +2361,14 @@
             if (!objs || objs.length === 0) return;
             objs.forEach((o: any) => {
                 try {
+                    // Update mosaic rect blockSize
+                    if (o.type === 'mosaic-rect') {
+                        if (typeof options.blockSize !== 'undefined') {
+                            o.set('blockSize', options.blockSize);
+                            o.dirty = true;
+                        }
+                    }
+
                     // allow editing arrow groups as a single object
                     if (o.type === 'group') {
                         if (!(o as any)._isArrow) return; // not an arrow
