@@ -336,3 +336,108 @@ export function createCropControls(
 
 export default initControls;
 
+// Create custom controls for select canvas size rectangle with confirm and cancel buttons
+export function createSelectCanvasSizeControls(
+    onConfirm: (eventData: TPointerEvent, transform: Transform) => boolean,
+    onCancel: (eventData: TPointerEvent, transform: Transform) => boolean
+) {
+    // Confirm button (green checkmark) - positioned to the left of cancel button
+    const confirmControl = new Control({
+        x: 0.5,
+        y: -0.5,
+        offsetY: -16,
+        offsetX: -8, // Position to the left of the cancel button
+        cursorStyle: 'pointer',
+        mouseUpHandler: onConfirm,
+        render: createIconRenderer(confirmImgIcon, 24, 24),
+        sizeX: 24,
+        sizeY: 24,
+    });
+
+    // Cancel button (red X) - positioned at top right
+    const cancelControl = new Control({
+        x: 0.5,
+        y: -0.5,
+        offsetY: -16,
+        offsetX: 16,
+        cursorStyle: 'pointer',
+        mouseUpHandler: onCancel,
+        render: createIconRenderer(delImgIcon, 24, 24),
+        sizeX: 24,
+        sizeY: 24,
+    });
+
+    // Return controls object with standard resize controls plus confirm/cancel
+    return {
+        // Corner controls for resizing
+        tl: new Control({
+            x: -0.5,
+            y: -0.5,
+            cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
+            actionHandler: controlsUtils.scalingEqually,
+            render: createIconRenderer(edgeImgIcon, 25, 25),
+        }),
+        tr: new Control({
+            x: 0.5,
+            y: -0.5,
+            cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
+            actionHandler: controlsUtils.scalingEqually,
+            render: createIconRenderer(edgeImgIcon, 25, 25),
+        }),
+        bl: new Control({
+            x: -0.5,
+            y: 0.5,
+            cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
+            actionHandler: controlsUtils.scalingEqually,
+            render: createIconRenderer(edgeImgIcon, 25, 25),
+        }),
+        br: new Control({
+            x: 0.5,
+            y: 0.5,
+            cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
+            actionHandler: controlsUtils.scalingEqually,
+            render: createIconRenderer(edgeImgIcon, 25, 25),
+        }),
+        // Middle controls for resizing
+        mt: new Control({
+            x: 0,
+            y: -0.5,
+            offsetY: -1,
+            cursorStyleHandler: controlsUtils.scaleSkewCursorStyleHandler,
+            actionHandler: controlsUtils.scalingYOrSkewingX,
+            getActionName: controlsUtils.scaleOrSkewActionName,
+            render: createIconRenderer(horizontalImgIcon, 25, 20),
+        }),
+        mb: new Control({
+            x: 0,
+            y: 0.5,
+            offsetY: 1,
+            cursorStyleHandler: controlsUtils.scaleSkewCursorStyleHandler,
+            actionHandler: controlsUtils.scalingYOrSkewingX,
+            getActionName: controlsUtils.scaleOrSkewActionName,
+            render: createIconRenderer(horizontalImgIcon, 25, 20),
+        }),
+        ml: new Control({
+            x: -0.5,
+            y: 0,
+            offsetX: -1,
+            cursorStyleHandler: controlsUtils.scaleSkewCursorStyleHandler,
+            actionHandler: controlsUtils.scalingXOrSkewingY,
+            getActionName: controlsUtils.scaleOrSkewActionName,
+            render: createIconRenderer(verticalImgIcon, 20, 25),
+        }),
+        mr: new Control({
+            x: 0.5,
+            y: 0,
+            offsetX: 1,
+            cursorStyleHandler: controlsUtils.scaleSkewCursorStyleHandler,
+            actionHandler: controlsUtils.scalingXOrSkewingY,
+            getActionName: controlsUtils.scaleOrSkewActionName,
+            render: createIconRenderer(verticalImgIcon, 20, 25),
+        }),
+        // Confirm and cancel buttons
+        confirmControl,
+        cancelControl,
+    };
+}
+

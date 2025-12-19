@@ -40,6 +40,7 @@
     let showToolPopup: boolean = false;
     let activeShape: string | null = null;
     let tmpBlobUrl: string | null = null;
+    let selectCanvasSizeMode = false;
     // Draggable tool-popup state
     let popupPos = { x: 12, y: 44 }; // default position (will be updated on first open)
     let isDraggingPopup = false;
@@ -101,6 +102,8 @@
             console.warn('Failed to restore canvas JSON reactively', e);
         }
     }
+
+
 
     async function blobToDataURL(blob: Blob): Promise<string> {
         return new Promise((resolve, reject) => {
@@ -741,6 +744,32 @@
                         }
                     } catch (e) {}
                 }}
+                on:canvasResized={e => {
+                    try {
+                        const w = e.detail?.width;
+                        const h = e.detail?.height;
+                        if (typeof w === 'number' && typeof h === 'number') {
+                            // Update toolSettings so UI reflects new canvas size
+                            const nw = Math.round(w);
+                            const nh = Math.round(h);
+                            toolSettings = {
+                                ...(toolSettings || {}),
+                                width: nw,
+                                height: nh,
+                            };
+                            // Re-apply after a short delay to avoid being overwritten by selection handlers
+                            setTimeout(() => {
+                                try {
+                                    toolSettings = {
+                                        ...(toolSettings || {}),
+                                        width: nw,
+                                        height: nh,
+                                    };
+                                } catch (e) {}
+                            }, 80);
+                        }
+                    } catch (err) {}
+                }}
                 on:loadError={e => {
                     try {
                         const msg = e.detail?.message || '加载失败';
@@ -912,6 +941,9 @@
                     undoCount = idx;
                     redoCount = Math.max(0, len - 1 - idx);
                 }}
+                on:selectCanvasSizeModeChanged={e => {
+                    selectCanvasSizeMode = e.detail;
+                }}
             />
         </div>
 
@@ -971,6 +1003,7 @@
                         tool={activeTool}
                         settings={toolSettings}
                         recentColors={settings.recentColors || {}}
+                        selectCanvasSizeMode={selectCanvasSizeMode}
                         on:action={e => {
                             const { action } = e.detail;
                             try {
@@ -998,6 +1031,23 @@
                                             e.detail.width,
                                             e.detail.height
                                         );
+                                } else if (action === 'selectCanvasSize') {
+                                    try {
+                                        const currentMode =
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.getSelectCanvasSizeMode === 'function'
+                                                ? canvasEditorRef.getSelectCanvasSizeMode()
+                                                : selectCanvasSizeMode;
+                                        if (currentMode) {
+                                            canvasEditorRef.exitSelectCanvasSizeMode &&
+                                                canvasEditorRef.exitSelectCanvasSizeMode();
+                                        } else {
+                                            canvasEditorRef.enterSelectCanvasSizeMode &&
+                                                canvasEditorRef.enterSelectCanvasSizeMode();
+                                        }
+                                    } catch (err) {
+                                        console.warn('selectCanvasSize toggle failed', err);
+                                    }
                                 } else if (action === 'uploadImage') {
                                     canvasEditorRef.uploadImage && canvasEditorRef.uploadImage();
                                 }

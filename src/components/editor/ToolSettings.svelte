@@ -4,6 +4,7 @@
     export let tool: string | null = null;
     export let settings: any = {};
     export let recentColors: Record<string, string[]> = {};
+    export let selectCanvasSizeMode: boolean = false;
     const dispatch = createEventDispatcher();
 
     function emitChange(partial: any) {
@@ -561,6 +562,13 @@
                         height: settings.height || 600,
                     })}
             >
+                应用大小
+            </button>
+            <button
+                on:click={() => dispatch('action', { action: 'selectCanvasSize' })}
+                class:active={selectCanvasSizeMode}
+                class:resize-active={selectCanvasSizeMode}
+            >
                 调整大小
             </button>
             <button on:click={() => dispatch('action', { action: 'uploadImage' })}>上传图片</button>
@@ -634,6 +642,12 @@
     button.active {
         background: var(--b3-theme-primary-lightest, #e3f2fd);
         color: var(--b3-theme-primary, #1976d2);
+        border-color: var(--b3-theme-primary, #1976d2);
+    }
+    /* 专用于“调整大小”按钮的激活样式：纯蓝背景白字 */
+    button.resize-active {
+        background: var(--b3-theme-primary, #1976d2);
+        color: #ffffff;
         border-color: var(--b3-theme-primary, #1976d2);
     }
 </style>
