@@ -656,7 +656,7 @@
 
             // If shape tool active, start drawing on mouse down
             if (activeTool === 'shape') {
-                // If user clicked on an existing object, allow selection/move instead of starting a new draw
+                // Only allow selecting shapes that match the current tool (rect/ellipse/circle)
                 let hit = opt.target;
                 try {
                     if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
@@ -665,14 +665,24 @@
                 } catch (e) {
                     /* ignore */
                 }
-                if (hit) {
+                // Only allow selection if the hit object is a shape type (rect, ellipse, circle)
+                const allowedShapeTypes = ['rect', 'ellipse', 'circle'];
+                if (hit && allowedShapeTypes.includes(hit.type)) {
                     try {
                         canvas.setActiveObject(hit);
                         canvas.requestRenderAll();
                     } catch (e) {}
                     return;
                 }
-                // If no hit and there is an active object, clear selection so new drawing can start
+                // If hit a non-matching object, clear selection and prevent default interaction
+                // This prevents moving images or other objects when drawing shapes
+                if (hit) {
+                    try {
+                        canvas.discardActiveObject();
+                        canvas.requestRenderAll();
+                    } catch (e) {}
+                }
+                // Clear any active object to ensure new drawing can start
                 try {
                     const current = canvas.getActiveObject && canvas.getActiveObject();
                     if (current) {
@@ -742,18 +752,29 @@
             }
             // Arrow tool: start drawing using custom Arrow class
             if (activeTool === 'arrow') {
-                // if clicked on an existing object, select it instead of starting a new arrow
+                // Only allow selecting arrows, not other shapes
                 let hit = opt.target;
                 try {
                     if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
                         hit = (canvas as any).findTarget(opt.e);
                     }
                 } catch (e) {}
-                if (hit) {
+                // Only allow selection if the hit object is an arrow
+                if (
+                    hit &&
+                    (hit.type === 'arrow' || (hit.type === 'line' && (hit as any).arrowHead))
+                ) {
                     try {
                         canvas.setActiveObject(hit);
                         canvas.requestRenderAll();
                         return;
+                    } catch (e) {}
+                }
+                // If hit a non-arrow object, clear selection to prevent moving it
+                if (hit) {
+                    try {
+                        canvas.discardActiveObject();
+                        canvas.requestRenderAll();
                     } catch (e) {}
                 }
 
@@ -777,7 +798,7 @@
 
             // Number marker tool
             if (activeTool === 'number-marker') {
-                // if clicked on an existing object, select it instead
+                // Only allow selecting number markers, not other shapes
                 let hit = opt.target;
                 try {
                     if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
@@ -785,7 +806,8 @@
                     }
                 } catch (e) {}
 
-                if (hit) {
+                // Only allow selection if the hit object is a number marker
+                if (hit && hit.type === 'number-marker') {
                     try {
                         canvas.setActiveObject(hit);
 
@@ -796,6 +818,13 @@
                         canvas.requestRenderAll();
                     } catch (e) {}
                     return;
+                }
+                // If hit a non-marker object, clear selection to prevent moving it
+                if (hit) {
+                    try {
+                        canvas.discardActiveObject();
+                        canvas.requestRenderAll();
+                    } catch (e) {}
                 }
 
                 // Create new NumberMarker
@@ -832,18 +861,26 @@
 
             // Mosaic tool: start drawing mosaic rectangle
             if (activeTool === 'mosaic') {
-                // if clicked on an existing object, select it instead
+                // Only allow selecting mosaic rectangles, not other shapes
                 let hit = opt.target;
                 try {
                     if (!hit && canvas && typeof (canvas as any).findTarget === 'function') {
                         hit = (canvas as any).findTarget(opt.e);
                     }
                 } catch (e) {}
-                if (hit) {
+                // Only allow selection if the hit object is a mosaic-rect
+                if (hit && hit.type === 'mosaic-rect') {
                     try {
                         canvas.setActiveObject(hit);
                         canvas.requestRenderAll();
                         return;
+                    } catch (e) {}
+                }
+                // If hit a non-mosaic object, clear selection to prevent moving it
+                if (hit) {
+                    try {
+                        canvas.discardActiveObject();
+                        canvas.requestRenderAll();
                     } catch (e) {}
                 }
 
@@ -1504,6 +1541,7 @@
 
         activeTool = tool;
         activeToolOptions = options || {};
+
 
         if (tool === 'number-marker') {
             if (typeof options.nextNumber !== 'undefined') {
