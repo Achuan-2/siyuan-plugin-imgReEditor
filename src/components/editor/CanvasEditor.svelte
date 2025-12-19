@@ -83,6 +83,7 @@
                 if (
                     obj._isCropRect ||
                     obj._isImageBorder ||
+                    obj._isCanvasBoundary ||
                     (canvas && obj === canvas.backgroundImage)
                 ) {
                     obj.selectable = false;
