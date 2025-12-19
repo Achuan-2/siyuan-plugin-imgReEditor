@@ -57,7 +57,7 @@
         '_isCropRect',
         'count', // for NumberMarker
         'textColor', // for NumberMarker
-        'radius', // for NumberMarker
+        'fontSize', // for NumberMarker
         '_originalSrc',
         '_cropOffset',
         '_isImageBorder',
@@ -277,7 +277,7 @@
                     'arrowHead',
                     'count',
                     'textColor',
-                    'radius',
+                    'fontSize',
                 ])
             );
 
@@ -800,7 +800,7 @@
 
                 // Create new NumberMarker
                 const fill = activeToolOptions.fill || '#ff0000';
-                const radius = activeToolOptions.radius || 15;
+                const fontSize = activeToolOptions.fontSize || 20;
                 // Use counter then increment
                 const mk = new NumberMarker({
                     left: pointer.x,
@@ -813,7 +813,7 @@
                     selectable: true,
                     evented: true,
                     erasable: true,
-                    radius: radius,
+                    fontSize: fontSize,
                 });
 
                 canvas.add(mk);
@@ -1211,7 +1211,7 @@
                         options: {
                             fill: fillVal,
                             count: (active as any).count,
-                            radius: (active as any).radius,
+                            fontSize: (active as any).fontSize,
                             nextNumber: currentNumber,
                             isSelection: true,
                         },
@@ -2723,7 +2723,7 @@
         if (activeTool === 'number-marker') {
             return {
                 ...(activeToolOptions || {}),
-                radius: activeToolOptions?.radius || 15, // default
+                fontSize: activeToolOptions?.fontSize || 20, // default
                 count: currentNumber,
                 nextNumber: currentNumber, // If selection active, this value might be overridden by updated logic below to show global next
                 isSelection: false,
@@ -2904,10 +2904,11 @@
                                 o.set('count', options.count);
                                 o.dirty = true;
                             }
-                            if (typeof options.radius !== 'undefined') {
-                                o.set('radius', options.radius);
-                                o.set('width', options.radius * 2);
-                                o.set('height', options.radius * 2);
+                            if (typeof options.fontSize !== 'undefined') {
+                                o.set('fontSize', options.fontSize);
+                                const radius = options.fontSize * 0.8;
+                                o.set('width', radius * 2);
+                                o.set('height', radius * 2);
                                 o.dirty = true;
                             }
                         }
