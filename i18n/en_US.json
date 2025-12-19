@@ -1,43 +1,6 @@
 {
     "settings": {
         "settingsPanel": "Settings Panel",
-        "settingsGroup": {
-            "group1": "Tab1",
-            "group2": "Tab2",
-            "reset": "Reset Settings"
-        },
-        "textinput": {
-            "title": "Text Input",
-            "description": "Please enter text content",
-            "value": "Default text content"
-        },
-        "slider": {
-            "title": "Slider Setting",
-            "description": "Drag the slider to adjust the value"
-        },
-        "checkbox": {
-            "title": "Enable Feature",
-            "description": "Check to enable this feature"
-        },
-        "textarea": {
-            "title": "Text Area",
-            "description": "Multi-line text input area",
-            "placeholder": "Enter your text here...",
-            "value": "Default text content"
-        },
-        "hint": {
-            "title": "💡Important Notice",
-            "description": "This is a hint message to provide important information to users."
-        },
-        "select": {
-            "title": "Select Option",
-            "description": "Choose an option from the dropdown list",
-            "options": {
-                "option1": "Option 1",
-                "option2": "Option 2",
-                "option3": "Option 3"
-            }
-        },
         "storageMode": {
             "title": "Original Image Storage Method",
             "description": "Choose how to store the original image",
