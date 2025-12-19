@@ -2233,6 +2233,14 @@
         const shadowColor = options.shadowColor ?? '#000000';
         const shadowOpacity = Number(options.shadowOpacity ?? 0.2);
 
+        if (!enabled) {
+            // When disabled, directly use the unbordered image without any border effects
+            canvas.backgroundImage = mainImage;
+            canvas.requestRenderAll();
+            schedulePushWithType('modified');
+            return;
+        }
+
         // 2. Create baked image on temp canvas
         // We use the bounding rect of the main image because it might be already cropped or transformed
         const br = mainImage.getBoundingRect();
