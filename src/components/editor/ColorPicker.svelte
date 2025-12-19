@@ -65,12 +65,18 @@
         }
     }
 
+    function handleNativeInput(e: Event) {
+        const newColor = (e.target as HTMLInputElement).value;
+        value = newColor;
+        dispatch('change', newColor);
+    }
+
     function handleNativeChange(e: Event) {
         const newColor = (e.target as HTMLInputElement).value;
         value = newColor;
         dispatch('change', newColor);
-        addToRecent(newColor);
         showPopup = false;
+        addToRecent(newColor);
     }
 
     function handleClickOutside(e: MouseEvent) {
@@ -147,7 +153,8 @@
         bind:this={inputRef}
         type="color"
         {value}
-        on:input={handleNativeChange}
+        on:input={handleNativeInput}
+        on:change={handleNativeChange}
         class="hidden-input"
     />
 </div>
