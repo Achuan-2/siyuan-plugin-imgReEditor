@@ -569,25 +569,9 @@
                     canvasEditorRef.setTool('transform');
                     toolSettings = canvasEditorRef.getToolOptions();
                 } else if (t === 'canvas') {
-                    canvasEditorRef.setTool(null);
+                    canvasEditorRef.setTool('canvas');
                     activeTool = 'canvas';
-                    const cw = canvasEditorRef.getCanvas
-                        ? canvasEditorRef.getCanvas().getWidth()
-                        : 800;
-                    const ch = canvasEditorRef.getCanvas
-                        ? canvasEditorRef.getCanvas().getHeight()
-                        : 600;
-                    toolSettings = { width: cw, height: ch };
-                } else if (t === 'canvas') {
-                    canvasEditorRef.setTool(null);
-                    activeTool = 'canvas';
-                    const cw = canvasEditorRef.getCanvas
-                        ? canvasEditorRef.getCanvas().getWidth()
-                        : 800;
-                    const ch = canvasEditorRef.getCanvas
-                        ? canvasEditorRef.getCanvas().getHeight()
-                        : 600;
-                    toolSettings = { width: Math.round(cw), height: Math.round(ch) };
+                    toolSettings = canvasEditorRef.getToolOptions();
                 } else {
                     // Get last used settings for this tool
                     const savedOptions =

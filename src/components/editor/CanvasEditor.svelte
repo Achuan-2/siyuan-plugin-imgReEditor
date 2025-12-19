@@ -42,6 +42,7 @@
     let tempShape: any = null;
     // number marker state
     let currentNumber = 1;
+    // crop/resize states
 
     let container: HTMLCanvasElement;
     let canvas: Canvas | null = null;
@@ -630,7 +631,7 @@
             } else if (key === 'v') {
                 e.preventDefault();
                 e.stopPropagation();
-                handlePaste(e);
+                handlePaste();
             } else if (key === 'z') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1690,8 +1691,6 @@
     let _cropKeyHandler: ((e: KeyboardEvent) => void) | null = null;
     // crop ratio state: null => free, otherwise {w:number,h:number}
     let cropRatio: { w: number; h: number } | null = null;
-    let cropRatioLabel: string = 'none';
-    let cropRestoreData: any = null; // To track if we need to undo a restore on cancel
 
     // Select canvas size mode state
     let selectCanvasSizeMode = false;
@@ -1708,7 +1707,6 @@
         if (!canvas) return;
         if (cropMode && cropRect) return;
         cropMode = true;
-        cropRestoreData = null;
 
         // Ensure no existing cropRect
         if (cropRect) {
@@ -1806,14 +1804,6 @@
 
                     fitImageToViewport();
                     canvas.requestRenderAll();
-                };
-
-                // Store restore data
-                cropRestoreData = {
-                    left: offset.x,
-                    top: offset.y,
-                    finalWidth: restoreCrop.width,
-                    finalHeight: restoreCrop.height,
                 };
             } catch (e) {
                 console.warn('Failed to restore pre-crop view', e);
@@ -1982,7 +1972,6 @@
                 canvas.discardActiveObject();
                 setTool(null);
 
-                cropRestoreData = null;
                 cropMode = false;
                 cropRect = null;
 
@@ -2094,7 +2083,6 @@
 
     // Set crop ratio helper (label like 'none' or '1:1' or '3:4')
     export function setCropRatio(label: string) {
-        cropRatioLabel = label;
         if (!label || label === 'none') {
             cropRatio = null;
             return;
@@ -2165,7 +2153,6 @@
         } catch (e) {}
         cropRect = null;
 
-        cropRestoreData = null;
         fitImageToViewport();
         cropMode = false;
         try {
@@ -2209,12 +2196,16 @@
             obj.evented = false;
         });
 
-        // Create rectangle with current canvas size
-        const canvasWidth = canvas.getWidth();
-        const canvasHeight = canvas.getHeight();
+        // Create rectangle with current boundary size
+        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+        const canvasWidth = boundary ? boundary.width : 800;
+        const canvasHeight = boundary ? boundary.height : 600;
+        const canvasLeft = boundary ? boundary.left : 0;
+        const canvasTop = boundary ? boundary.top : 0;
+
         selectCanvasSizeRect = new SelectCanvasSizeRect({
-            left: 0,
-            top: 0,
+            left: canvasLeft,
+            top: canvasTop,
             width: canvasWidth,
             height: canvasHeight,
             fill: 'transparent',
@@ -2280,10 +2271,7 @@
         } catch (e) {}
         _selectCanvasSizeKeyHandler = null;
 
-        canvas.getObjects().forEach((obj: any) => {
-            obj.selectable = true;
-            obj.evented = true;
-        });
+        restoreObjectSelectionStates();
         canvas.requestRenderAll();
     }
 
@@ -2338,13 +2326,21 @@
             obj.setCoords();
         });
 
+        // Also shift background image if present
+        if (canvas.backgroundImage) {
+            canvas.backgroundImage.left = (canvas.backgroundImage.left || 0) - rectLeft;
+            canvas.backgroundImage.top = (canvas.backgroundImage.top || 0) - rectTop;
+            canvas.backgroundImage.setCoords();
+        }
+
         // Resize canvas to selected size (logical pixels)
         resizeCanvas(width, height);
 
-        // Cleanup
-        try {
-            canvas.remove(selectCanvasSizeRect);
-        } catch (e) {}
+        canvas.getObjects().forEach((obj: any) => {
+            if (obj === selectCanvasSizeRect) {
+                canvas.remove(obj);
+            }
+        });
         selectCanvasSizeRect = null;
         selectCanvasSizeMode = false;
         try {
@@ -2352,11 +2348,7 @@
         } catch (e) {}
         _selectCanvasSizeKeyHandler = null;
 
-        canvas.getObjects().forEach((obj: any) => {
-            obj.selectable = true;
-            obj.evented = true;
-        });
-
+        restoreObjectSelectionStates();
         canvas.requestRenderAll();
         schedulePushWithType('modified');
     }
@@ -2373,15 +2365,22 @@
     export async function loadImageFromURL(url: string, name?: string) {
         if (!canvas) return;
         if (!url && isCanvasMode) {
-            // Initialize default blank canvas size
+            // Default project size
             const imgW = 800;
             const imgH = 600;
-            canvas.setDimensions({ width: imgW, height: imgH });
+
+            // Get the workspace container size
+            const workspace = container.closest('.canvas-editor');
+            const cw = workspace ? workspace.clientWidth : imgW;
+            const ch = workspace ? workspace.clientHeight : imgH;
+
+            // Set canvas to workspace size (avoids scrollbars and allows panning)
+            canvas.setDimensions({ width: cw, height: ch });
 
             // Set a neutral background color for canvas mode
             canvas.backgroundColor = '#ffffff';
 
-            // Add a boundary rectangle to show canvas bounds
+            // Add a boundary rectangle to show canvas bounds (project size)
             const boundaryRect = new Rect({
                 left: 0,
                 top: 0,
@@ -2518,10 +2517,10 @@
         const w = canvas.getWidth();
         const h = canvas.getHeight();
 
-        // For canvas mode, always use custom size mode to show the full canvas with boundaries
-        // Check if canvas dimensions match workspace (Uncropped / Artboard mode)
-        // or if we have a custom size (Cropped / True Resolution mode / Canvas mode)
-        const isCustomSize = isCanvasMode || Math.abs(w - cw) > 2 || Math.abs(h - ch) > 2;
+        // For canvas mode, we now use "Artboard Mode" (Fabric Viewport) to allow panning/zooming
+        // Check if canvas dimensions match workspace (Uncropped / Artboard mode / Canvas mode)
+        // or if we have a custom size (Cropped / True Resolution mode)
+        const isCustomSize = !isCanvasMode && (Math.abs(w - cw) > 2 || Math.abs(h - ch) > 2);
 
         if (isCustomSize) {
             // Custom Size Mode: Use CSS scaling
@@ -2554,9 +2553,13 @@
             }
 
             const bg = canvas.backgroundImage;
-            if (bg) {
-                // Get the actual bounding box of the background image (handles flip and rotate)
-                let boundingRect = bg.getBoundingRect();
+            const boundary = isCanvasMode
+                ? canvas.getObjects().find((o: any) => o._isCanvasBoundary)
+                : null;
+
+            if (bg || boundary) {
+                // Get the actual bounding box of the background image or canvas boundary
+                let boundingRect = bg ? bg.getBoundingRect() : boundary!.getBoundingRect();
 
                 const imgW = boundingRect.width;
                 const imgH = boundingRect.height;
@@ -2999,6 +3002,32 @@
                 isSelection: false,
             };
         }
+
+        // For canvas/transform tools, if width/height are not set, return current project dimensions
+        if (
+            activeTool === 'canvas' ||
+            activeTool === 'transform' ||
+            activeTool === 'image-border'
+        ) {
+            const opts = { ...(activeToolOptions || {}) };
+            if (typeof opts.width === 'undefined' || typeof opts.height === 'undefined') {
+                if (canvas) {
+                    if (isCanvasMode) {
+                        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                        if (boundary) {
+                            opts.width = Math.round(boundary.width);
+                            opts.height = Math.round(boundary.height);
+                        }
+                    } else if (canvas.backgroundImage) {
+                        const bg = canvas.backgroundImage;
+                        opts.width = Math.round((bg.width || 0) * (bg.scaleX || 1));
+                        opts.height = Math.round((bg.height || 0) * (bg.scaleY || 1));
+                    }
+                }
+            }
+            return opts;
+        }
+
         return activeToolOptions || {};
     }
 
@@ -3224,11 +3253,19 @@
             let imgW, imgH, tx, ty;
 
             if (isCanvasMode && !bg) {
-                // Export entire canvas area
-                imgW = canvas.getWidth();
-                imgH = canvas.getHeight();
-                tx = 0;
-                ty = 0;
+                // Export based on the boundary rectangle (project size)
+                const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                if (boundary) {
+                    imgW = boundary.width;
+                    imgH = boundary.height;
+                    tx = -boundary.left;
+                    ty = -boundary.top;
+                } else {
+                    imgW = canvas.getWidth();
+                    imgH = canvas.getHeight();
+                    tx = 0;
+                    ty = 0;
+                }
             } else {
                 // 2. Measure background at 100% scale
                 let exportRect = bg.getBoundingRect();
@@ -3283,10 +3320,16 @@
         // We also want to ensure custom metadata on backgroundImage is included.
         const json = (canvas as any).toJSON(HISTORY_PROPS);
 
-        // For canvas mode, add canvas dimensions and remove backgroundImage to avoid blob URL issues
+        // For canvas mode, add project dimensions from boundary rectangle and remove backgroundImage to avoid blob URL issues
         if (isCanvasMode) {
-            json.width = canvas.getWidth();
-            json.height = canvas.getHeight();
+            const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+            if (boundary) {
+                json.width = boundary.width;
+                json.height = boundary.height;
+            } else {
+                json.width = canvas.getWidth();
+                json.height = canvas.getHeight();
+            }
             if (json.backgroundImage) {
                 delete json.backgroundImage;
             }
@@ -3369,16 +3412,17 @@
         try {
             await canvas.loadFromJSON(json);
 
-            // Restore canvas dimensions if they were saved (loadFromJSON should handle this, but ensure it)
-            if (json.width && json.height) {
-                canvas.setDimensions({ width: json.width, height: json.height });
-            } else {
-            }
+            // Get workspace dimensions
+            const workspace = container.closest('.canvas-editor');
+            const cw = workspace ? workspace.clientWidth : json.width || 800;
+            const ch = workspace ? workspace.clientHeight : json.height || 600;
 
-            // For canvas mode, add boundary rectangle
             if (isCanvasMode) {
-                const w = canvas.getWidth();
-                const h = canvas.getHeight();
+                // For canvas mode, set canvas size to workspace and use saved width/height for boundary
+                canvas.setDimensions({ width: cw, height: ch });
+
+                const w = json.width || 800;
+                const h = json.height || 600;
 
                 // Remove any existing boundary
                 const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
@@ -3386,7 +3430,7 @@
                     canvas.remove(existingBoundary);
                 }
 
-                // Add new boundary rectangle
+                // Add new boundary rectangle (representing the project area)
                 const boundaryRect = new Rect({
                     left: 0,
                     top: 0,
@@ -3404,6 +3448,11 @@
                 (boundaryRect as any)._isCanvasBoundary = true;
                 canvas.add(boundaryRect);
                 canvas.sendObjectToBack(boundaryRect);
+            } else {
+                // Standard mode: restore canvas dimensions if they were saved
+                if (json.width && json.height) {
+                    canvas.setDimensions({ width: json.width, height: json.height });
+                }
             }
 
             // Manually restore metadata to the background image
@@ -3577,10 +3626,7 @@
         if (!canvas || !isCanvasMode) return;
 
         try {
-            // Update canvas dimensions
-            canvas.setDimensions({ width, height });
-
-            // Update boundary rectangle
+            // Update boundary rectangle (the project size)
             const boundaryRect = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
             if (boundaryRect) {
                 boundaryRect.set({ width, height });
