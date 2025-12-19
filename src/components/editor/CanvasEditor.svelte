@@ -159,10 +159,13 @@
     function pushHistory() {
         try {
             if (!canvas) return;
-            // const bg = canvas.backgroundImage;
-            // Only skip if there's absolutely no background and we expect one.
-            // But for history, we can still record state even if background is being loaded.
-            const json = canvas.toJSON(HISTORY_PROPS);
+            // Use the same logic as toJSON to include background metadata
+            let json = canvas.toJSON(HISTORY_PROPS);
+            if (canvas.backgroundImage && json.backgroundImage) {
+                const bg = canvas.backgroundImage as any;
+                if (bg._originalSrc) json.backgroundImage._originalSrc = bg._originalSrc;
+                if (bg._cropOffset) json.backgroundImage._cropOffset = bg._cropOffset;
+            }
 
             // If recent changes are rapid modifications, merge them into the last step
             const now = Date.now();
@@ -1320,7 +1323,7 @@
     }
 
     // Arrow drawing state
-    let tempArrow: Arrow | null = null;
+    let tempArrow: any = null;
     let arrowStart = { x: 0, y: 0 };
 
     // Crop mode state
@@ -1328,10 +1331,10 @@
     let cropRect: any = null;
     let _cropHandlers: any = null;
     let _cropKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-    let cropRestoreData: any = null; // To track if we need to undo a restore on cancel
     // crop ratio state: null => free, otherwise {w:number,h:number}
     let cropRatio: { w: number; h: number } | null = null;
     let cropRatioLabel: string = 'none';
+    let cropRestoreData: any = null; // To track if we need to undo a restore on cancel
 
     // Crop helpers (exported)
     export function enterCropMode(restoreCrop?: {
@@ -1968,6 +1971,11 @@
             history = [];
             historyIndex = -1;
             const json = canvas.toJSON(HISTORY_PROPS);
+            if (canvas.backgroundImage && json.backgroundImage) {
+                const bg = canvas.backgroundImage as any;
+                if (bg._originalSrc) json.backgroundImage._originalSrc = bg._originalSrc;
+                if (bg._cropOffset) json.backgroundImage._cropOffset = bg._cropOffset;
+            }
             history.push(json);
             historyIndex = 0;
             notifyHistoryUpdate();
@@ -2068,6 +2076,14 @@
             historyIndex--;
             const json = history[historyIndex];
             await canvas.loadFromJSON(json);
+
+            // Manually restore metadata to the background image
+            if (canvas.backgroundImage && json.backgroundImage) {
+                const bg = canvas.backgroundImage as any;
+                bg._originalSrc = json.backgroundImage._originalSrc;
+                bg._cropOffset = json.backgroundImage._cropOffset;
+            }
+
             restoreObjectSelectionStates();
             canvas.renderAll();
             fitImageToViewport();
@@ -2092,6 +2108,14 @@
             historyIndex++;
             const json = history[historyIndex];
             await canvas.loadFromJSON(json);
+
+            // Manually restore metadata to the background image
+            if (canvas.backgroundImage && json.backgroundImage) {
+                const bg = canvas.backgroundImage as any;
+                bg._originalSrc = json.backgroundImage._originalSrc;
+                bg._cropOffset = json.backgroundImage._cropOffset;
+            }
+
             restoreObjectSelectionStates();
             canvas.renderAll();
             fitImageToViewport();
@@ -2101,6 +2125,24 @@
         } finally {
             isHistoryProcessing = false;
         }
+    }
+
+    export function getCropData() {
+        if (!canvas || !canvas.backgroundImage) return null;
+        const bg = canvas.backgroundImage as any;
+        const offset = bg._cropOffset;
+        // If there's no offset, or offset is at origin (0,0), the image is not cropped
+        // _originalSrc existing doesn't mean cropped - it's set on initial load too
+        if (!offset || (offset.x === 0 && offset.y === 0)) return null;
+
+        // If offset is 0,0 and current dimensions match uncropped, we might consider it not cropped.
+        // But for simplicity, we return the data if it exists.
+        return {
+            left: offset.x,
+            top: offset.y,
+            width: (bg.width || 0) * (bg.scaleX || 1),
+            height: (bg.height || 0) * (bg.scaleY || 1),
+        };
     }
 
     export function getToolOptions() {

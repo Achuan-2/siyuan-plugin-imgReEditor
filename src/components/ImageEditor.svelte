@@ -442,14 +442,20 @@
                 }
             }
         }}
-        on:undo={() => {
+        on:undo={async () => {
             if (canvasEditorRef && typeof canvasEditorRef.undo === 'function') {
-                canvasEditorRef.undo();
+                await canvasEditorRef.undo();
+                const currentCrop = canvasEditorRef.getCropData();
+                cropData = currentCrop;
+                isCropped = !!currentCrop;
             }
         }}
-        on:redo={() => {
+        on:redo={async () => {
             if (canvasEditorRef && typeof canvasEditorRef.redo === 'function') {
-                canvasEditorRef.redo();
+                await canvasEditorRef.redo();
+                const currentCrop = canvasEditorRef.getCropData();
+                cropData = currentCrop;
+                isCropped = !!currentCrop;
             }
         }}
         on:flip={e => {
