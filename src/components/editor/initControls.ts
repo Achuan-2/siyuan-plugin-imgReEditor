@@ -64,6 +64,15 @@ function createIconRenderer(
     };
 }
 
+/**
+ * 始终等比例缩放的处理器，忽略 Shift 键
+ */
+function scalingEquallyAlways(eventData: TPointerEvent, transform: Transform, x: number, y: number) {
+    // 强制不按 Shift，始终等比例缩放
+    const fakeEventData = { ...eventData, shiftKey: false };
+    return controlsUtils.scalingEqually(fakeEventData, transform, x, y);
+}
+
 // Controls 初始化
 function initControls(canvas: Canvas) {
     // 中间横杠
@@ -112,7 +121,7 @@ function initControls(canvas: Canvas) {
         x: -0.5,
         y: -0.5,
         cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-        actionHandler: controlsUtils.scalingEqually,
+        actionHandler: scalingEquallyAlways,
         render: createIconRenderer(edgeImgIcon, 25, 25),
     });
 
@@ -120,7 +129,7 @@ function initControls(canvas: Canvas) {
         x: -0.5,
         y: 0.5,
         cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-        actionHandler: controlsUtils.scalingEqually,
+        actionHandler: scalingEquallyAlways,
         render: createIconRenderer(edgeImgIcon, 25, 25),
     });
 
@@ -128,7 +137,7 @@ function initControls(canvas: Canvas) {
         x: 0.5,
         y: -0.5,
         cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-        actionHandler: controlsUtils.scalingEqually,
+        actionHandler: scalingEquallyAlways,
         render: createIconRenderer(edgeImgIcon, 25, 25),
     });
 
@@ -136,7 +145,7 @@ function initControls(canvas: Canvas) {
         x: 0.5,
         y: 0.5,
         cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-        actionHandler: controlsUtils.scalingEqually,
+        actionHandler: scalingEquallyAlways,
         render: createIconRenderer(edgeImgIcon, 25, 25),
     });
 
@@ -267,28 +276,28 @@ export function createCropControls(
             x: -0.5,
             y: -0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         tr: new Control({
             x: 0.5,
             y: -0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         bl: new Control({
             x: -0.5,
             y: 0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         br: new Control({
             x: 0.5,
             y: 0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         // Middle controls for resizing
@@ -374,28 +383,28 @@ export function createSelectCanvasSizeControls(
             x: -0.5,
             y: -0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         tr: new Control({
             x: 0.5,
             y: -0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         bl: new Control({
             x: -0.5,
             y: 0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         br: new Control({
             x: 0.5,
             y: 0.5,
             cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
-            actionHandler: controlsUtils.scalingEqually,
+            actionHandler: scalingEquallyAlways,
             render: createIconRenderer(edgeImgIcon, 25, 25),
         }),
         // Middle controls for resizing
