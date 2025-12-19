@@ -9,6 +9,12 @@ class CropRect extends Rect {
         super(options);
 
     }
+
+    // Method to set custom controls
+    setCustomControls(controls: any) {
+        this.controls = controls;
+        return this;
+    }
 }
 
 // Register the class in Fabric's registry so fromJSON/toJSON works if needed
@@ -16,3 +22,4 @@ class CropRect extends Rect {
 classRegistry.setClass(CropRect, 'crop-rect');
 
 export default CropRect;
+

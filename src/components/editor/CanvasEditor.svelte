@@ -21,7 +21,7 @@
     import Arrow from './Arrow';
     import NumberMarker from './NumberMarker';
     import CropRect from './CropRect';
-    import initControls from './initControls';
+    import initControls, { createCropControls } from './initControls';
     import initControlsRotate from './initControlsRotate';
 
     export let dataURL: string | null = null;
@@ -1464,6 +1464,24 @@
                         cornerSize: 10,
                     });
                     (cropRect as any)._isCropRect = true;
+
+                    // Add custom controls with confirm and delete buttons
+                    const cropControls = createCropControls(
+                        () => {
+                            applyCrop();
+                            return true;
+                        },
+                        () => {
+                            if (cropRect && canvas) {
+                                canvas.remove(cropRect);
+                                cropRect = null;
+                                canvas.requestRenderAll();
+                            }
+                            return true;
+                        }
+                    );
+                    cropRect.setCustomControls(cropControls);
+
                     canvas.add(cropRect);
                     canvas.setActiveObject(cropRect);
 
@@ -1706,6 +1724,24 @@
                 cornerSize: 10,
                 lockRotation: true,
             });
+
+            // Add custom controls with confirm and delete buttons
+            const cropControls = createCropControls(
+                () => {
+                    applyCrop();
+                    return true;
+                },
+                () => {
+                    if (cropRect && canvas) {
+                        canvas.remove(cropRect);
+                        cropRect = null;
+                        canvas.requestRenderAll();
+                    }
+                    return true;
+                }
+            );
+            cropRect.setCustomControls(cropControls);
+
             cropRect.setCoords();
             canvas.setActiveObject(cropRect);
             canvas.requestRenderAll();
