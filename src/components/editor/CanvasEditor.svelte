@@ -3623,6 +3623,223 @@
         }
     }
 
+    // Align selected objects. type examples: 'h-left','h-center','h-right','v-top','v-middle','v-bottom'
+    export function alignObjects(type: string, forceCanvas: boolean = false) {
+        try {
+            if (!canvas) return;
+            const objs = canvas.getActiveObjects ? canvas.getActiveObjects() : [];
+            if (!objs || objs.length === 0) return;
+
+            // filter drawable objects
+            const allowed = objs.filter((o: any) =>
+                [
+                    'rect',
+                    'ellipse',
+                    'circle',
+                    'path',
+                    'group',
+                    'line',
+                    'triangle',
+                    'arrow',
+                    'i-text',
+                    'textbox',
+                    'text',
+                    'number-marker',
+                    'image'
+                ].includes(o.type)
+            );
+            if (allowed.length === 0) return;
+
+            // Determine reference rect: if multiple selected and not forcing canvas, use first selected
+            let refRect: any = null;
+            if (allowed.length > 1 && !forceCanvas) {
+                try {
+                    refRect = allowed[0].getBoundingRect(true);
+                } catch (e) {
+                    refRect = null;
+                }
+            }
+
+            if (!refRect) {
+                // Prefer using background image bounds as the canvas reference (editing mode)
+                if (canvas.backgroundImage) {
+                    try {
+                        const bg = canvas.backgroundImage as any;
+                        // Use Fabric's getBoundingRect to compute actual displayed bounds
+                        const brect = bg.getBoundingRect(true);
+                        refRect = { left: brect.left, top: brect.top, width: brect.width, height: brect.height };
+                    } catch (e) {
+                        refRect = null;
+                    }
+                }
+
+                // Fallback to explicit canvas boundary if no background image
+                if (!refRect) {
+                    const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                    if (boundary) {
+                        refRect = { left: boundary.left || 0, top: boundary.top || 0, width: boundary.width || canvas.getWidth(), height: boundary.height || canvas.getHeight() };
+                    } else {
+                        refRect = { left: 0, top: 0, width: canvas.getWidth(), height: canvas.getHeight() };
+                    }
+                }
+            }
+
+            // For alignment we generally do not move the reference object (if ref is one of selection)
+            const refObj = allowed.length > 1 && !forceCanvas ? allowed[0] : null;
+
+            allowed.forEach((o: any) => {
+                try {
+                    if (o === refObj) return;
+                    const rect = o.getBoundingRect(true);
+                    let dx = 0;
+                    let dy = 0;
+                    if (type === 'h-left') {
+                        const target = refRect.left;
+                        dx = target - rect.left;
+                    } else if (type === 'h-center') {
+                        const target = refRect.left + refRect.width / 2 - rect.width / 2;
+                        dx = target - rect.left;
+                    } else if (type === 'h-right') {
+                        const target = refRect.left + refRect.width - rect.width;
+                        dx = target - rect.left;
+                    } else if (type === 'v-top') {
+                        const target = refRect.top;
+                        dy = target - rect.top;
+                    } else if (type === 'v-middle') {
+                        const target = refRect.top + refRect.height / 2 - rect.height / 2;
+                        dy = target - rect.top;
+                    } else if (type === 'v-bottom') {
+                        const target = refRect.top + refRect.height - rect.height;
+                        dy = target - rect.top;
+                    }
+
+                    if (dx !== 0 || dy !== 0) {
+                        o.left = (typeof o.left === 'number' ? o.left : 0) + dx;
+                        o.top = (typeof o.top === 'number' ? o.top : 0) + dy;
+                        o.setCoords && o.setCoords();
+                    }
+                } catch (e) {}
+            });
+
+            canvas.requestRenderAll();
+            schedulePushWithType('modified');
+        } catch (e) {
+            console.warn('alignObjects failed', e);
+        }
+    }
+
+    // Distribute selected objects. type examples: 'h-left','h-center','h-right','h-even','v-top','v-center','v-bottom','v-even'
+    export function distributeObjects(type: string) {
+        try {
+            if (!canvas) return;
+            const objs = canvas.getActiveObjects ? canvas.getActiveObjects() : [];
+            if (!objs || objs.length < 2) return;
+
+            const allowed = objs.filter((o: any) =>
+                [
+                    'rect',
+                    'ellipse',
+                    'circle',
+                    'path',
+                    'group',
+                    'line',
+                    'triangle',
+                    'arrow',
+                    'i-text',
+                    'textbox',
+                    'text',
+                    'number-marker',
+                    'image'
+                ].includes(o.type)
+            );
+            if (allowed.length < 2) return;
+
+            // compute key positions and sort
+            const items = allowed.map(o => {
+                const r = o.getBoundingRect(true);
+                return { o, rect: r };
+            });
+
+            const horizontal = type.startsWith('h-');
+            const keyFn = (it: any) => {
+                const r = it.rect as any;
+                if (type.endsWith('-left')) return r.left;
+                if (type.endsWith('-right')) return r.left + r.width;
+                if (type.endsWith('-center')) return r.left + r.width / 2;
+                if (type.endsWith('-even')) return r.left + r.width / 2;
+                if (type.endsWith('-top')) return r.top;
+                if (type.endsWith('-bottom')) return r.top + r.height;
+                if (type.endsWith('-center') && !horizontal) return r.top + r.height / 2;
+                return horizontal ? r.left + r.width / 2 : r.top + r.height / 2;
+            };
+
+            items.sort((a: any, b: any) => keyFn(a) - keyFn(b));
+
+            const n = items.length;
+
+            // If even distribution requested, compute gaps based on object edges (equal spacing between objects)
+            if (type.endsWith('-even')) {
+                if (horizontal) {
+                    // sort by left
+                    items.sort((a: any, b: any) => a.rect.left - b.rect.left);
+                    const minLeft = items[0].rect.left;
+                    const maxRight = items.reduce((acc: number, it: any) => Math.max(acc, it.rect.left + it.rect.width), -Infinity);
+                    const totalWidths = items.reduce((acc: number, it: any) => acc + it.rect.width, 0);
+                    const gap = n > 1 ? (maxRight - minLeft - totalWidths) / (n - 1) : 0;
+                    let cursor = minLeft;
+                    items.forEach((it: any) => {
+                        try {
+                            const desiredLeft = cursor;
+                            const delta = desiredLeft - it.rect.left;
+                            it.o.left = (typeof it.o.left === 'number' ? it.o.left : 0) + delta;
+                            it.o.setCoords && it.o.setCoords();
+                            cursor = cursor + it.rect.width + gap;
+                        } catch (e) {}
+                    });
+                } else {
+                    // vertical even
+                    items.sort((a: any, b: any) => a.rect.top - b.rect.top);
+                    const minTop = items[0].rect.top;
+                    const maxBottom = items.reduce((acc: number, it: any) => Math.max(acc, it.rect.top + it.rect.height), -Infinity);
+                    const totalHeights = items.reduce((acc: number, it: any) => acc + it.rect.height, 0);
+                    const gap = n > 1 ? (maxBottom - minTop - totalHeights) / (n - 1) : 0;
+                    let cursor = minTop;
+                    items.forEach((it: any) => {
+                        try {
+                            const desiredTop = cursor;
+                            const delta = desiredTop - it.rect.top;
+                            it.o.top = (typeof it.o.top === 'number' ? it.o.top : 0) + delta;
+                            it.o.setCoords && it.o.setCoords();
+                            cursor = cursor + it.rect.height + gap;
+                        } catch (e) {}
+                    });
+                }
+            } else {
+                const firstPos = keyFn(items[0]);
+                const lastPos = keyFn(items[n - 1]);
+                const gap = n > 1 ? (lastPos - firstPos) / (n - 1) : 0;
+                items.forEach((it: any, idx: number) => {
+                    try {
+                        const current = keyFn(it);
+                        const target = firstPos + gap * idx;
+                        const delta = target - current;
+                        if (horizontal) {
+                            it.o.left = (typeof it.o.left === 'number' ? it.o.left : 0) + delta;
+                        } else {
+                            it.o.top = (typeof it.o.top === 'number' ? it.o.top : 0) + delta;
+                        }
+                        it.o.setCoords && it.o.setCoords();
+                    } catch (e) {}
+                });
+            }
+
+            canvas.requestRenderAll();
+            schedulePushWithType('modified');
+        } catch (e) {
+            console.warn('distributeObjects failed', e);
+        }
+    }
+
     // Resize canvas (for canvas mode)
     export function resizeCanvas(width: number, height: number) {
         if (!canvas || !isCanvasMode) return;

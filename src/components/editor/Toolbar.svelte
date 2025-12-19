@@ -208,6 +208,21 @@
         </button>
     {/if}
     <button
+        class="b3-button"
+        class:active={active === 'align'}
+        class:b3-button--outline={active !== 'align'}
+        on:click={() => emit('tool', { tool: 'align' })}
+        title="对齐/分布"
+    >
+        <svg class="icon" viewBox="0 0 24 24">
+            <path d="M3 3h18" />
+            <path d="M3 7h12" />
+            <path d="M3 11h18" />
+            <path d="M3 15h12" />
+            <path d="M3 19h18" />
+        </svg>
+    </button>
+    <button
         class="b3-button b3-button--outline"
         on:click={() => emit('undo')}
         disabled={!canUndo}

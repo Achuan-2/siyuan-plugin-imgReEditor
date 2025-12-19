@@ -596,6 +596,32 @@
                 </button>
             </div>
         </div>
+    {:else if tool === 'align'}
+        <div style="padding:8px; display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+            <!-- Row 1: Horizontal Align left/center/right + Align to canvas (h) -->
+            <button on:click={() => dispatch('action', { action: 'align', type: 'h-left', forceCanvas: false })}>左对齐</button>
+            <button on:click={() => dispatch('action', { action: 'align', type: 'h-center', forceCanvas: false })}>水平居中</button>
+            <button on:click={() => dispatch('action', { action: 'align', type: 'h-right', forceCanvas: false })}>右对齐</button>
+            <button on:click={() => dispatch('action', { action: 'align', type: 'h-center', forceCanvas: true })}>以画布水平居中对齐</button>
+
+            <!-- Row 2: Vertical Align top/middle/bottom + Align to canvas (v) -->
+            <button on:click={() => dispatch('action', { action: 'align', type: 'v-top', forceCanvas: false })}>顶对齐</button>
+            <button on:click={() => dispatch('action', { action: 'align', type: 'v-middle', forceCanvas: false })}>垂直居中</button>
+            <button on:click={() => dispatch('action', { action: 'align', type: 'v-bottom', forceCanvas: false })}>底对齐</button>
+            <button on:click={() => dispatch('action', { action: 'align', type: 'v-middle', forceCanvas: true })}>以画布垂直居中对齐</button>
+
+            <!-- Row 3: Horizontal distribute by left/center/right + even spacing -->
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'h-left' })}>水平分布 左边</button>
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'h-center' })}>水平分布 居中</button>
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'h-right' })}>水平分布 右边</button>
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'h-even' })}>水平等距</button>
+
+            <!-- Row 4: Vertical distribute by top/center/bottom + even spacing -->
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'v-top' })}>垂直分布 顶部</button>
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'v-center' })}>垂直分布 居中</button>
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'v-bottom' })}>垂直分布 底部</button>
+            <button on:click={() => dispatch('action', { action: 'distribute', type: 'v-even' })}>垂直等距</button>
+        </div>
     {:else}
         <div class="empty">暂无设置</div>
     {/if}
