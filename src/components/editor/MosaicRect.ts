@@ -86,9 +86,10 @@ export class MosaicRect extends Rect {
             return;
         }
 
-        // Use the actual canvas dimensions or fallback
-        tempCanvas.width = fabricCanvas.width || 800;
-        tempCanvas.height = fabricCanvas.height || 600;
+        // Get bounding rect to determine temp canvas size
+        const boundingRect = bgImage.getBoundingRect();
+        tempCanvas.width = Math.ceil(boundingRect.width);
+        tempCanvas.height = Math.ceil(boundingRect.height);
         const tempCtx = tempCanvas.getContext('2d');
         if (!tempCtx) {
             this._drawGrayMosaic(ctx, width, height);
@@ -100,7 +101,12 @@ export class MosaicRect extends Rect {
         // Clear temp canvas first
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
 
+        // Translate to align bounding rect to 0,0
+        tempCtx.translate(-boundingRect.left, -boundingRect.top);
+
+        // Apply background image transformations in correct order: translate -> rotate -> scale -> flip -> origin
         tempCtx.translate(bgImage.left || 0, bgImage.top || 0);
+        tempCtx.rotate((bgImage.angle || 0) * Math.PI / 180);
         tempCtx.scale(bgImage.scaleX || 1, bgImage.scaleY || 1);
         if (bgImage.flipX) {
             tempCtx.scale(-1, 1);
@@ -110,7 +116,6 @@ export class MosaicRect extends Rect {
             tempCtx.scale(1, -1);
             tempCtx.translate(0, -bgImage.height);
         }
-        tempCtx.rotate((bgImage.angle || 0) * Math.PI / 180);
         // Handle origin (assuming background image default origin is top-left, but if center we need adjustment)
         if (bgImage.originX === 'center') tempCtx.translate(-bgImage.width / 2, 0);
         if (bgImage.originY === 'center') tempCtx.translate(0, -bgImage.height / 2);
@@ -136,11 +141,15 @@ export class MosaicRect extends Rect {
                 const canvasX = point.x;
                 const canvasY = point.y;
 
+                // Adjust for bounding rect offset
+                const tempX = canvasX - boundingRect.left;
+                const tempY = canvasY - boundingRect.top;
+
                 try {
                     // Sample the color from the center of the block
                     const imageData = tempCtx.getImageData(
-                        Math.floor(canvasX),
-                        Math.floor(canvasY),
+                        Math.floor(tempX),
+                        Math.floor(tempY),
                         1,
                         1
                     );
