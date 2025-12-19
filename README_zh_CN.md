@@ -2,23 +2,23 @@
 
 见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-imgReEditor@main/CHANGELOG.md)
 
-
 ## 开发背景
 
 写笔记写博客，常常需要对图片进行标注、编辑，一直有一个痛点，那就是编辑的图片无法进行二次编辑。过去对图片进行裁剪、添加形状和文字，保存完图片之后就无法再修改原来的操作，只能在原有图片上再添加新内容，要么就直接替换新图片，这就给修改操作带来很大麻烦
-	
-于是，我开发了ImgReEditor 这个插件，终于实现了已编辑的图片还能二次编辑。
+
+于是，我开发了 ImgReEditor 这个插件，终于实现了已编辑的图片还能二次编辑。
+
+一开始是调用 tui.image-editor 这个开源编辑器，但是后来发现不方便修改，想要让裁剪能二次修改、添加序号、马赛克工具很麻烦。于是就让ai使用 fabric 从无到有自己写了一个图片编辑器
 
 ## 如何使用
 
-图片右键菜单选择「ImgReEditor 编辑」按钮，进入编辑图片弹窗
+图片右键菜单选择「ImgReEditor 编辑」按钮
 
-
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251219120448-2025-12-19.png)
+<img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/network-asset-20251219120448-2025-12-19-20251219163021-8edvw9l.png" />
 
 斜杆菜单输入`/画布`可以开启画布模式，在画布添加多个图片
 
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251219185938-2025-12-19.png)
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
 
 ## 功能介绍
 
@@ -37,15 +37,16 @@
   - 添加图片边框
 - 保存png图片支持二次编辑插件添加的图片修改和标注内容
 
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251219185953-2025-12-19.png)
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219163257-4crcvcx.png" />
+
 
 插件支持快速添加图片边框，把图改为精致的博客风格，如果你想要给笔记里的截图添加圆角+边框效果，过去要使用专门的软件才能做到
 
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251219190004-2025-12-19.png)
+<img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/canvas-20251219190916-bvjnhqo.png" style="width: 603px;" />
 
 现在只需要在思源笔记里点击一下就可以创建这样的图了！
 
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/PixPin_2025-12-19_16-20-19-2025-12-19.gif)
+<img alt="PixPin_2025-12-19_16-20-19" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/PixPin_2025-12-19_16-20-19-20251219163430-4jzg17t.gif" />
 
 ## **快捷键**
 
@@ -59,16 +60,21 @@
 ## 设置
 
 - 编辑数据存储方式
+
   - Embed 存储模式：直接存储在当前图片里，图片永久存储编辑历史，不怕编辑历史丢失，图片发送给别人也能保留编辑数据，缺点是图片体积会变大
   - Backup 存储模式：存储在backup文件夹，减少图片体积，当不需要存储编辑数据再编辑图片时，可以把backup里的json文件直接删除
 
 ## 注意事项
 
 - Embed 存储模式：
+
   - 编辑数据存储在图片里，正常使用不会丢失，但是需要注意使用图片压缩等外部软件处理图片后可能会导致数据丢失，无法二次编辑
 - Backup 模式：
+
   - 删除backup文件夹里的json文件，将无法二次编辑backup模式下编辑保存的图片
   - 保存的图片经过外部软件压缩等处理之后，也可能会丢失与backup里的json的链接关系，无法二次编辑
+
+
 
 ## 📄 许可证
 
@@ -86,6 +92,7 @@ pnpm run dev
 ## 🙏 致谢
 
 - 基于 [plugin-sample-vite-svelte](https://github.com/siyuan-note/plugin-sample-vite-svelte/) 模板开发
+- 图片编辑器基于fabric v6开发
 - 参考 [oyjt/interactive-whiteboard](https://github.com/oyjt/interactive-whiteboard)的fabric的箭头绘制和形状控件实现
 
 ## ❤️用爱发电
