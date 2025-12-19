@@ -23,7 +23,10 @@
     import NumberMarker from './NumberMarker';
     import CropRect from './CropRect';
     import SelectCanvasSizeRect from './SelectCanvasSizeRect';
-    import initControls, { createCropControls, createSelectCanvasSizeControls } from './initControls';
+    import initControls, {
+        createCropControls,
+        createSelectCanvasSizeControls,
+    } from './initControls';
     import initControlsRotate from './initControlsRotate';
 
     export let dataURL: string | null = null;
@@ -2298,7 +2301,22 @@
         const height = Math.max(0, Math.round(bounding.height || 0));
 
         const minSize = 50;
-        console.log('SelectCanvas.applySelection', { rectLeft, rectTop, width, height, canvasW: canvas.getWidth(), canvasH: canvas.getHeight(), bg: canvas.backgroundImage ? { bw: (canvas.backgroundImage as any).width, bh: (canvas.backgroundImage as any).height, scaleX: (canvas.backgroundImage as any).scaleX, scaleY: (canvas.backgroundImage as any).scaleY } : null });
+        console.log('SelectCanvas.applySelection', {
+            rectLeft,
+            rectTop,
+            width,
+            height,
+            canvasW: canvas.getWidth(),
+            canvasH: canvas.getHeight(),
+            bg: canvas.backgroundImage
+                ? {
+                      bw: (canvas.backgroundImage as any).width,
+                      bh: (canvas.backgroundImage as any).height,
+                      scaleX: (canvas.backgroundImage as any).scaleX,
+                      scaleY: (canvas.backgroundImage as any).scaleY,
+                  }
+                : null,
+        });
         if (width < minSize || height < minSize) {
             try {
                 canvas.remove(selectCanvasSizeRect);
@@ -3265,8 +3283,6 @@
         // We also want to ensure custom metadata on backgroundImage is included.
         const json = (canvas as any).toJSON(HISTORY_PROPS);
 
-
-
         // For canvas mode, add canvas dimensions and remove backgroundImage to avoid blob URL issues
         if (isCanvasMode) {
             json.width = canvas.getWidth();
@@ -3287,7 +3303,6 @@
                         obj.src &&
                         obj.src.startsWith('blob:')
                     ) {
-
                         // Create a promise to convert blob URL to data URL
                         const conversionPromise = new Promise<void>(resolve => {
                             const img = new Image();
@@ -3337,7 +3352,7 @@
             json.backgroundImage._outerRadius = bg._outerRadius;
             json.backgroundImage._borderEnabled = bg._borderEnabled;
         }
-        
+
         // Filter out canvas boundary objects from history to prevent them from being undone
         if (json.objects) {
             json.objects = json.objects.filter((obj: any) => !obj._isCanvasBoundary);
@@ -3352,7 +3367,6 @@
         isHistoryProcessing = true;
 
         try {
-
             await canvas.loadFromJSON(json);
 
             // Restore canvas dimensions if they were saved (loadFromJSON should handle this, but ensure it)
@@ -3413,7 +3427,6 @@
 
             canvas!.renderAll();
 
-
             // Automatically fit to viewport after loading JSON
             setTimeout(() => {
                 fitImageToViewport();
@@ -3434,22 +3447,26 @@
     // Image transforms: flip and rotate (exposed to host)
     export function flipHorizontal() {
         try {
-            if (!canvas || !canvas.backgroundImage) return;
+            if (!canvas) return;
             const bg = canvas.backgroundImage;
-            const imgW = (bg.width || 0) * (bg.scaleX || 1);
+            // Use background center if available, otherwise canvas center
+            const center = bg ? bg.getCenterPoint() : canvas.getCenterPoint();
 
-            // Flip background
-            bg.set('flipX', !bg.flipX);
-            bg.setCoords();
+            // Flip background if exists
+            if (bg) {
+                bg.set('flipX', !bg.flipX);
+                bg.setCoords();
+            }
 
-            // Flip all drawable objects relative to image width
+            // Flip all drawable objects relative to center
             try {
                 const objs = canvas.getObjects ? canvas.getObjects() : [];
                 objs.forEach((o: any) => {
                     try {
-                        if (o._isCropRect || o === bg) return;
+                        if (o._isCropRect || o === bg || (o as any)._isCanvasBoundary) return;
                         const c = o.getCenterPoint();
-                        const newCenterX = imgW - c.x;
+                        // Mirror across the vertical axis passing through center.x
+                        const newCenterX = center.x + (center.x - c.x);
                         o.setPositionByOrigin(new Point(newCenterX, c.y), 'center', 'center');
                         o.set('flipX', !o.flipX);
                         o.setCoords();
@@ -3467,22 +3484,26 @@
 
     export function flipVertical() {
         try {
-            if (!canvas || !canvas.backgroundImage) return;
+            if (!canvas) return;
             const bg = canvas.backgroundImage;
-            const imgH = (bg.height || 0) * (bg.scaleY || 1);
+            // Use background center if available, otherwise canvas center
+            const center = bg ? bg.getCenterPoint() : canvas.getCenterPoint();
 
-            // Flip background
-            bg.set('flipY', !bg.flipY);
-            bg.setCoords();
+            // Flip background if exists
+            if (bg) {
+                bg.set('flipY', !bg.flipY);
+                bg.setCoords();
+            }
 
-            // Flip all drawable objects relative to image height
+            // Flip all drawable objects relative to center
             try {
                 const objs = canvas.getObjects ? canvas.getObjects() : [];
                 objs.forEach((o: any) => {
                     try {
-                        if (o._isCropRect || o === bg) return;
+                        if (o._isCropRect || o === bg || (o as any)._isCanvasBoundary) return;
                         const c = o.getCenterPoint();
-                        const newCenterY = imgH - c.y;
+                        // Mirror across the horizontal axis passing through center.y
+                        const newCenterY = center.y + (center.y - c.y);
                         o.setPositionByOrigin(new Point(c.x, newCenterY), 'center', 'center');
                         o.set('flipY', !o.flipY);
                         o.setCoords();
@@ -3501,19 +3522,23 @@
     // Rotate 90 degrees non-destructively
     export async function rotate90(clockwise: boolean = true) {
         try {
-            if (!canvas || !canvas.backgroundImage) return;
+            if (!canvas) return;
             const bg = canvas.backgroundImage;
 
-            // Get center point of current background
-            const center = bg.getCenterPoint();
+            // Get center point of current orientation
+            const center = bg ? bg.getCenterPoint() : canvas.getCenterPoint();
             const angleDelta = clockwise ? 90 : -90;
 
-            // 1. Rotate background
-            bg.angle = (bg.angle + angleDelta) % 360;
-            bg.setCoords();
+            // 1. Rotate background if exists
+            if (bg) {
+                bg.set('angle', (bg.angle + angleDelta) % 360);
+                bg.setCoords();
+            }
 
             // 2. Rotate all drawable objects relative to the same center
-            const objs = canvas.getObjects().filter(o => o !== bg && !(o as any)._isCropRect);
+            const objs = canvas
+                .getObjects()
+                .filter(o => o !== bg && !(o as any)._isCropRect && !(o as any)._isCanvasBoundary);
             objs.forEach((o: any) => {
                 // Coordinate rotation: (x', y') around (cx, cy)
                 const p = o.getCenterPoint();
@@ -3530,7 +3555,7 @@
                 }
 
                 o.setPositionByOrigin(new Point(newX, newY), 'center', 'center');
-                o.angle = (o.angle + angleDelta) % 360;
+                o.set('angle', (o.angle + angleDelta) % 360);
                 o.setCoords();
             });
 

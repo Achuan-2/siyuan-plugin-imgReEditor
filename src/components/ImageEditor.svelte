@@ -1069,47 +1069,6 @@
                             // We can dispatch an event that index.ts listens to.
                             dispatch('saveSettings', settings);
                         }}
-                        on:action={e => {
-                            try {
-                                const a = e.detail || {};
-                                if (!canvasEditorRef) return;
-                                if (a.action === 'flip') {
-                                    if (a.dir === 'horizontal') canvasEditorRef.flipHorizontal();
-                                    else if (a.dir === 'vertical') canvasEditorRef.flipVertical();
-                                } else if (a.action === 'rotate') {
-                                    if (a.dir === 'cw')
-                                        canvasEditorRef.rotate90 && canvasEditorRef.rotate90(true);
-                                    else if (a.dir === 'ccw')
-                                        canvasEditorRef.rotate90 && canvasEditorRef.rotate90(false);
-                                } else if (a.action === 'setCropRatio') {
-                                    const label = a.label || 'none';
-                                    try {
-                                        if (
-                                            canvasEditorRef &&
-                                            typeof canvasEditorRef.setCropRatio === 'function'
-                                        ) {
-                                            canvasEditorRef.setCropRatio(label);
-                                        }
-                                    } catch (err) {}
-                                    toolSettings = {
-                                        ...(toolSettings || {}),
-                                        cropRatioLabel: label,
-                                    };
-                                } else if (a.action === 'applyCrop') {
-                                    try {
-                                        if (
-                                            canvasEditorRef &&
-                                            typeof canvasEditorRef.applyPendingCrop === 'function'
-                                        ) {
-                                            canvasEditorRef.applyPendingCrop();
-                                        }
-                                    } catch (err) {}
-                                }
-                                // keep popup open so user can perform multiple transforms
-                            } catch (err) {
-                                console.warn('action handler failed', err);
-                            }
-                        }}
                     />
                 </div>
             </div>
