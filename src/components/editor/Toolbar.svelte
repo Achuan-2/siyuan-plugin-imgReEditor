@@ -43,6 +43,7 @@
             <path d="M13 13l6 6" />
         </svg>
     </button>
+    {#if !isCanvasMode}
     <button
         class="b3-button"
         class:active={active === 'crop'}
@@ -57,6 +58,7 @@
             <line x1="15" y1="9" x2="9" y2="15" />
         </svg>
     </button>
+    {/if}
     <div class="shape-group">
         <button
             class="b3-button"
@@ -145,6 +147,7 @@
             />
         </svg>
     </button>
+    {#if !isCanvasMode}
     <button
         class="b3-button"
         class:active={active === 'mosaic'}
@@ -158,6 +161,8 @@
             ></path>
         </svg>
     </button>
+    {/if}
+    {#if !isCanvasMode}
     <button
         class="b3-button"
         class:active={active === 'image-border'}
@@ -170,6 +175,7 @@
             <rect x="7" y="7" width="10" height="10" rx="1" ry="1" />
         </svg>
     </button>
+    {/if}
     {#if isCanvasMode}
         <button
             class="b3-button"
@@ -185,6 +191,7 @@
             </svg>
         </button>
     {/if}
+    {#if !isCanvasMode}
     <button
         class="b3-button"
         class:active={active === 'transform'}
@@ -199,6 +206,7 @@
             />
         </svg>
     </button>
+    {/if}
     <button
         class="b3-button b3-button--outline"
         on:click={() => emit('undo')}
