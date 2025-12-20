@@ -33,6 +33,8 @@
     export let fileName: string | undefined;
     export let blobURL: string | null = null;
     export let isCanvasMode = false;
+    export let initialRect: { x: number; y: number; width: number; height: number } | null = null;
+
     // active tool state
     let activeTool: string | null = null;
     let activeToolOptions: any = {};
@@ -2543,9 +2545,45 @@
                         (fImg as any)._originalSrc = url;
                         (fImg as any)._cropOffset = { x: 0, y: 0 };
 
-                        (canvas as any).backgroundImage = fImg;
+                        // If initialRect is provided (e.g. from screenshot selection), apply it immediately
+                        if (initialRect && initialRect.width > 0 && initialRect.height > 0) {
+                            try {
+                                const { x: left, y: top, width, height } = initialRect;
+                                const cropCanvas = document.createElement('canvas');
+                                cropCanvas.width = width;
+                                cropCanvas.height = height;
+                                const ctx = cropCanvas.getContext('2d');
+                                if (ctx) {
+                                    ctx.translate(-left, -top);
+                                    fImg.render(ctx);
+
+                                    const newImg = new FabricImage(cropCanvas, {
+                                        left: 0,
+                                        top: 0,
+                                        selectable: false,
+                                        evented: false,
+                                    });
+
+                                    (newImg as any)._originalSrc = url;
+                                    (newImg as any)._cropOffset = { x: left, y: top };
+                                    (canvas as any).backgroundImage = newImg;
+
+                    
+
+                                    // Reset initialRect after applying to avoid re-applying on subsequent loads if any
+                                    initialRect = null;
+
+                                    dispatch('cropApplied', {
+                                        cropData: { left, top, width, height },
+                                    });
+                                }
+                            } catch (err) {
+                                console.warn('CanvasEditor: failed to apply initialRect crop', err);
+                            }
+                        }
 
                         canvas!.requestRenderAll();
+                        setTimeout(() => fitImageToViewport(), 100);
 
                         dispatch('loaded', { width: imgEl.width, height: imgEl.height, name });
                         imageLoaded = true;

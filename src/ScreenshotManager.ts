@@ -21,10 +21,10 @@ export class ScreenshotManager {
 
 
             const { desktopCapturer, screen } = remote;
-
-            const primaryDisplay = screen.getPrimaryDisplay();
-            const { width, height } = primaryDisplay.size;
-            const scaleFactor = primaryDisplay.scaleFactor || 1;
+            const currentWin = remote.getCurrentWindow();
+            const display = screen.getDisplayMatching(currentWin.getBounds()) || screen.getPrimaryDisplay();
+            const { width, height } = display.size;
+            const scaleFactor = display.scaleFactor || 1;
 
             // Get all screens
             const sources = await desktopCapturer.getSources({
@@ -40,20 +40,241 @@ export class ScreenshotManager {
                 return null;
             }
 
-            // Find the primary screen source
-            const source = sources.find((s: any) => s.display_id === primaryDisplay.id.toString()) || sources[0];
+            // Find the screen source
+            const source = sources.find((s: any) => s.display_id === display.id.toString()) || sources[0];
             const dataURL = source.thumbnail.toDataURL();
 
-            // Focus SiYuan window to ensure the dialog is visible if it was minimized
-            try {
-                remote.getCurrentWindow().show();
-                remote.getCurrentWindow().focus();
-            } catch (e) { }
             return dataURL;
         } catch (error) {
             console.error('Screenshot capture failed:', error);
             return null;
         }
+    }
+
+    public async captureWithSelection(): Promise<{ dataURL: string, rect: { x: number, y: number, width: number, height: number } } | null> {
+        const remote = (window as any).require('@electron/remote');
+        if (!remote) {
+            pushErrMsg('当前环境不支持截图功能');
+            return null;
+        }
+
+        const { screen } = remote;
+        const currentWin = remote.getCurrentWindow();
+        const display = screen.getDisplayMatching(currentWin.getBounds()) || screen.getPrimaryDisplay();
+
+        // 1. Capture full screen first
+        const fullDataURL = await this.captureScreen();
+        if (!fullDataURL) return null;
+
+        // 2. Show selection window
+        const selection = await this.showSelectionWindow(fullDataURL);
+        if (!selection) return null;
+
+        const scaleFactor = display.scaleFactor || 1;
+        // Focus SiYuan window to ensure the dialog is visible if it was minimized
+        try {
+            remote.getCurrentWindow().show();
+            remote.getCurrentWindow().focus();
+        } catch (e) { }
+        // Selection is in screen (DIPs) coordinates, transform to pixel coordinates
+        return {
+            dataURL: fullDataURL,
+            rect: {
+                x: Math.round(selection.x * scaleFactor),
+                y: Math.round(selection.y * scaleFactor),
+                width: Math.round(selection.width * scaleFactor),
+                height: Math.round(selection.height * scaleFactor)
+            }
+        };
+    }
+
+    private async showSelectionWindow(dataURL: string): Promise<{ x: number, y: number, width: number, height: number } | null> {
+        return new Promise((resolve) => {
+            const remote = (window as any).require('@electron/remote');
+            const { BrowserWindow, screen, ipcMain } = remote;
+            const currentWin = remote.getCurrentWindow();
+            const display = screen.getDisplayMatching(currentWin.getBounds()) || screen.getPrimaryDisplay();
+            const { width, height } = display.size; // These are in DIPs (logical pixels)
+
+            // Generate a unique ID for this selection session to avoid IPC collisions
+            const sessionId = `selection-${Date.now()}`;
+
+            const win = new BrowserWindow({
+                width,
+                height,
+                x: display.bounds.x,
+                y: display.bounds.y,
+                frame: false,
+                transparent: true,
+                alwaysOnTop: true,
+                skipTaskbar: true,
+                fullscreen: true,
+                resizable: false,
+                enableLargerThanScreen: true,
+                webPreferences: {
+                    nodeIntegration: true,
+                    contextIsolation: false
+                }
+            });
+
+            // Use background capture as the UI background
+            const content = `
+            <html>
+            <head>
+                <style>
+                    body { margin: 0; padding: 0; overflow: hidden; cursor: crosshair; user-select: none; background: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+                    #background { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+                    #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); pointer-events: none; }
+                    #selection { 
+                        position: absolute; 
+                        border: 2px solid #007bff; 
+                        box-sizing: border-box; 
+                        display: none; 
+                        background: transparent;
+                        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+                        z-index: 10;
+                    }
+                    #info { 
+                        position: absolute; 
+                        background: rgba(0,0,0,0.7); 
+                        color: white; 
+                        padding: 4px 8px; 
+                        font-size: 12px; 
+                        border-radius: 4px; 
+                        pointer-events: none; 
+                        display: none; 
+                        z-index: 20;
+                        white-space: nowrap;
+                    }
+                    .hint {
+                        position: absolute;
+                        top: 20px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: rgba(0,0,0,0.6);
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        font-size: 14px;
+                        pointer-events: none;
+                        z-index: 100;
+                    }
+                </style>
+            </head>
+            <body>
+                <img id="background" src="${dataURL}">
+                <div id="selection"></div>
+                <div id="info"></div>
+                <div class="hint">鼠标左键拖拽进行选择，按回车确认，Esc或右键取消</div>
+                <script>
+                    const { ipcRenderer } = require('electron');
+                    const selection = document.getElementById('selection');
+                    const info = document.getElementById('info');
+                    let startX, startY, isDragging = false;
+                    const session = "${sessionId}";
+
+                    document.addEventListener('mousedown', (e) => {
+                        if (e.button === 2) { // Right click to cancel
+                            ipcRenderer.send(session + '-cancel');
+                            return;
+                        }
+                        if (e.button !== 0) return;
+                        isDragging = true;
+                        startX = e.clientX;
+                        startY = e.clientY;
+                        selection.style.display = 'block';
+                        selection.style.left = startX + 'px';
+                        selection.style.top = startY + 'px';
+                        selection.style.width = '0px';
+                        selection.style.height = '0px';
+                    });
+
+                    document.addEventListener('mousemove', (e) => {
+                        if (!isDragging) return;
+                        const currentX = e.clientX;
+                        const currentY = e.clientY;
+                        const left = Math.min(startX, currentX);
+                        const top = Math.min(startY, currentY);
+                        const width = Math.abs(currentX - startX);
+                        const height = Math.abs(currentY - startY);
+                        
+                        selection.style.left = left + 'px';
+                        selection.style.top = top + 'px';
+                        selection.style.width = width + 'px';
+                        selection.style.height = height + 'px';
+                        
+                        info.style.display = 'block';
+                        info.style.left = left + 'px';
+                        // Keep info above or below selection
+                        if (top > 30) {
+                            info.style.top = (top - 28) + 'px';
+                        } else {
+                            info.style.top = (top + height + 5) + 'px';
+                        }
+                        info.innerText = width + ' x ' + height;
+                    });
+
+                    document.addEventListener('mouseup', (e) => {
+                        if (e.button !== 0) return;
+                        isDragging = false;
+                        const rect = selection.getBoundingClientRect();
+                        if (rect.width < 2 || rect.height < 2) {
+                            selection.style.display = 'none';
+                            info.style.display = 'none';
+                        }
+                    });
+
+                    document.addEventListener('dblclick', () => {
+                        confirmSelection();
+                    });
+
+                    function confirmSelection() {
+                        const rect = selection.getBoundingClientRect();
+                        if (rect.width >= 2 && rect.height >= 2) {
+                            ipcRenderer.send(session + '-done', {
+                                x: Math.round(rect.left),
+                                y: Math.round(rect.top),
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height)
+                            });
+                        }
+                    }
+
+                    document.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            confirmSelection();
+                        } else if (e.key === 'Escape') {
+                            ipcRenderer.send(session + '-cancel');
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+            `;
+
+            win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(content)}`);
+
+            const onDone = (_event, rect) => {
+                ipcMain.removeListener(sessionId + '-done', onDone);
+                ipcMain.removeListener(sessionId + '-cancel', onCancel);
+                win.close();
+                resolve(rect);
+            };
+            const onCancel = () => {
+                ipcMain.removeListener(sessionId + '-done', onDone);
+                ipcMain.removeListener(sessionId + '-cancel', onCancel);
+                win.close();
+                resolve(null);
+            };
+
+            ipcMain.on(sessionId + '-done', onDone);
+            ipcMain.on(sessionId + '-cancel', onCancel);
+
+            win.on('closed', () => {
+                ipcMain.removeListener(sessionId + '-done', onDone);
+                ipcMain.removeListener(sessionId + '-cancel', onCancel);
+            });
+        });
     }
 
     public async registerShortcut() {
@@ -62,13 +283,14 @@ export class ScreenshotManager {
             langText: "截图编辑",
             hotkey: "⌘`", // Shift+Command+A default
             globalCallback: async () => {
-                const dataURL = await this.captureScreen();
-                if (dataURL) {
-                    (this.plugin as any).openImageEditorDialog(dataURL, null, false, true);
+                const result = await this.captureWithSelection();
+                if (result) {
+                    (this.plugin as any).openImageEditorDialog(result.dataURL, null, false, true, null, result.rect);
                 }
             }
         });
     }
+
 
     // saveToHistory removed: ImageEditor.svelte provides screenshot history handling
 

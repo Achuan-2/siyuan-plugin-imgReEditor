@@ -16,6 +16,7 @@
     export let settings: any;
     export let isCanvasMode: boolean = false;
     export let isScreenshotMode: boolean = false;
+    export let initialRect: { x: number; y: number; width: number; height: number } | null = null;
     export let onClose: (saved: boolean, newPath?: string) => void;
 
     let imageBlob: Blob | null = null;
@@ -1011,6 +1012,7 @@
                 blobURL={tmpBlobUrl}
                 fileName={originalFileName}
                 {isCanvasMode}
+                {initialRect}
                 on:ready={() => {
                     editorReady = true;
 

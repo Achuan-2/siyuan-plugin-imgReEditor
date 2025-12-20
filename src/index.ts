@@ -146,7 +146,7 @@ export default class PluginSample extends Plugin {
         });
     }
 
-    async openImageEditorDialog(imagePath: string, blockID?: string | null, isCanvasMode: boolean = false, isScreenshotMode: boolean = false, onSaveCallback?: (path: string) => void) {
+    async openImageEditorDialog(imagePath: string, blockID?: string | null, isCanvasMode: boolean = false, isScreenshotMode: boolean = false, onSaveCallback?: (path: string) => void, initialRect?: { x: number, y: number, width: number, height: number } | null) {
         // derive filename from path/URL and include it in the dialog title
         const fileName = (typeof imagePath === 'string' && imagePath.length && !imagePath.startsWith('data:'))
             ? imagePath.split('/').pop() || ''
@@ -185,6 +185,7 @@ export default class PluginSample extends Plugin {
                 settings: this.settings,
                 isCanvasMode,
                 isScreenshotMode,
+                initialRect,
                 onClose: (saved: boolean, newPath?: string) => {
                     // Bypass dirty check on explicit save/cancel
                     (dialog as any)._skipDirtyCheck = true;
