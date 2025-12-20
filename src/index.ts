@@ -34,7 +34,7 @@ export default class PluginSample extends Plugin {
 
         // 注册斜杠菜单
         this.protyleSlash = [{
-            filter: ["canvas", "huabu", "画布", "imgreeditor", "图片"],
+            filter: ["canvas", "huabu", "画布", "imgreeditor", "画板","图片"],
             id: "imgreeditor-canvas",
             html: `<div class="b3-list-item__first"><svg class="b3-list-item__graphic"><use xlink:href="#iconImage"></use></svg><span class="b3-list-item__text">${t("imageEditor.createCanvas") || '创建画布 (ImgReEditor)'}</span></div>`,
             callback: async (protyle: any, nodeElement: HTMLElement) => {
