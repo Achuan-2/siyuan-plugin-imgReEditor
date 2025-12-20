@@ -14,13 +14,15 @@
 
 ## 如何使用
 
-图片右键菜单选择「ImgReEditor 编辑」按钮
+1. 编辑图片：图片右键菜单选择「ImgReEditor 编辑」按钮
 
 <img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/network-asset-20251219120448-2025-12-19-20251219163021-8edvw9l.png" />
 
-斜杆菜单输入`/画布`可以开启画布模式，在画布添加多个图片
+2. 画布模式：斜杆菜单输入`/画布`可以开启画布模式，在画布添加多个图片
 
 <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
+
+3. 支持截图: `Ctrl+~`截图并标注，支持保存截图历史，支持截图后贴图
 
 ## 功能介绍
 

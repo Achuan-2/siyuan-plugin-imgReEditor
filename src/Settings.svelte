@@ -4,7 +4,7 @@
     import { t } from './utils/i18n';
     import { getDefaultSettings } from './defaultSettings';
     import { pushMsg, pushErrMsg, readDir, removeFile } from './api';
-    import { confirm,Constants } from 'siyuan';
+    import { confirm, Constants } from 'siyuan';
     export let plugin;
     export const useShell = async (cmd: 'showItemInFolder' | 'openPath', filePath: string) => {
             try {
@@ -40,7 +40,14 @@
                         embed: t('settings.storageMode.options.embed'),
                         backup: t('settings.storageMode.options.backup'),
                     },
-                },                
+                },
+                {
+                    key: 'screenshotLimit',
+                    value: settings.screenshotLimit,
+                    type: 'number',
+                    title: t('settings.screenshotLimit.title'),
+                    description: t('settings.screenshotLimit.description'),
+                },
                 {
                     key: 'openDataFolder',
                     value: '',
@@ -105,8 +112,7 @@
                                         );
                                     }
                                 },
-                                () => {
-                                }
+                                () => {}
                             );
                         },
                     },
@@ -137,8 +143,7 @@
                                     await saveSettings();
                                     await pushMsg(t('settings.reset.message'));
                                 },
-                                () => {
-                                }
+                                () => {}
                             );
                         },
                     },

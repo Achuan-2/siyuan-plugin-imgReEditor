@@ -12,6 +12,10 @@
                 "backup": "Backup 存储模式：数据存储在backup文件夹"
             }
         },
+        "screenshotLimit": {
+            "title": "截图历史数量限制",
+            "description": "限制截图历史文件夹中的文件数量，超过后会自动删除最旧的文件（默认为200）"
+        },
         "reset": {
             "title": "重置设置",
             "description": "重置所有设置为默认值",

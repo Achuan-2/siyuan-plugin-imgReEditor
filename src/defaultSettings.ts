@@ -6,4 +6,5 @@ export const getDefaultSettings = () => ({
     recentColors: {} as Record<string, string[]>,
     // Last used tool settings, keyed by tool name
     lastToolSettings: {} as Record<string, any>,
+    screenshotLimit: 200,
 });

@@ -7,7 +7,7 @@
     import Toolbar from './editor/Toolbar.svelte';
     import ToolSettings from './editor/ToolSettings.svelte';
     // TUI Image Editor removed; only Fabric (CanvasEditor) is used now
-    import { getFileBlob, putFile } from '../api';
+    import { getFileBlob, putFile, readDir, removeFile } from '../api';
     import { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } from '../utils';
     import { pushMsg, pushErrMsg } from '../api';
 
@@ -205,7 +205,36 @@
             lastSavedHistoryIndex = canvasEditorRef.getHistoryIndex();
         }
 
+        // Cleanup old screenshots
+        cleanupScreenshotHistory();
+
         return { path, blob: newBlob, dataURL };
+    }
+
+    async function cleanupScreenshotHistory() {
+        const limit = settings.screenshotLimit || 200;
+        try {
+            const files = await readDir(SCREENSHOT_HISTORY_DIR);
+            if (files && files.length > limit) {
+                // Sort by updated time (oldest first)
+                files.sort((a, b) => (a.updated || 0) - (b.updated || 0));
+                const toDeleteCount = files.length - limit;
+                const toDelete = files.slice(0, toDeleteCount);
+
+                for (const file of toDelete) {
+                    try {
+                        const filePath = `${SCREENSHOT_HISTORY_DIR}/${file.name}`;
+                        await removeFile(filePath);
+                        // Also remove backup json if it exists
+                        await removeFile(`${STORAGE_BACKUP_DIR}/${file.name}.json`);
+                    } catch (e) {
+                        // Ignore errors for individual file deletion (e.g. backup json not existing)
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to cleanup screenshot history', e);
+        }
     }
 
     async function handleCopyFile() {

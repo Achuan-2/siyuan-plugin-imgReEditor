@@ -12,6 +12,10 @@
                 "backup": "Store original in backup folder"
             }
         },
+        "screenshotLimit": {
+            "title": "Screenshot History Limit",
+            "description": "Limit the number of files in the screenshot history folder. Once exceeded, the oldest files will be automatically deleted (default is 200)."
+        },
         "reset": {
             "title": "Original Image Storage",
             "description": "Choose how to store the original image",
