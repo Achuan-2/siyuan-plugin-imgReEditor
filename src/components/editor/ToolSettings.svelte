@@ -22,6 +22,97 @@
     let fonts: { family: string; fullName: string }[] = [];
     let loadingFonts = true;
 
+    // font search / dropdown state
+    let fontSearch: string = '';
+    let showFontDropdown = false;
+    let highlightedIndex = -1;
+    let fontInputFocused = false;
+
+    $: filteredFonts = (fontSearch || '').trim() === ''
+        ? fonts
+        : fonts.filter(f => {
+              const text = (f.family + ' ' + (f.fullName || '')).toLowerCase();
+              const terms = fontSearch.trim().toLowerCase().split(/\s+/);
+              return terms.every(t => text.indexOf(t) !== -1);
+          });
+
+    function selectFont(f: { family: string; fullName: string }) {
+        emitChange({ family: f.family });
+        fontSearch = f.fullName || f.family;
+        showFontDropdown = false;
+        highlightedIndex = -1;
+    }
+
+    function handleFontKeydown(e: KeyboardEvent) {
+        if (!showFontDropdown) return;
+        if (e.key === 'ArrowDown') {
+            highlightedIndex = Math.min(highlightedIndex + 1, filteredFonts.length - 1);
+            e.preventDefault();
+        } else if (e.key === 'ArrowUp') {
+            highlightedIndex = Math.max(highlightedIndex - 1, 0);
+            e.preventDefault();
+        } else if (e.key === 'Enter') {
+            if (highlightedIndex >= 0 && filteredFonts[highlightedIndex]) {
+                selectFont(filteredFonts[highlightedIndex]);
+                e.preventDefault();
+            }
+        } else if (e.key === 'Escape') {
+            showFontDropdown = false;
+            highlightedIndex = -1;
+        }
+    }
+
+    // 判断字符串中是否包含中文字符
+    function isChinese(text: string | undefined | null) {
+        if (!text) return false;
+        return /[\u4e00-\u9fff]/.test(text);
+    }
+
+    // keep fontSearch in sync when settings.family changes externally
+    // but avoid overwriting while the user is typing (input focused)
+    $: if (!fontInputFocused) {
+        if (settings.family) {
+            const matched = fonts.find(f => f.family === settings.family);
+            fontSearch = matched ? (matched.fullName || matched.family) : settings.family;
+        } else if (!settings.family) {
+            // if no family set, clear only when not focused
+            fontSearch = '';
+        }
+    }
+
+    // When focus is inside the tool settings, block propagation of
+    // various events to avoid affecting the canvas — unless Ctrl is held.
+    function shouldAllowPropagation(e: Event) {
+        const evAny = e as any;
+        // Allow when Ctrl is held (e.g., Ctrl+C / Ctrl+V)
+        if (evAny.ctrlKey) return true;
+
+        // Allow when the event target is an input/textarea or contenteditable
+        const target = e.target as HTMLElement | null;
+        if (!target) return false;
+        const tag = target.tagName && target.tagName.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return true;
+        if ((target as HTMLElement).isContentEditable) return true;
+        // also allow if inside an input/textarea/contenteditable ancestor
+        if (typeof target.closest === 'function') {
+            const anc = target.closest('input, textarea, [contenteditable="true"]');
+            if (anc) return true;
+        }
+        return false;
+    }
+
+    function handleInsideKey(e: KeyboardEvent) {
+        if (!shouldAllowPropagation(e)) e.stopPropagation();
+    }
+
+    function handleInsideMouse(e: MouseEvent) {
+        if (!shouldAllowPropagation(e)) e.stopPropagation();
+    }
+
+    function handleInsideWheel(e: WheelEvent) {
+        if (!shouldAllowPropagation(e)) e.stopPropagation();
+    }
+
     onMount(async () => {
         // candidate fonts to check (common cross-platform + Chinese fonts)
         const candidates = [
@@ -74,7 +165,13 @@
     });
 </script>
 
-<div class="tool-settings">
+<div class="tool-settings"
+    on:keydown={handleInsideKey}
+    on:keyup={handleInsideKey}
+    on:keypress={handleInsideKey}
+    on:mousedown={handleInsideMouse}
+    on:wheel={handleInsideWheel}
+>
     {#if !tool}
         <div class="empty">请选择工具</div>
     {:else if tool === 'shape'}
@@ -243,21 +340,40 @@
     {:else if tool === 'text'}
         <div class="row">
             <label for="font-family">字体</label>
-            <select
-                id="font-family"
-                value={settings.family ||
-                    settings.fontFamily ||
-                    (fonts[0] ? fonts[0].family : 'Microsoft Yahei')}
-                on:change={e => emitChange({ family: getValue(e) })}
-            >
-                {#if loadingFonts}
-                    <option disabled>检测字体中...</option>
-                {:else}
-                    {#each fonts as f}
-                        <option value={f.family}>{f.fullName}</option>
-                    {/each}
+            <div style="position:relative; width:60%;">
+                <input
+                    id="font-family"
+                    type="text"
+                    placeholder="搜索字体（空格为 AND）"
+                    value={fontSearch}
+                    on:input={e => { fontSearch = getValue(e); showFontDropdown = true; highlightedIndex = -1; }}
+                    on:focus={() => { showFontDropdown = true; highlightedIndex = -1; fontInputFocused = true; }}
+                    on:blur={() => { showFontDropdown = false; highlightedIndex = -1; fontInputFocused = false; }}
+                    on:keydown={handleFontKeydown}
+                    disabled={loadingFonts}
+                    style="width:100%; font-family: {settings.family || settings.fontFamily || (fonts[0] ? fonts[0].family : 'Microsoft Yahei')};"
+                />
+
+                {#if showFontDropdown}
+                    <ul class="font-dropdown" role="listbox">
+                        {#if loadingFonts}
+                            <li class="disabled">检测字体中...</li>
+                        {:else}
+                            {#each filteredFonts as f, i}
+                                    <li
+                                        role="option"
+                                        aria-selected={settings.family === f.family}
+                                        class:selected={settings.family === f.family}
+                                        class:highlight={i === highlightedIndex}
+                                        on:mousedown={() => selectFont(f)}
+                                    >
+                                        <span style="font-family: {f.family}">{(f.fullName && isChinese(f.fullName)) ? f.fullName : f.family}</span>
+                                    </li>
+                            {/each}
+                        {/if}
+                    </ul>
                 {/if}
-            </select>
+            </div>
         </div>
         <div class="row">
             <label for="font-size">字号</label>
@@ -938,6 +1054,7 @@
     {/if}
 </div>
 
+
 <style>
     .tool-settings {
         padding: 8px;
@@ -1008,5 +1125,39 @@
         background: var(--b3-theme-primary, #1976d2);
         color: #ffffff;
         border-color: var(--b3-theme-primary, #1976d2);
+    }
+
+    /* font dropdown */
+    .font-dropdown {
+        position: absolute;
+        top: 38px;
+        left: 0;
+        right: 0;
+        max-height: 220px;
+        overflow: auto;
+        background: #fff;
+        border: 1px solid #e6e6e6;
+        border-radius: 6px;
+        padding: 6px 0;
+        z-index: 40;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    }
+    .font-dropdown li {
+        list-style: none;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+    .font-dropdown li.disabled {
+        color: #888;
+        cursor: default;
+    }
+    .font-dropdown li.highlight {
+        background: #f3f7ff;
+    }
+    .font-dropdown li.selected {
+        background: var(--b3-theme-primary-lightest, #e8f0ff);
+        color: var(--b3-theme-primary, #1976d2);
     }
 </style>
