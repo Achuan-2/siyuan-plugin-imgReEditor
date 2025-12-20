@@ -20,9 +20,9 @@
 
 2. 画布模式：斜杆菜单输入`/画布`可以开启画布模式，在画布添加多个图片
 
-<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
+  <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
 
-![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251221001756-2025-12-21.png)
+  ![](https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20251221013822-2025-12-21.png)
 
 3. 支持截图: `Ctrl+~`截图并标注，支持保存截图历史，支持截图后贴图
 
