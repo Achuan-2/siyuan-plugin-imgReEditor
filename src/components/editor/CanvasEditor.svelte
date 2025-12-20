@@ -1865,8 +1865,8 @@
                         top: offset.y,
                         width: restoreCrop.width,
                         height: restoreCrop.height,
-                        fill: 'rgba(0,0,0,0.25)',
-                        stroke: '#00ff00',
+                        fill: 'transparent',
+                        stroke: null,
                         strokeWidth: 2,
                         strokeDashArray: [5, 5],
                         selectable: true,
@@ -1940,8 +1940,8 @@
                 top: startY,
                 width: 0,
                 height: 0,
-                fill: 'rgba(0,0,0,0.25)',
-                stroke: '#00ff00',
+                fill: 'transparent',
+                stroke: null,
                 strokeWidth: 2,
                 strokeDashArray: [5, 5],
                 selectable: false, // Initially false while dragging
@@ -2106,16 +2106,7 @@
                     canvas.remove(cropRect);
                 } catch (e) {}
                 cropRect = null;
-                // If we were drawing a new one and cancelled by making it small,
-                // do we exit crop mode? Probably not if we are in "adjust" flow.
-                // But for now let's just remove the tiny rect.
                 canvas.requestRenderAll();
-                return;
-            }
-
-            // If NOT in restore/adjust mode, auto-apply immediately on mouse up
-            if (!restoreCrop) {
-                applyCrop();
                 return;
             }
 
@@ -2152,8 +2143,6 @@
             cropRect.setCoords();
             canvas.setActiveObject(cropRect);
             canvas.requestRenderAll();
-
-            // Do NOT apply crop here. Wait for Enter.
         };
 
         // Attach listeners
@@ -2165,8 +2154,9 @@
         // keyboard shortcuts for crop
         _cropKeyHandler = (e: KeyboardEvent) => {
             if (e.key === 'Enter') {
-                // finalize
                 applyCrop();
+            } else if (e.key === 'Escape') {
+                exitCropMode();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (cropRect) {
                     try {
