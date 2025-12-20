@@ -4689,10 +4689,15 @@
             if (items[i].type.indexOf('image') !== -1) {
                 const blob = items[i].getAsFile();
                 if (!blob) continue;
-                const url = URL.createObjectURL(blob);
-                addFabricImageFromURL(url);
-                // We don't revoke immediately because image.onload is async
-                // URL.revokeObjectURL(url); // Should be called inside onload if we really care, but blobs are fine for a bit
+                // Convert blob to base64 data URL for persistent storage
+                const reader = new FileReader();
+                reader.onload = e => {
+                    const dataURL = e.target?.result as string;
+                    if (dataURL) {
+                        addFabricImageFromURL(dataURL);
+                    }
+                };
+                reader.readAsDataURL(blob);
                 hasImage = true;
             }
         }
