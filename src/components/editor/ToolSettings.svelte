@@ -8,8 +8,7 @@
     const dispatch = createEventDispatcher();
 
     function emitChange(partial: any) {
-        const next = { ...(settings || {}), ...(partial || {}) };
-        dispatch('change', next);
+        dispatch('change', partial);
     }
 
     function getValue(e: Event) {
@@ -39,24 +38,27 @@
             'Noto Serif',
             'SimHei',
             'SimSun',
-            'Roboto',
             'Segoe UI',
         ];
-
         try {
             if ('queryLocalFonts' in window) {
                 const availableFonts = await (window as any).queryLocalFonts();
-                // Filter for "Regular" and get family/fullName
-                const regularFonts = availableFonts
-                    .filter((font: any) => font.style.toLowerCase() === 'regular')
+                // 不再按 style 过滤，直接映射所有本地字体并去重、排序
+                const localFonts = (availableFonts || [])
                     .map((font: any) => ({
                         family: font.family,
-                        fullName: font.fullName,
-                    }));
+                        fullName: font.fullName || font.family,
+                    }))
+                    // 去掉空项
+                    .filter((f: any) => f.family)
+                    // 去重（按 family）
+                    .reduce((acc: any[], cur: any) => {
+                        if (!acc.some(f => f.family === cur.family)) acc.push(cur);
+                        return acc;
+                    }, []);
 
-                if (regularFonts.length > 0) {
-                    // Sort by fullName
-                    fonts = regularFonts.sort((a, b) => a.fullName.localeCompare(b.fullName));
+                if (localFonts.length > 0) {
+                    fonts = localFonts.sort((a, b) => a.fullName.localeCompare(b.fullName));
                 } else {
                     fonts = candidates.map(name => ({ family: name, fullName: name }));
                 }

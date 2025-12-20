@@ -3057,6 +3057,13 @@
     export function applyToolOptionsToSelection(options: any) {
         try {
             if (!canvas) return;
+            if (activeTool === 'image-border') {
+                updateImageBorder(options);
+                canvas.requestRenderAll();
+                schedulePushWithType('modified');
+                return;
+            }
+
             const objs = canvas.getActiveObjects ? canvas.getActiveObjects() : [];
             if (!objs || objs.length === 0) return;
             objs.forEach((o: any) => {
@@ -3194,8 +3201,14 @@
                         if (typeof options.strokeWidth !== 'undefined')
                             o.set('strokeWidth', options.strokeWidth);
                         if (typeof options.fill !== 'undefined') {
+                            let opacity = options.fillOpacity;
+                            if (typeof opacity === 'undefined' && typeof o.fill === 'string') {
+                                // Try to preserve existing fill opacity if it's an rgba string
+                                const m = o.fill.match(/rgba\([^,]+,[^,]+,[^,]+,([^)]+)\)/);
+                                if (m && m[1]) opacity = parseFloat(m[1]);
+                            }
                             const newFill = options.fill
-                                ? colorWithOpacity(options.fill, options.fillOpacity)
+                                ? colorWithOpacity(options.fill, opacity)
                                 : null;
                             o.set('fill', newFill);
                         }
@@ -3235,10 +3248,6 @@
                             }
                         }
                         o.setCoords && o.setCoords();
-                    }
-                    // Update image border settings if the tool is active
-                    if (activeTool === 'image-border') {
-                        updateImageBorder(options);
                     }
                 } catch (e) {}
             });

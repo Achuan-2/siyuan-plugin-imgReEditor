@@ -1061,12 +1061,15 @@
                             }
                         }}
                         on:change={e => {
-                            toolSettings = e.detail;
+                            const partial = e.detail;
+                            toolSettings = { ...toolSettings, ...partial };
                             if (toolSettings && toolSettings.shape)
                                 activeShape = toolSettings.shape;
                             try {
                                 canvasEditorRef.setTool(activeTool, toolSettings);
-                                canvasEditorRef.applyToolOptionsToSelection(toolSettings);
+                                canvasEditorRef.applyToolOptionsToSelection(
+                                    activeTool === 'image-border' ? toolSettings : partial
+                                );
                             } catch (err) {}
                             // Persist settings for the active tool
                             saveToolSettings(activeTool, toolSettings);
