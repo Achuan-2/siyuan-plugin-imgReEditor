@@ -65,11 +65,12 @@ export default class PluginSample extends Plugin {
         await this.screenshotManager.registerShortcut();
 
         // 注册顶栏按钮（使用 Menu 类创建下拉菜单）
-        this.topBarElement = this.addTopBar({
+        const topBarElement = this.addTopBar({
             icon: 'iconImgReEditor',
             title: 'ImgReEditor',
             position: 'right',
             callback: (event) => {
+                let rect = topBarElement.getBoundingClientRect();
                 // 使用 Menu API 创建独立菜单实例
                 const menu = new Menu('imgreeditor-topbar', () => {
                     // 菜单关闭时的回调（可选）
@@ -101,9 +102,10 @@ export default class PluginSample extends Plugin {
                 // 打开菜单，使用事件位置作为坐标（兼容对象或参数形式）
                 const x = (event && (event.clientX ?? event.x)) || 0;
                 const y = (event && (event.clientY ?? event.y)) || 0;
-                menu.open({ x, y });
+                menu.open({ x: rect.right, y: rect.bottom});
             }
         });
+        this.topBarElement = topBarElement;
     }
 
     async onLayoutReady() {
