@@ -2,7 +2,7 @@
     "settings": {
         "settingsPanel": "设置面板",
         "settingsGroup": {
-            "reset": "重置设置"
+            "reset": "数据清除"
         },
         "storageMode": {
             "title": "图片编辑数据存储方式",

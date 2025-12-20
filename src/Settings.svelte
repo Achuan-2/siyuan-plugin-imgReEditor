@@ -173,7 +173,38 @@
                         },
                     },
                 },
+            ],
+        },
+        {
+            name: t('settings.settingsGroup.reset') || 'Reset Settings',
+            items: [
                 {
+                    key: 'reset',
+                    value: '',
+                    type: 'button',
+                    title: t('settings.reset.title') || 'Reset Settings',
+                    description:
+                        t('settings.reset.description') || 'Reset all settings to default values',
+                    button: {
+                        label: t('settings.reset.label') || 'Reset',
+                        callback: async () => {
+                            confirm(
+                                t('settings.reset.title') || 'Reset Settings',
+                                t('settings.reset.confirmMessage') ||
+                                    'Are you sure you want to reset all settings to default values? This action cannot be undone.',
+                                async () => {
+                                    // 确认回调
+                                    settings = { ...getDefaultSettings() };
+                                    updateGroupItems();
+                                    await saveSettings();
+                                    await pushMsg(t('settings.reset.message'));
+                                },
+                                () => {}
+                            );
+                        },
+                    },
+                },
+                                {
                     key: 'clearBackup',
                     value: '',
                     type: 'button',
@@ -220,37 +251,6 @@
                                                 (err && err.message ? err.message : err)
                                         );
                                     }
-                                },
-                                () => {}
-                            );
-                        },
-                    },
-                },
-            ],
-        },
-        {
-            name: t('settings.settingsGroup.reset') || 'Reset Settings',
-            items: [
-                {
-                    key: 'reset',
-                    value: '',
-                    type: 'button',
-                    title: t('settings.reset.title') || 'Reset Settings',
-                    description:
-                        t('settings.reset.description') || 'Reset all settings to default values',
-                    button: {
-                        label: t('settings.reset.label') || 'Reset',
-                        callback: async () => {
-                            confirm(
-                                t('settings.reset.title') || 'Reset Settings',
-                                t('settings.reset.confirmMessage') ||
-                                    'Are you sure you want to reset all settings to default values? This action cannot be undone.',
-                                async () => {
-                                    // 确认回调
-                                    settings = { ...getDefaultSettings() };
-                                    updateGroupItems();
-                                    await saveSettings();
-                                    await pushMsg(t('settings.reset.message'));
                                 },
                                 () => {}
                             );
