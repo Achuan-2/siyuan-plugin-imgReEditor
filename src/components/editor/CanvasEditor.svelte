@@ -632,7 +632,7 @@
                     activeTool === 'mosaic'
                 ) {
                     canvas.defaultCursor = 'crosshair';
-                } 
+                }
             }
         };
         document.addEventListener('keydown', onDocKeyDown as any);
@@ -645,7 +645,6 @@
 
             // Handle text editing exit with Escape or Ctrl/Cmd
             // This is placed before the input/textarea check as Fabric's host textarea will be focused
-
 
             // ignore when typing in input or textarea
             if (
@@ -4006,7 +4005,10 @@
 
         // If the paste target is an input/textarea/contenteditable, allow default handling
         const el = e.target as HTMLElement | null;
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as any).isContentEditable)) {
+        if (
+            el &&
+            (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as any).isContentEditable)
+        ) {
             return;
         }
 
