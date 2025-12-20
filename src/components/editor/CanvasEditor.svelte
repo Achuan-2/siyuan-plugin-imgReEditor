@@ -654,7 +654,7 @@
         });
         canvas.on('object:scaling', (opt: any) => {
             const target = opt.target;
-            if (target && target.type === 'arrow') {
+            if (target && (target.type === 'arrow' || target.type === 'image')) {
                 handleSelectionChangeWithType();
             }
         });
@@ -1445,7 +1445,7 @@
                         options: {
                             width: Math.round(active.getScaledWidth()),
                             height: Math.round(active.getScaledHeight()),
-                            lockAspectRatio: (active as any).lockAspectRatio !== false,
+                            lockAspectRatio: (active as any).lockUniScaling !== false,
                             isSelection: true,
                         },
                         type: 'image',

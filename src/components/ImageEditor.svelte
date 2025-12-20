@@ -1294,6 +1294,28 @@
                                 if (activeTool === 'mosaic') {
                                     saveToolSettings('mosaic', e.detail.options);
                                 }
+                            } else if (type === 'image') {
+                                if (shouldAutoActivate) {
+                                    // Auto-activate image tool
+                                    activeTool = 'image';
+                                    showToolPopup = true;
+                                    if (!popupPositioned) {
+                                        updatePopupPosition();
+                                        popupPositioned = true;
+                                    }
+                                    try {
+                                        if (
+                                            canvasEditorRef &&
+                                            typeof canvasEditorRef.setTool === 'function'
+                                        )
+                                            canvasEditorRef.setTool('image', e.detail.options);
+                                    } catch (err) {}
+                                }
+
+                                // Save settings if image tool is active
+                                if (activeTool === 'image') {
+                                    saveToolSettings('image', e.detail.options);
+                                }
                             }
                         } else {
                             // Selection cleared, restore default tool options (e.g. for number-marker next count)
