@@ -156,7 +156,7 @@ export default class PluginSample extends Plugin {
 
         const dialog = new Dialog({
             title: title,
-            content: `<div id='ImageEditor' style='height: 90%;'></div>`,
+            content: `<div id='ImageEditor' style='height: 100%;'></div>`,
             destroyCallback: () => { /* component destroyed in callback */ },
             width: '1000px',
             height: '700px'
