@@ -28,8 +28,8 @@ export default class PluginSample extends Plugin {
         // 设置i18n插件实例
         setPluginInstance(this);
 
-                // 注册自定义图标：iconScreenshot 与 iconImgReEditor
-                this.addIcons(`
+        // 注册自定义图标：iconScreenshot 与 iconImgReEditor
+        this.addIcons(`
     <symbol id="iconScreenshot" viewBox="0 0 1024 1024">
         <rect x="112" y="176" width="800" height="672" rx="48" ry="48" fill="none" stroke="currentColor" stroke-width="64"></rect>
         <path d="M336 352h352v320H336z" fill="currentColor" opacity="0.95"></path>
