@@ -545,6 +545,27 @@
                     // Update UI
                     handleSelectionChangeWithType();
                 }
+            } else if (target && target.type === 'number-marker') {
+                if (target.scaleX !== 1 || target.scaleY !== 1) {
+                    const marker = target as any;
+                    const newFontSize = marker.getEffectiveFontSize();
+                    const newRadius = newFontSize * 0.8;
+                    marker.set({
+                        fontSize: newFontSize,
+                        width: newRadius * 2,
+                        height: newRadius * 2,
+                        scaleX: 1,
+                        scaleY: 1,
+                    });
+                    marker.dirty = true;
+                    marker.setCoords();
+
+                    // Update tool options so UI stays in sync
+                    if (activeTool === 'number-marker') {
+                        activeToolOptions.fontSize = newFontSize;
+                    }
+                    handleSelectionChangeWithType();
+                }
             }
             schedulePushWithType('modified');
         });
@@ -1316,6 +1337,17 @@
                     // Only dispatch if necessary to avoid flooding
                     dispatch('selection', {
                         options: { ...activeToolOptions, size: effectiveSize },
+                        type: target.type,
+                    });
+                }
+            } else if (target && target.type === 'number-marker') {
+                // Update fontSize in the tool options for real-time UI feel
+                if (activeTool === 'number-marker') {
+                    const effectiveSize = (target as any).getEffectiveFontSize();
+                    activeToolOptions.fontSize = effectiveSize;
+                    // Only dispatch if necessary to avoid flooding
+                    dispatch('selection', {
+                        options: { ...activeToolOptions, fontSize: effectiveSize },
                         type: target.type,
                     });
                 }
