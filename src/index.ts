@@ -99,9 +99,6 @@ export default class PluginSample extends Plugin {
                     }
                 });
 
-                // 打开菜单，使用事件位置作为坐标（兼容对象或参数形式）
-                const x = (event && (event.clientX ?? event.x)) || 0;
-                const y = (event && (event.clientY ?? event.y)) || 0;
                 menu.open({ x: rect.right, y: rect.bottom});
             }
         });
