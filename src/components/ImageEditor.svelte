@@ -845,6 +845,93 @@
             };
         }
     }
+
+    function handleToolChange(e: any) {
+        const t = e.detail.tool;
+        activeTool = t;
+        // show popup for tools that have a submenu
+        const hasSubmenu = [
+            'shape',
+            'arrow',
+            'brush',
+            'eraser',
+            'mosaic',
+            'text',
+            'transform',
+            'number-marker',
+            'crop',
+            'image-border',
+            'align',
+            'canvas',
+        ].includes(t);
+        showToolPopup = hasSubmenu;
+        // Only update popup position on first open (before user drags it)
+        if (hasSubmenu && !popupPositioned) {
+            updatePopupPosition();
+            popupPositioned = true;
+        }
+        if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
+            if (t === 'shape') {
+                const shapeType = e.detail.shape || 'rect';
+                activeShape = shapeType;
+                const key = `shape-${shapeType}`;
+                // Get last used settings for THIS specific shape type
+                const savedOptions =
+                    (settings.lastToolSettings && settings.lastToolSettings[key]) || {};
+                const options = { ...savedOptions, shape: shapeType };
+                canvasEditorRef.setTool('shape', options);
+                toolSettings = canvasEditorRef.getToolOptions();
+            } else if (t === 'crop') {
+                // Delegate crop mode to CanvasEditor
+                canvasEditorRef.setTool(null);
+                pendingCropRequested = true;
+                try {
+                    if (canvasEditorRef && typeof canvasEditorRef.enterCropMode === 'function') {
+                        if (isCropped && cropData) {
+                            canvasEditorRef.enterCropMode(cropData, originalImageDimensions);
+                        } else {
+                            canvasEditorRef.enterCropMode();
+                        }
+                    }
+                } catch (err) {
+                    console.warn('enterCropMode failed', err);
+                    try {
+                        pushErrMsg('进入裁剪模式失败');
+                    } catch (e) {}
+                }
+            } else if (t === 'transform') {
+                // open transform submenu
+                canvasEditorRef.setTool('transform');
+                toolSettings = canvasEditorRef.getToolOptions();
+            } else if (t === 'canvas') {
+                canvasEditorRef.setTool('canvas');
+                activeTool = 'canvas';
+                toolSettings = canvasEditorRef.getToolOptions();
+            } else if (t === 'image-border') {
+                // Try to get stored border settings from the image itself
+                const storedOptions =
+                    typeof canvasEditorRef.getStoredBorderOptions === 'function'
+                        ? canvasEditorRef.getStoredBorderOptions()
+                        : null;
+                if (storedOptions) {
+                    canvasEditorRef.setTool('image-border', storedOptions);
+                } else {
+                    // Fallback to last used settings
+                    const savedOptions =
+                        (settings.lastToolSettings && settings.lastToolSettings['image-border']) ||
+                        {};
+                    canvasEditorRef.setTool('image-border', savedOptions);
+                }
+                toolSettings = canvasEditorRef.getToolOptions();
+            } else {
+                // Get last used settings for this tool
+                const savedOptions =
+                    (settings.lastToolSettings && settings.lastToolSettings[t]) || {};
+                canvasEditorRef.setTool(t, savedOptions);
+                toolSettings = canvasEditorRef.getToolOptions();
+            }
+        }
+    }
 </script>
 
 <div class="editor-container" bind:this={editorContainerEl}>
@@ -879,82 +966,7 @@
         canRedo={redoAvailable}
         {undoCount}
         {redoCount}
-        on:tool={e => {
-            const t = e.detail.tool;
-            activeTool = t;
-            // show popup for tools that have a submenu
-            const hasSubmenu = [
-                'shape',
-                'arrow',
-                'brush',
-                'eraser',
-                'mosaic',
-                'text',
-                'transform',
-                'number-marker',
-                'crop',
-                'image-border',
-                'align',
-                'canvas',
-            ].includes(t);
-            showToolPopup = hasSubmenu;
-            // Only update popup position on first open (before user drags it)
-            if (hasSubmenu && !popupPositioned) {
-                updatePopupPosition();
-                popupPositioned = true;
-            }
-            if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
-                if (t === 'shape') {
-                    const shapeType = e.detail.shape || 'rect';
-                    activeShape = shapeType;
-                    const key = `shape-${shapeType}`;
-                    // Get last used settings for THIS specific shape type
-                    const savedOptions =
-                        (settings.lastToolSettings && settings.lastToolSettings[key]) || {};
-                    const options = { ...savedOptions, shape: shapeType };
-                    canvasEditorRef.setTool('shape', options);
-                    toolSettings = canvasEditorRef.getToolOptions();
-                } else if (t === 'crop') {
-                    // Delegate crop mode to CanvasEditor
-                    canvasEditorRef.setTool(null);
-                    pendingCropRequested = true;
-                    try {
-                        if (
-                            canvasEditorRef &&
-                            typeof canvasEditorRef.enterCropMode === 'function'
-                        ) {
-                            if (isCropped && cropData) {
-                                canvasEditorRef.enterCropMode(cropData, originalImageDimensions);
-                            } else {
-                                canvasEditorRef.enterCropMode();
-                            }
-                            pendingCropRequested = false;
-                            // initialize tool settings for crop submenu
-                            toolSettings = { ...(toolSettings || {}), cropRatioLabel: 'none' };
-                        }
-                    } catch (err) {
-                        console.warn('enterCropMode failed', err);
-                        try {
-                            pushErrMsg('进入裁剪模式失败');
-                        } catch (e) {}
-                    }
-                } else if (t === 'transform') {
-                    // open transform submenu
-                    canvasEditorRef.setTool('transform');
-                    toolSettings = canvasEditorRef.getToolOptions();
-                } else if (t === 'canvas') {
-                    canvasEditorRef.setTool('canvas');
-                    activeTool = 'canvas';
-                    toolSettings = canvasEditorRef.getToolOptions();
-                } else {
-                    // Get last used settings for this tool
-                    const savedOptions =
-                        (settings.lastToolSettings && settings.lastToolSettings[t]) || {};
-                    canvasEditorRef.setTool(t, savedOptions);
-                    toolSettings = canvasEditorRef.getToolOptions();
-                }
-            }
-        }}
+        on:tool={handleToolChange}
         on:undo={async () => {
             if (canvasEditorRef && typeof canvasEditorRef.undo === 'function') {
                 await canvasEditorRef.undo();

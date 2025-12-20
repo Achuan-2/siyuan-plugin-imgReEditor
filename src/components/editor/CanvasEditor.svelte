@@ -80,6 +80,11 @@
         '_unborderedSrc',
         '_outerRadius',
         '_borderEnabled',
+        '_borderFill',
+        '_borderRadius',
+        '_borderShadowBlur',
+        '_borderShadowColor',
+        '_borderShadowOpacity',
     ];
     // Flag to prevent recursive history updates during undo/redo
     let isHistoryProcessing = false;
@@ -2881,6 +2886,11 @@
             : mainImage.src;
         (newImg as any)._outerRadius = outerRadius;
         (newImg as any)._borderEnabled = enabled;
+        (newImg as any)._borderFill = fill;
+        (newImg as any)._borderRadius = radius;
+        (newImg as any)._borderShadowBlur = shadowBlur;
+        (newImg as any)._borderShadowColor = shadowColor;
+        (newImg as any)._borderShadowOpacity = shadowOpacity;
 
         if (!enabled) {
             newImg.set({
@@ -3025,6 +3035,11 @@
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
                     actual._outerRadius = json.backgroundImage._outerRadius;
                     actual._borderEnabled = json.backgroundImage._borderEnabled;
+                    actual._borderFill = json.backgroundImage._borderFill;
+                    actual._borderRadius = json.backgroundImage._borderRadius;
+                    actual._borderShadowBlur = json.backgroundImage._borderShadowBlur;
+                    actual._borderShadowColor = json.backgroundImage._borderShadowColor;
+                    actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
                 }
                 bg._originalSrc = json.backgroundImage._originalSrc;
                 bg._cropOffset = json.backgroundImage._cropOffset;
@@ -3032,6 +3047,11 @@
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;
                 bg._outerRadius = json.backgroundImage._outerRadius;
                 bg._borderEnabled = json.backgroundImage._borderEnabled;
+                bg._borderFill = json.backgroundImage._borderFill;
+                bg._borderRadius = json.backgroundImage._borderRadius;
+                bg._borderShadowBlur = json.backgroundImage._borderShadowBlur;
+                bg._borderShadowColor = json.backgroundImage._borderShadowColor;
+                bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
             }
 
             restoreObjectSelectionStates();
@@ -3071,6 +3091,11 @@
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
                     actual._outerRadius = json.backgroundImage._outerRadius;
                     actual._borderEnabled = json.backgroundImage._borderEnabled;
+                    actual._borderFill = json.backgroundImage._borderFill;
+                    actual._borderRadius = json.backgroundImage._borderRadius;
+                    actual._borderShadowBlur = json.backgroundImage._borderShadowBlur;
+                    actual._borderShadowColor = json.backgroundImage._borderShadowColor;
+                    actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
                 }
                 bg._originalSrc = json.backgroundImage._originalSrc;
                 bg._cropOffset = json.backgroundImage._cropOffset;
@@ -3078,6 +3103,11 @@
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;
                 bg._outerRadius = json.backgroundImage._outerRadius;
                 bg._borderEnabled = json.backgroundImage._borderEnabled;
+                bg._borderFill = json.backgroundImage._borderFill;
+                bg._borderRadius = json.backgroundImage._borderRadius;
+                bg._borderShadowBlur = json.backgroundImage._borderShadowBlur;
+                bg._borderShadowColor = json.backgroundImage._borderShadowColor;
+                bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
             }
 
             // For canvas mode, add boundary rectangle
@@ -3139,6 +3169,23 @@
             top: offset.y,
             width: (bg.width || 0) * (bg.scaleX || 1),
             height: (bg.height || 0) * (bg.scaleY || 1),
+        };
+    }
+
+    export function getStoredBorderOptions() {
+        if (!canvas || !canvas.backgroundImage) return null;
+        const bg = canvas.backgroundImage as any;
+        if (bg._appliedMargin === undefined && bg._borderEnabled === undefined) return null;
+
+        return {
+            enabled: bg._borderEnabled !== false,
+            fill: bg._borderFill,
+            margin: bg._appliedMargin,
+            radius: bg._borderRadius,
+            outerRadius: bg._outerRadius,
+            shadowBlur: bg._borderShadowBlur,
+            shadowColor: bg._borderShadowColor,
+            shadowOpacity: bg._borderShadowOpacity,
         };
     }
 
@@ -3554,6 +3601,11 @@
             json.backgroundImage._unborderedSrc = bg._unborderedSrc;
             json.backgroundImage._outerRadius = bg._outerRadius;
             json.backgroundImage._borderEnabled = bg._borderEnabled;
+            json.backgroundImage._borderFill = bg._borderFill;
+            json.backgroundImage._borderRadius = bg._borderRadius;
+            json.backgroundImage._borderShadowBlur = bg._borderShadowBlur;
+            json.backgroundImage._borderShadowColor = bg._borderShadowColor;
+            json.backgroundImage._borderShadowOpacity = bg._borderShadowOpacity;
         }
 
         // Filter out canvas boundary objects from history to prevent them from being undone
@@ -3627,11 +3679,25 @@
                     actual._cropOffset = json.backgroundImage._cropOffset;
                     actual._appliedMargin = json.backgroundImage._appliedMargin;
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
+                    actual._outerRadius = json.backgroundImage._outerRadius;
+                    actual._borderEnabled = json.backgroundImage._borderEnabled;
+                    actual._borderFill = json.backgroundImage._borderFill;
+                    actual._borderRadius = json.backgroundImage._borderRadius;
+                    actual._borderShadowBlur = json.backgroundImage._borderShadowBlur;
+                    actual._borderShadowColor = json.backgroundImage._borderShadowColor;
+                    actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
                 }
                 bg._originalSrc = json.backgroundImage._originalSrc;
                 bg._cropOffset = json.backgroundImage._cropOffset;
                 bg._appliedMargin = json.backgroundImage._appliedMargin;
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;
+                bg._outerRadius = json.backgroundImage._outerRadius;
+                bg._borderEnabled = json.backgroundImage._borderEnabled;
+                bg._borderFill = json.backgroundImage._borderFill;
+                bg._borderRadius = json.backgroundImage._borderRadius;
+                bg._borderShadowBlur = json.backgroundImage._borderShadowBlur;
+                bg._borderShadowColor = json.backgroundImage._borderShadowColor;
+                bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
             }
 
             // After loading, ensure all objects (except background) are selectable and evented
