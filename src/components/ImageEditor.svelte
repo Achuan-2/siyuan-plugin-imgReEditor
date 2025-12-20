@@ -96,6 +96,8 @@
         const toSave = { ...options };
         if (tool === 'number-marker') {
             delete toSave.isSelection;
+            delete toSave.count;
+            delete toSave.nextNumber;
         }
 
         settings.lastToolSettings[key] = toSave;

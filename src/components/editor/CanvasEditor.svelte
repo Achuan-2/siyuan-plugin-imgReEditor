@@ -85,6 +85,17 @@
         return bg;
     }
 
+    function updateCurrentNumberFromCanvas() {
+        if (!canvas) return;
+        let maxNum = 0;
+        canvas.getObjects().forEach((obj: any) => {
+            if (obj.type === 'number-marker' && typeof (obj as any).count === 'number') {
+                maxNum = Math.max(maxNum, (obj as any).count);
+            }
+        });
+        currentNumber = maxNum + 1;
+    }
+
     function restoreObjectSelectionStates() {
         if (!canvas) return;
         try {
@@ -583,6 +594,9 @@
             const target = opt && opt.target;
             if (target && (target as any)._isCanvasBoundary) return;
             schedulePushWithType('removed');
+            if (target && target.type === 'number-marker') {
+                updateCurrentNumberFromCanvas();
+            }
             try {
                 if (target && (target as any)._isCropRect) {
                     // If the crop rect was deleted, exit crop mode to clean up handlers/state
@@ -2454,6 +2468,7 @@
 
     export async function loadImageFromURL(url: string, name?: string) {
         if (!canvas) return;
+        currentNumber = 1;
         if (!url && isCanvasMode) {
             // Default project size
             const imgW = 800;
@@ -2977,6 +2992,7 @@
             }
 
             restoreObjectSelectionStates();
+            updateCurrentNumberFromCanvas();
             canvas.renderAll();
             fitImageToViewport();
             notifyHistoryUpdate();
@@ -3053,6 +3069,7 @@
             }
 
             restoreObjectSelectionStates();
+            updateCurrentNumberFromCanvas();
             canvas.renderAll();
             fitImageToViewport();
             notifyHistoryUpdate();
@@ -3305,6 +3322,7 @@
                             if (typeof options.count !== 'undefined') {
                                 o.set('count', options.count);
                                 o.dirty = true;
+                                updateCurrentNumberFromCanvas();
                             }
                             if (typeof options.fontSize !== 'undefined') {
                                 o.set('fontSize', options.fontSize);
@@ -3553,6 +3571,9 @@
                     canvas.setDimensions({ width: json.width, height: json.height });
                 }
             }
+
+            // Resume number marker sequence if existing markers are found
+            updateCurrentNumberFromCanvas();
 
             // Manually restore metadata to the background image
             if (canvas.backgroundImage && json.backgroundImage) {
