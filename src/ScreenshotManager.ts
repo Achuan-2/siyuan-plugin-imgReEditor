@@ -55,8 +55,9 @@ export class ScreenshotManager {
 
     public async registerShortcut() {
         this.plugin.addCommand({
-            langKey: "screenshot.title",
-            hotkey: "⇧⌘A", // Shift+Command+A default
+            langKey: "screenshotedit",
+            langText: "截图编辑",
+            hotkey: "⌘4", // Shift+Command+A default
             globalCallback: async () => {
                 const dataURL = await this.captureScreen();
                 if (dataURL) {
