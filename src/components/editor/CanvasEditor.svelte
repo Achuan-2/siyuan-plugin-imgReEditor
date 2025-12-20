@@ -187,6 +187,7 @@
 
     function colorWithOpacity(color: string | null | undefined, opacity: number | undefined) {
         if (!color) return null;
+        if (typeof color !== 'string') return color; // Return as-is if not a string (e.g. Gradient object)
         // if opacity is undefined, return color as-is
         if (typeof opacity === 'undefined') return color;
         const c = color.trim();
@@ -1341,11 +1342,17 @@
                             else fp = 1;
                         }
                     } catch (e) {}
+                    let fillVal = active.fill;
+                    if (typeof fillVal === 'string' && fillVal.startsWith('rgba')) {
+                        try {
+                            fillVal = '#' + new Color(fillVal).toHex();
+                        } catch (e) {}
+                    }
                     dispatch('selection', {
                         options: {
                             stroke: active.stroke,
                             strokeWidth: active.strokeWidth,
-                            fill: active.fill,
+                            fill: fillVal,
                             fillOpacity: fp,
                         },
                         type: active.type,
@@ -1404,11 +1411,17 @@
                     } catch (e) {}
                     dispatch('selection', { options: null, type: active.type });
                 } else if (['i-text', 'textbox', 'text'].includes(active.type)) {
+                    let fillVal = active.fill;
+                    if (typeof fillVal === 'string' && fillVal.startsWith('rgba')) {
+                        try {
+                            fillVal = '#' + new Color(fillVal).toHex();
+                        } catch (e) {}
+                    }
                     dispatch('selection', {
                         options: {
                             family: (active as any).fontFamily,
                             size: Math.round((active as any).fontSize * (active.scaleX || 1)),
-                            fill: active.fill,
+                            fill: fillVal,
                             stroke: active.stroke,
                             strokeWidth: active.strokeWidth,
                             bold: (active as any).fontWeight === 'bold',

@@ -34,13 +34,20 @@
     $: displayValue = value || '#ff0000';
 
     function selectColor(color: string) {
+        if (!color || typeof color !== 'string') return;
         value = color;
         dispatch('change', color);
         addToRecent(color);
         showPopup = false;
     }
 
+    const isSameColor = (c1: any, c2: any) => {
+        if (!c1 || !c2 || typeof c1 !== 'string' || typeof c2 !== 'string') return c1 === c2;
+        return c1.toLowerCase() === c2.toLowerCase();
+    };
+
     function addToRecent(color: string) {
+        if (!color || typeof color !== 'string') return;
         // Normalize color to lowercase
         const normalizedColor = color.toLowerCase();
 
@@ -48,7 +55,7 @@
         let recent = [...(myRecentColors || [])];
 
         // Remove if already exists
-        recent = recent.filter(c => c.toLowerCase() !== normalizedColor);
+        recent = recent.filter(c => typeof c === 'string' && c.toLowerCase() !== normalizedColor);
 
         // Add to front
         recent.unshift(normalizedColor);
@@ -104,7 +111,7 @@
                         {#each myRecentColors as color}
                             <button
                                 class="color-swatch"
-                                class:selected={displayValue.toLowerCase() === color.toLowerCase()}
+                                class:selected={isSameColor(displayValue, color)}
                                 style="background-color: {color};"
                                 on:click={() => selectColor(color)}
                                 title={color}
@@ -120,7 +127,7 @@
                     {#each defaultColors as color}
                         <button
                             class="color-swatch"
-                            class:selected={displayValue.toLowerCase() === color.toLowerCase()}
+                            class:selected={isSameColor(displayValue, color)}
                             style="background-color: {color};"
                             on:click={() => selectColor(color)}
                             title={color}
