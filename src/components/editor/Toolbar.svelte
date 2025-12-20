@@ -272,9 +272,10 @@
         </button>
         <button class="b3-button b3-button--outline" on:click={() => emit('pin')} title="贴图">
             <svg class="icon" viewBox="0 0 24 24">
-                <path d="M12 2v8" />
-                <path d="M9 10l3 3 3-3" />
-                <path d="M5 21h14" />
+                <line x1="12" y1="17" x2="12" y2="22" />
+                <path
+                    d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.79-.9A2 2 0 0 1 15 10.76V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3v4.76a2 2 0 0 1-1.1 1.79l-1.79.9A2 2 0 0 0 5 15.24Z"
+                />
             </svg>
         </button>
         <button
