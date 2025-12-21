@@ -1,5 +1,5 @@
 import { Plugin } from "siyuan";
-import { pushErrMsg, putFile, readDir, removeFile, pushMsg } from "./api";
+import { pushErrMsg, readDir, removeFile, pushMsg } from "./api";
 import { confirm } from "siyuan";
 import {
     Dialog,
@@ -658,6 +658,9 @@ export class ScreenshotManager {
                         </div>
                     ` : '').join('')}
                     </div>
+                    <div id="filename-preview" style="position: fixed; display: none; z-index: 99999; pointer-events: none; background: var(--b3-theme-surface); border: 1px solid var(--b3-border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.2); border-radius: 4px; padding: 4px; max-width: 600px; max-height: 600px;">
+                        <img src="" style="max-width: 100%; max-height: 580px; display: block; object-fit: contain;" />
+                    </div>
                 </div>
                 `;
             };
@@ -674,6 +677,9 @@ export class ScreenshotManager {
 
             let lastSelectedIndex = -1;
             const bindEvents = () => {
+                const preview = dialog.element.querySelector('#filename-preview') as HTMLDivElement;
+                const previewImg = preview?.querySelector('img') as HTMLImageElement;
+
                 // Multi-select toggle
                 const toggleBtn = dialog.element.querySelector('#toggle-multi-select');
                 if (toggleBtn) {
@@ -756,6 +762,36 @@ export class ScreenshotManager {
                 items.forEach((item, index) => {
                     const filePath = item.getAttribute('data-path') || '';
                     const checkbox = item.querySelector('.checkbox') as HTMLInputElement;
+
+                    // Support preview on hover
+                    if (preview && previewImg) {
+                        item.addEventListener('mouseenter', () => {
+                            const img = item.querySelector('img');
+                            if (img) {
+                                previewImg.src = img.src;
+                                preview.style.display = 'block';
+                            }
+                        });
+                        item.addEventListener('mousemove', (e: MouseEvent) => {
+                            const offset = 15;
+                            let top = e.clientY + offset;
+                            let left = e.clientX + offset;
+
+                            // Prevent going off screen
+                            if (left + preview.offsetWidth > window.innerWidth) {
+                                left = e.clientX - preview.offsetWidth - offset;
+                            }
+                            if (top + preview.offsetHeight > window.innerHeight) {
+                                top = e.clientY - preview.offsetHeight - offset;
+                            }
+
+                            preview.style.top = `${top}px`;
+                            preview.style.left = `${left}px`;
+                        });
+                        item.addEventListener('mouseleave', () => {
+                            preview.style.display = 'none';
+                        });
+                    }
 
                     item.addEventListener('click', (e: MouseEvent) => {
                         const isDeleteBtn = (e.target as HTMLElement).closest('.delete-btn');
