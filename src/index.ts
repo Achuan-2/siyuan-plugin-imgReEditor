@@ -99,7 +99,7 @@ export default class PluginSample extends Plugin {
                     }
                 });
 
-                menu.open({ x: rect.right, y: rect.bottom});
+                menu.open({ x: rect.right, y: rect.bottom });
             }
         });
         this.topBarElement = topBarElement;
@@ -200,6 +200,55 @@ export default class PluginSample extends Plugin {
 
                 // 打开编辑器对话框
                 this.openImageEditorDialog(imageURL, blockID, isCanvasMode);
+            }
+        });
+        menu.addItem({
+            id: 'copy-image',
+            icon: 'iconCopy',
+            label: '拷贝图片',
+            index: 1,
+            click: async () => {
+                try {
+                    const { getFileBlob, putFile, insertBlock } = await import('./api');
+
+                    // 1. 获取图片 Blob
+                    const blob = await getFileBlob(`data/${imageURL}`);
+                    if (!blob) {
+                        console.error('Failed to get image blob');
+                        return;
+                    }
+
+                    // 2. 生成新文件名
+                    const oldFileName = imageURL.split('/').pop() || '';
+                    const lastDotIndex = oldFileName.lastIndexOf('.');
+                    const ext = lastDotIndex !== -1 ? oldFileName.substring(lastDotIndex + 1) : 'png';
+                    let baseName = lastDotIndex !== -1 ? oldFileName.substring(0, lastDotIndex) : oldFileName;
+
+                    // 去除旧ID
+                    // Siyuan ID 格式通常为: content-20210101120000-abcdefg
+                    // 尝试移除末尾的 ID (14位时间戳 + 可选的 7位随机字符)
+                    baseName = baseName.replace(/-\d{14}(-[a-zA-Z0-9]+)?$/, '');
+
+                    if (!baseName) baseName = 'image';
+
+                    const newID = window.Lute.NewNodeID();
+                    const newFileName = `${baseName}-${newID}.${ext}`;
+                    const newPath = `assets/${newFileName}`;
+
+                    // 3. 写入新文件
+                    const newFile = new File([blob], newFileName, { type: blob.type });
+                    await putFile(`data/${newPath}`, false, newFile);
+
+                    // 4. 插入新图片块 (Insert after current block)
+                    // 使用 insertBlock with previousID 实现 "插入到...后"
+                    // 用户提到使用 appendBlock，但在API层面 insertBlock(previousID) 是实现 "Insert After" 的标准方式
+                    // appendBlock 仅接受 parentID，会将内容追加到父节点末尾，这可能不符合 "插入到当前图片块后" 的语境
+                    // 故此处使用 insertBlock
+                    await insertBlock('markdown', `![](${newPath})`, undefined, blockID);
+
+                } catch (e) {
+                    console.error('Copy image failed:', e);
+                }
             }
         });
     }
