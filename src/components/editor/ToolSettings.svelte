@@ -134,7 +134,15 @@
         { label: 'Gentle Care', value: 'linear-gradient(135deg, #ffc3a0 0%, #ffafbd 100%)' },
     ];
 
+    export let defaultsMigrated = false;
+
     onMount(async () => {
+        // One-time migration to ensure defaults are present and deletable
+        if (!defaultsMigrated) {
+            const defaultValues = borderFillPresets.map(p => p.value);
+            dispatch('initDefaults', defaultValues);
+        }
+
         // candidate fonts to check (common cross-platform + Chinese fonts)
         const candidates = [
             'Microsoft Yahei',
@@ -610,16 +618,28 @@
         </div>
         <div class="row" style="margin-top: -4px; margin-bottom: 12px;">
             <div class="presets">
-                {#each borderFillPresets as p}
-                    <button
-                        class="preset-btn"
-                        class:active={settings.fill === p.value}
-                        style="background: {p.value}"
-                        title={p.label}
-                        on:click={() => {
-                            emitChange({ fill: p.value });
-                        }}
-                    />
+                {#each savedGradients as grad}
+                    <div class="saved-preset-wrapper">
+                        <button
+                            class="preset-btn"
+                            class:active={settings.fill === grad}
+                            style="background: {grad}"
+                            title={grad}
+                            on:click={() => {
+                                emitChange({ fill: grad });
+                            }}
+                        />
+                        <button
+                            class="preset-delete-btn"
+                            title="删除"
+                            on:click|stopPropagation={() => {
+                                const newSaved = savedGradients.filter(g => g !== grad);
+                                dispatch('updateSavedGradients', newSaved);
+                            }}
+                        >
+                            ×
+                        </button>
+                    </div>
                 {/each}
                 <button
                     class="preset-btn custom-btn"
@@ -1389,5 +1409,33 @@
         margin-bottom: 16px;
         padding-left: 8px;
         display: block;
+    }
+    .saved-preset-wrapper {
+        position: relative;
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+    }
+    .preset-delete-btn {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #ff4d4f;
+        color: #fff;
+        border: none;
+        font-size: 8px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        z-index: 2;
+    }
+    .saved-preset-wrapper:hover .preset-delete-btn {
+        display: flex;
     }
 </style>

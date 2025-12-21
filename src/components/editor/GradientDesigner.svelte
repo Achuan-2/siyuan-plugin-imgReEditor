@@ -47,17 +47,8 @@
     function saveCurrent() {
         const newValue = `linear-gradient(${angle}deg, ${color1} 0%, ${color2} 100%)`;
         if (savedGradients.includes(newValue)) return;
-        const newSaved = [newValue, ...savedGradients];
+        const newSaved = [...savedGradients, newValue];
         dispatch('updateSavedGradients', newSaved);
-    }
-
-    function removeSaved(grad: string) {
-        const newSaved = savedGradients.filter(g => g !== grad);
-        dispatch('updateSavedGradients', newSaved);
-    }
-
-    function selectSaved(grad: string) {
-        dispatch('change', grad);
     }
 </script>
 
@@ -107,26 +98,6 @@
     <div class="actions">
         <button class="save-btn" on:click={saveCurrent}>保存渐变</button>
     </div>
-
-    {#if savedGradients.length > 0}
-        <div class="saved-section">
-            <div class="label">已保存</div>
-            <div class="saved-list">
-                {#each savedGradients as grad}
-                    <div class="saved-item-wrapper">
-                        <button
-                            class="saved-item"
-                            style="background: {grad}"
-                            on:click={() => selectSaved(grad)}
-                        />
-                        <button class="delete-btn" title="删除" on:click={() => removeSaved(grad)}>
-                            ×
-                        </button>
-                    </div>
-                {/each}
-            </div>
-        </div>
-    {/if}
 </div>
 
 <style>
@@ -188,54 +159,5 @@
     }
     .save-btn:hover {
         background: var(--b3-theme-primary-light, #42a5f5);
-    }
-
-    .saved-section {
-        border-top: 1px solid #eee;
-        padding-top: 8px;
-    }
-    .saved-section .label {
-        font-size: 11px;
-        color: #999;
-        margin-bottom: 6px;
-    }
-    .saved-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    .saved-item-wrapper {
-        position: relative;
-        width: 32px;
-        height: 32px;
-    }
-    .saved-item {
-        width: 100%;
-        height: 100%;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-        padding: 0;
-        cursor: pointer;
-    }
-    .delete-btn {
-        position: absolute;
-        top: -4px;
-        right: -4px;
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        background: #ff4d4f;
-        color: #fff;
-        border: none;
-        font-size: 10px;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        padding: 0;
-        line-height: 1;
-    }
-    .saved-item-wrapper:hover .delete-btn {
-        display: flex;
     }
 </style>

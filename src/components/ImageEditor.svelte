@@ -1501,6 +1501,16 @@
                             saveToolSettings(activeTool, toolSettings);
                         }}
                         savedGradients={settings.savedGradients || []}
+                        defaultsMigrated={settings.defaultsMigrated}
+                        on:initDefaults={e => {
+                            const defaults = e.detail;
+                            const current = settings.savedGradients || [];
+                            // Ensure defaults are at the start
+                            const combined = Array.from(new Set([...defaults, ...current]));
+                            settings.savedGradients = combined;
+                            settings.defaultsMigrated = true;
+                            dispatch('saveSettings', settings);
+                        }}
                         on:updateSavedGradients={e => {
                             settings.savedGradients = e.detail;
                             dispatch('saveSettings', settings);
