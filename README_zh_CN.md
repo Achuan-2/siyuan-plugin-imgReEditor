@@ -105,6 +105,7 @@
 - 文章
   - [思源笔记插件 ImgReEditor：图片编辑保存还可再编辑，让思源笔记成为你的图文笔记神器](https://zhuanlan.zhihu.com/p/1985459256305152111)
   - [思源笔记插件 ImgReEditor：一键添加图片背景色、边框、圆角，生成精美博客图片](https://zhuanlan.zhihu.com/p/1985856269366611979)
+  - [在思源笔记里也能直接制作文章封面啦](https://zhuanlan.zhihu.com/p/1986456451837862115)
 - 视频
   - [思源笔记插件 ImgReEditor：图片编辑保存还可再编辑，让思源笔记成为你的图文笔记神器](https://www.bilibili.com/video/BV11wBFBvEn8/?vd_source=b4a1fcb6dce305e26d8d16d9cbb71304#reply285851298256)
 
