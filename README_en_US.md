@@ -33,7 +33,7 @@ Edit images within SiYuan Notes, supporting:
 
 ## 📄 License
 
-MIT License
+AGPL v3.0 License
 
 ## 🔧 Development
 
