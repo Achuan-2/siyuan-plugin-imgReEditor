@@ -106,7 +106,7 @@ export class Arrow extends Line {
         this.headStyle = options?.headStyle || 'sharp';
         this.lineStyle = options?.lineStyle || 'solid';
         this.thicknessStyle = options?.thicknessStyle || 'uniform';
-        this.useCustomSelection = options?.useCustomSelection || false;
+        this.useCustomSelection = true;
         this.strokeLineCap = 'butt'; // Flat ends as requested
         this.strokeLineJoin = 'round';
         this.objectCaching = false;
