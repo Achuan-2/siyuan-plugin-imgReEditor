@@ -1889,26 +1889,35 @@
         }
 
         // Manage object interactivity based on active tool
-        // For drawing tools (shape, arrow, mosaic, number-marker), disable image interactivity
+        // When using drawing tools, only allow selecting objects of the same type
         if (canvas) {
-            const drawingTools = ['shape', 'arrow', 'mosaic', 'number-marker'];
+            // Define tool to type mapping
+            const toolTypeMap: { [key: string]: string[] } = {
+                'shape': ['rect', 'circle', 'ellipse', 'triangle'],
+                'arrow': ['arrow'],
+                'mosaic': ['mosaic-rect'],
+                'number-marker': ['number-marker'],
+                'text': ['i-text', 'textbox', 'text'],
+            };
+
+            const drawingTools = ['shape', 'arrow', 'mosaic', 'number-marker', 'text'];
             const isDrawingTool = drawingTools.includes(tool || '');
 
             canvas.getObjects().forEach((obj: any) => {
                 // Skip special objects
-                if (obj._isCanvasBoundary || obj._isCanvasBackground) return;
+                if (obj._isCanvasBoundary || obj._isCanvasBackground || obj._isCropRect) return;
 
-                // For image objects, control their interactivity based on tool
-                if (obj.type === 'image') {
-                    if (isDrawingTool) {
-                        // Disable image interaction for drawing tools
-                        obj.selectable = false;
-                        obj.evented = false;
-                    } else {
-                        // Re-enable image interaction for other tools
-                        obj.selectable = true;
-                        obj.evented = true;
-                    }
+                // For drawing tools, only allow selecting objects of the same type
+                if (isDrawingTool && tool) {
+                    const allowedTypes = toolTypeMap[tool] || [];
+                    const isAllowedType = allowedTypes.includes(obj.type);
+                    
+                    obj.selectable = isAllowedType;
+                    obj.evented = isAllowedType;
+                } else {
+                    // For non-drawing tools (select, hand, brush, eraser, etc.), allow all objects
+                    obj.selectable = true;
+                    obj.evented = true;
                 }
             });
 
