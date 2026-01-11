@@ -4377,7 +4377,10 @@
             let legacyFill = null;
             const legacyBgObj = canvas.getObjects().find((o: any) => o._isCanvasBackground);
             if (legacyBgObj) {
-                legacyFill = legacyBgObj.fill && legacyBgObj.fill.toObject ? legacyBgObj.fill.toObject() : legacyBgObj.fill;
+                legacyFill =
+                    legacyBgObj.fill && legacyBgObj.fill.toObject
+                        ? legacyBgObj.fill.toObject()
+                        : legacyBgObj.fill;
                 canvas.remove(legacyBgObj);
             }
 
@@ -4433,7 +4436,6 @@
                     boundaryRect.set('fill', bgFill);
                 }
             }
-
 
             // Resume number marker sequence if existing markers are found
             updateCurrentNumberFromCanvas();
