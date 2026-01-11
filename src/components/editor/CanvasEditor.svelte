@@ -634,12 +634,25 @@
             // Handle right click (button === 3 or e.button === 2)
             if (button === 3 || e.button === 2) {
                 const target = opt.target;
+                // If single editable target under cursor
                 if (target && isEditableObject(target)) {
                     e.preventDefault();
                     e.stopPropagation();
                     showContextMenu(e, target);
                     return false;
                 }
+
+                // If no single target but there's an active multi-selection, show menu for selection
+                try {
+                    const activeObj = canvas && (canvas.getActiveObject ? canvas.getActiveObject() : null);
+                    const activeObjs = canvas && (canvas.getActiveObjects ? canvas.getActiveObjects() : []);
+                    if (activeObj && activeObjs && activeObjs.length > 1) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        showContextMenu(e, activeObj);
+                        return false;
+                    }
+                } catch (e) {}
             }
         });
 
@@ -5179,6 +5192,7 @@
             'rect',
             'ellipse',
             'circle',
+            'group',
             'arrow',
             'line',
             'i-text',
@@ -5204,14 +5218,28 @@
 
         const isLocked = target.lockMovementX || target.lockMovementY;
 
-        const menuItems = [
-            { label: '置于顶层', action: () => bringToFront() },
-            { label: '上移一层', action: () => bringForward() },
-            { label: '下移一层', action: () => sendBackward() },
-            { label: '置于底层', action: () => sendToBack() },
-            { label: '---', action: null },
-            { label: isLocked ? '解锁' : '锁定', action: () => toggleLock() },
-        ];
+        // determine selection state for grouping
+        const activeObjs = canvas ? (canvas.getActiveObjects && canvas.getActiveObjects()) || [] : [];
+        const canGroup = activeObjs && activeObjs.length > 1;
+        const isGroup = !!(target && (target.type === 'group' || (target._objects && Array.isArray(target._objects))));
+
+        const menuItems: any[] = [];
+
+        // Group / Ungroup options
+        if (canGroup) {
+            menuItems.push({ label: '组合', action: () => groupSelection() });
+        }
+        if (isGroup) {
+            menuItems.push({ label: '取消组合', action: () => ungroupSelection() });
+        }
+
+        // Standard ordering actions
+        menuItems.push({ label: '置于顶层', action: () => bringToFront() });
+        menuItems.push({ label: '上移一层', action: () => bringForward() });
+        menuItems.push({ label: '下移一层', action: () => sendBackward() });
+        menuItems.push({ label: '置于底层', action: () => sendToBack() });
+        menuItems.push({ label: '---', action: null });
+        menuItems.push({ label: isLocked ? '解锁' : '锁定', action: () => toggleLock() });
 
         menuItems.forEach(item => {
             if (item.label === '---') {
@@ -5291,6 +5319,62 @@
 
         canvas.requestRenderAll();
         schedulePushWithType('modified');
+    }
+
+    // Group selected objects into a Fabric Group
+    function groupSelection() {
+        if (!canvas) return;
+        const active = canvas.getActiveObject() as any;
+        if (!active) return;
+
+        try {
+            // Check if it's an active selection or has matching methods
+            const objects = typeof active.removeAll === 'function' ? active.removeAll() : null;
+            if (!objects || objects.length < 2) return;
+
+            const group = new Group(objects, {
+                selectable: true,
+                evented: true,
+            });
+            canvas.add(group);
+            canvas.setActiveObject(group);
+
+            canvas.requestRenderAll();
+            schedulePushWithType('modified');
+            try {
+                dispatch('grouped', { count: objects.length });
+            } catch (e) {}
+        } catch (e) {
+            console.warn('groupSelection failed', e);
+        }
+    }
+
+    // Ungroup a Fabric Group into individual objects
+    function ungroupSelection() {
+        if (!canvas || !contextMenuTarget) return;
+        const target = contextMenuTarget as any;
+        if (!target) return;
+
+        try {
+            // Support both direct group and active selection containing a group
+            const groupObj = target.type === 'group' ? target : (canvas.getActiveObject() as any);
+            if (!groupObj || groupObj.type !== 'group' || typeof groupObj.removeAll !== 'function') return;
+
+            const objects = groupObj.removeAll();
+            if (objects && objects.length > 0) {
+                canvas.add(...objects);
+            }
+            canvas.remove(groupObj);
+            if (typeof groupObj.dispose === 'function') groupObj.dispose();
+
+            canvas.requestRenderAll();
+            schedulePushWithType('modified');
+            try {
+                dispatch('ungrouped', { count: objects.length });
+            } catch (e) {}
+        } catch (e) {
+            console.warn('ungroupSelection failed', e);
+        }
     }
 
     onMount(() => {
