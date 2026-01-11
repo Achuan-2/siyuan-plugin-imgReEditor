@@ -934,6 +934,11 @@
         if (hasSubmenu && !popupPositioned) {
             await updatePopupPosition();
             popupPositioned = true;
+            // Also fit image to viewport on first sidebar open to avoid being cut off
+            await tick();
+            if (canvasEditorRef && typeof canvasEditorRef.fitImageToViewport === 'function') {
+                canvasEditorRef.fitImageToViewport();
+            }
         }
         if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
             if (t === 'shape') {

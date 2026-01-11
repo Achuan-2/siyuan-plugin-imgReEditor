@@ -585,7 +585,8 @@
 
     onMount(() => {
         canvas = new Canvas(container, {
-            selectionColor: 'transparent',
+            selectionColor: 'rgba(207, 233, 249,0.1)',
+            selectionBorderColor: 'rgba(81, 185, 249,0.5)',
             selection: true,
             preserveObjectStacking: true,
             renderOnAddRemove: true,
@@ -3200,72 +3201,44 @@
             return;
         }
 
-        const w = canvas.getWidth();
-        const h = canvas.getHeight();
+        // Sync logical dimensions and CSS dimensions to the actual workspace size.
+        // This is CRITICAL to prevent stretching when the sidebar changes global workspace size.
+        canvas.setDimensions({ width: cw, height: ch });
 
-        // For canvas mode, we now use "Artboard Mode" (Fabric Viewport) to allow panning/zooming
-        const isCustomSize = !isCanvasMode && (Math.abs(w - cw) > 2 || Math.abs(h - ch) > 2);
+        const containerEl = canvas.getElement().parentNode as HTMLElement;
+        if (containerEl && containerEl.classList.contains('canvas-container')) {
+            containerEl.style.margin = '0';
+            containerEl.style.marginTop = '0';
+        }
 
-        if (isCustomSize) {
-            // Custom Size Mode: Use CSS scaling
-            canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            const scale = Math.min(cw / w, ch / h, 1) * 0.98;
-            const finalCssW = w * scale;
-            const finalCssH = h * scale;
-            canvas.setDimensions({ width: finalCssW, height: finalCssH }, { cssOnly: true });
+        const bg = canvas.backgroundImage;
+        // Robust boundary finding
+        const boundary = isCanvasMode
+            ? canvas.getObjects().find((o: any) => (o as any)._isCanvasBackground)
+            : null;
 
-            const containerEl = canvas.getElement().parentNode as HTMLElement;
-            if (containerEl && containerEl.classList.contains('canvas-container')) {
-                containerEl.style.margin = '0 auto';
-                if (finalCssH < ch) {
-                    containerEl.style.marginTop = `${(ch - finalCssH) / 2}px`;
-                } else {
-                    containerEl.style.marginTop = '0px';
-                }
-            }
-        } else {
-            // Artboard Mode: Zoom the content to fit
-            // Ensure canvas matches workspace size
-            if (w !== cw || h !== ch) {
-                canvas.setDimensions({ width: cw, height: ch });
-                canvas.setDimensions({ width: cw, height: ch }, { cssOnly: true });
-            }
+        if (bg || boundary) {
+            // Use logical dimensions for centering to avoid issues with current transform
+            let imgW, imgH, imgCenterX, imgCenterY;
 
-            const containerEl = canvas.getElement().parentNode as HTMLElement;
-            if (containerEl && containerEl.classList.contains('canvas-container')) {
-                containerEl.style.margin = '0';
-                containerEl.style.marginTop = '0';
+            if (bg) {
+                imgW = (bg.width || 0) * (bg.scaleX || 1);
+                imgH = (bg.height || 0) * (bg.scaleY || 1);
+                imgCenterX = (bg.left || 0) + imgW / 2;
+                imgCenterY = (bg.top || 0) + imgH / 2;
+            } else {
+                imgW = (boundary as any).width * ((boundary as any).scaleX || 1);
+                imgH = (boundary as any).height * ((boundary as any).scaleY || 1);
+                imgCenterX = (boundary as any).left + imgW / 2;
+                imgCenterY = (boundary as any).top + imgH / 2;
             }
 
-            const bg = canvas.backgroundImage;
-            // Robust boundary finding
-            const boundary = isCanvasMode
-                ? canvas.getObjects().find((o: any) => (o as any)._isCanvasBackground)
-                : null;
+            if (imgW > 0 && imgH > 0) {
+                const scale = Math.min(cw / imgW, ch / imgH, 1) * 0.98;
+                const tx = cw / 2 - imgCenterX * scale;
+                const ty = ch / 2 - imgCenterY * scale;
 
-            if (bg || boundary) {
-                // Use logical dimensions for centering to avoid issues with current transform
-                let imgW, imgH, imgCenterX, imgCenterY;
-
-                if (bg) {
-                    imgW = (bg.width || 0) * (bg.scaleX || 1);
-                    imgH = (bg.height || 0) * (bg.scaleY || 1);
-                    imgCenterX = (bg.left || 0) + imgW / 2;
-                    imgCenterY = (bg.top || 0) + imgH / 2;
-                } else {
-                    imgW = (boundary as any).width * ((boundary as any).scaleX || 1);
-                    imgH = (boundary as any).height * ((boundary as any).scaleY || 1);
-                    imgCenterX = (boundary as any).left + imgW / 2;
-                    imgCenterY = (boundary as any).top + imgH / 2;
-                }
-
-                if (imgW > 0 && imgH > 0) {
-                    const scale = Math.min(cw / imgW, ch / imgH, 1) * 0.98;
-                    const tx = cw / 2 - imgCenterX * scale;
-                    const ty = ch / 2 - imgCenterY * scale;
-
-                    canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
-                }
+                canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
             }
         }
         updateZoomDisplay();
