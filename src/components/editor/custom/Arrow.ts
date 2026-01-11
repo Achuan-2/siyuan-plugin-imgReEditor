@@ -240,6 +240,12 @@ export class Arrow extends Line {
         // Initialize control point offset at 0 (on the line, straight arrow by default)
         this.controlOffsetX = options?.controlOffsetX ?? 0;
         this.controlOffsetY = options?.controlOffsetY ?? 0;
+
+        // Ensure points are normalized right from the start
+        if (points && points.length === 4) {
+            this.setEndpoints(points[0], points[1], points[2], points[3]);
+        }
+
         if (this.useCustomSelection) {
             // Define custom controls for arrow endpoints
             this.controls = {
@@ -261,7 +267,7 @@ export class Arrow extends Line {
                     actionHandler: centerControlActionHandler,
                     cursorStyleHandler: controlsUtils.scaleCursorStyleHandler,
                     actionName: 'modifyCurve',
-                    mouseDownHandler: (eventData: TPointerEvent, transform: Transform) => {
+                    mouseDownHandler: (_eventData: TPointerEvent, transform: Transform) => {
                         // Check for double click to reset curve to straight line
                         const arrow = transform.target as any;
                         const now = Date.now();
@@ -322,6 +328,37 @@ export class Arrow extends Line {
             };
         }
     }
+
+    /**
+     * Updates the endpoints of the arrow and normalizes its position/dimensions.
+     * This ensures the arrow is correctly centered and the bounding box is accurate.
+     */
+    public setEndpoints(x1: number, y1: number, x2: number, y2: number) {
+        this.set({
+            x1,
+            y1,
+            x2,
+            y2,
+            left: undefined,
+            top: undefined,
+        });
+
+        // Recalculate width, height and position
+        // @ts-ignore
+        if (typeof this._setWidthHeight === 'function') {
+            // @ts-ignore
+            this._setWidthHeight();
+        }
+
+        // Now make x1,y1,x2,y2 relative to the new left/top
+        this.x1 -= this.left;
+        this.y1 -= this.top;
+        this.x2 -= this.left;
+        this.y2 -= this.top;
+
+        this.setCoords();
+        this.set('dirty', true);
+    }
     /**
      * Helper to get dash array based on line style
      */
@@ -374,6 +411,10 @@ export class Arrow extends Line {
         const yDiff = localYDiff * this.scaleY;
         const visualAngle = Math.atan2(yDiff, xDiff);
         const visualLength = Math.sqrt(xDiff * xDiff + yDiff * yDiff);
+        // Check if the arrow is curved BEFORE rotation transformation
+        // This ensures vertical arrows are properly detected as curved
+        const isCurved = Math.abs(this.controlOffsetX) > 0.1 || Math.abs(this.controlOffsetY) > 0.1;
+
         // Calculate control point in the rotated coordinate system
         // controlOffsetX/Y are already relative to center (0,0)
         const controlXLocal = this.controlOffsetX;
@@ -385,8 +426,6 @@ export class Arrow extends Line {
             controlXLocal * this.scaleX * cosA - controlYLocal * this.scaleY * sinA;
         const rotatedControlY =
             controlXLocal * this.scaleX * sinA + controlYLocal * this.scaleY * cosA;
-        // Check if the arrow is curved (control point is not on the line)
-        const isCurved = Math.abs(this.controlOffsetX) > 0.1 || Math.abs(this.controlOffsetY) > 0.1;
 
         // Helper to get point on quadratic bezier curve at parameter t (0 to 1)
         const getPoint = (t: number) => {

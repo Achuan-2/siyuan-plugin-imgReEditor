@@ -1663,8 +1663,7 @@
                 }
 
                 // Update the arrow's endpoint
-                tempArrow.set({ x2, y2 });
-                tempArrow.setCoords();
+                tempArrow.setEndpoints(arrowStart.x, arrowStart.y, x2, y2);
                 canvas.requestRenderAll();
                 return;
             }
