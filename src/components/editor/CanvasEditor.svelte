@@ -644,8 +644,10 @@
 
                 // If no single target but there's an active multi-selection, show menu for selection
                 try {
-                    const activeObj = canvas && (canvas.getActiveObject ? canvas.getActiveObject() : null);
-                    const activeObjs = canvas && (canvas.getActiveObjects ? canvas.getActiveObjects() : []);
+                    const activeObj =
+                        canvas && (canvas.getActiveObject ? canvas.getActiveObject() : null);
+                    const activeObjs =
+                        canvas && (canvas.getActiveObjects ? canvas.getActiveObjects() : []);
                     if (activeObj && activeObjs && activeObjs.length > 1) {
                         e.preventDefault();
                         e.stopPropagation();
@@ -2135,11 +2137,7 @@
                             return true;
                         },
                         () => {
-                            if (cropRect && canvas) {
-                                canvas.remove(cropRect);
-                                cropRect = null;
-                                canvas.requestRenderAll();
-                            }
+                            exitCropMode();
                             return true;
                         }
                     );
@@ -2377,11 +2375,7 @@
                     return true;
                 },
                 () => {
-                    if (cropRect && canvas) {
-                        canvas.remove(cropRect);
-                        cropRect = null;
-                        canvas.requestRenderAll();
-                    }
+                    exitCropMode();
                     return true;
                 }
             );
@@ -2462,6 +2456,19 @@
         // Notify parent that crop mode is finished (cancelled or exited)
         // so it can update the toolbar selection state.
         dispatch('cropCancel');
+
+        // Cleanup listeners
+        if (_cropHandlers) {
+            canvas.off('mouse:down', _cropHandlers.onMouseDown);
+            canvas.off('mouse:move', _cropHandlers.onMouseMove);
+            canvas.off('mouse:up', _cropHandlers.onMouseUp);
+            _cropHandlers = null;
+        }
+        if (_cropKeyHandler) {
+            document.removeEventListener('keydown', _cropKeyHandler as any);
+            _cropKeyHandler = null;
+        }
+
         if (cropRect) {
             canvas.remove(cropRect);
             cropRect = null;
@@ -5219,9 +5226,14 @@
         const isLocked = target.lockMovementX || target.lockMovementY;
 
         // determine selection state for grouping
-        const activeObjs = canvas ? (canvas.getActiveObjects && canvas.getActiveObjects()) || [] : [];
+        const activeObjs = canvas
+            ? (canvas.getActiveObjects && canvas.getActiveObjects()) || []
+            : [];
         const canGroup = activeObjs && activeObjs.length > 1;
-        const isGroup = !!(target && (target.type === 'group' || (target._objects && Array.isArray(target._objects))));
+        const isGroup = !!(
+            target &&
+            (target.type === 'group' || (target._objects && Array.isArray(target._objects)))
+        );
 
         const menuItems: any[] = [];
 
@@ -5358,7 +5370,8 @@
         try {
             // Support both direct group and active selection containing a group
             const groupObj = target.type === 'group' ? target : (canvas.getActiveObject() as any);
-            if (!groupObj || groupObj.type !== 'group' || typeof groupObj.removeAll !== 'function') return;
+            if (!groupObj || groupObj.type !== 'group' || typeof groupObj.removeAll !== 'function')
+                return;
 
             const objects = groupObj.removeAll();
             if (objects && objects.length > 0) {
