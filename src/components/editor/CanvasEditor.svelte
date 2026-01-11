@@ -4394,7 +4394,6 @@
                     top: 0,
                     width: w,
                     height: h,
-                    fill: bgFill,
                     stroke: '#e0e0e0',
                     strokeWidth: 2,
                     strokeDashArray: [10, 5],
@@ -4405,6 +4404,25 @@
                 });
                 canvas.add(boundaryRect);
                 canvas.sendObjectToBack(boundaryRect);
+
+                // Set background fill properly handling gradients
+                if (bgFill && typeof bgFill === 'object' && bgFill.type === 'linear') {
+                    try {
+                        boundaryRect.set(
+                            'fill',
+                            new Gradient({
+                                type: 'linear',
+                                gradientUnits: bgFill.gradientUnits || 'pixels',
+                                coords: bgFill.coords || { x1: 0, y1: 0, x2: w, y2: h },
+                                colorStops: bgFill.colorStops || [],
+                            })
+                        );
+                    } catch (e) {
+                        boundaryRect.set('fill', '#ffffff');
+                    }
+                } else {
+                    boundaryRect.set('fill', bgFill);
+                }
             }
 
             // Resume number marker sequence if existing markers are found
