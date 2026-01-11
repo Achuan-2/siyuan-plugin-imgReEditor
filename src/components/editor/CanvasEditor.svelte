@@ -17,6 +17,7 @@
         FabricObject,
         Color,
         Gradient,
+        ActiveSelection,
     } from 'fabric';
     import { EraserBrush } from '@erase2d/fabric';
     import MosaicRect from './custom/MosaicRect';
@@ -4776,6 +4777,13 @@
             }
 
             canvas.requestRenderAll();
+            // Update active selection by re-creating it to ensure coords are correct
+            const activeObjects = canvas.getActiveObjects();
+            if (activeObjects.length > 1) {
+                canvas.discardActiveObject();
+                const activeSelection = new ActiveSelection(activeObjects, { canvas });
+                canvas.setActiveObject(activeSelection);
+            }
             schedulePushWithType('modified');
         } catch (e) {
             console.warn('alignObjects failed', e);
@@ -4900,6 +4908,13 @@
             }
 
             canvas.requestRenderAll();
+            // Update active selection by re-creating it to ensure coords are correct
+            const activeObjects = canvas.getActiveObjects();
+            if (activeObjects.length > 1) {
+                canvas.discardActiveObject();
+                const activeSelection = new ActiveSelection(activeObjects, { canvas });
+                canvas.setActiveObject(activeSelection);
+            }
             schedulePushWithType('modified');
         } catch (e) {
             console.warn('distributeObjects failed', e);
