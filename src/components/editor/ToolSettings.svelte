@@ -192,6 +192,54 @@
             loadingFonts = false;
         }
     });
+
+    // lock aspect-ratio handling: 当勾选时，修改宽度会自动调整高度以保持比例
+    let lockCanvasRatio: boolean = false;
+    let lockedAspectRatio: number | null = null; // width / height
+
+    function toggleLockAspect(checked: boolean) {
+        lockCanvasRatio = checked;
+        if (lockCanvasRatio) {
+            const w = settings.width || 800;
+            const h = settings.height || 600;
+            lockedAspectRatio = w / h;
+        } else {
+            lockedAspectRatio = null;
+        }
+    }
+
+    function emitResize(width: number, height: number) {
+        dispatch('action', { action: 'resizeCanvas', width, height });
+    }
+
+    function handleWidthInput(e: Event) {
+        const w = Math.max(1, Math.round(+getValue(e)));
+        let h = settings.height || 600;
+        if (lockCanvasRatio && lockedAspectRatio) {
+            h = Math.max(1, Math.round(w / lockedAspectRatio));
+            emitChange({ width: w, height: h });
+        } else {
+            emitChange({ width: w });
+        }
+        emitResize(w, h);
+    }
+
+    function handleHeightInput(e: Event) {
+        const h = Math.max(1, Math.round(+getValue(e)));
+        let w = settings.width || 800;
+        if (lockCanvasRatio && lockedAspectRatio) {
+            w = Math.max(1, Math.round(h * lockedAspectRatio));
+            emitChange({ width: w, height: h });
+        } else {
+            emitChange({ height: h });
+        }
+        emitResize(w, h);
+    }
+
+    // keep locked ratio in sync if settings change externally
+    $: if (lockCanvasRatio && settings && settings.width && settings.height) {
+        lockedAspectRatio = settings.width / settings.height;
+    }
 </script>
 
 <div
@@ -801,6 +849,16 @@
         </div>
     {:else if tool === 'canvas'}
         <div class="row">
+            <label for="lock-canvas-ratio">固定宽高比例</label>
+            <input
+                id="lock-canvas-ratio"
+                type="checkbox"
+                checked={lockCanvasRatio}
+                on:change={e => toggleLockAspect(getChecked(e))}
+            />
+        </div>
+
+        <div class="row">
             <label for="canvas-width">画布宽度</label>
             <input
                 id="canvas-width"
@@ -808,7 +866,7 @@
                 min="100"
                 max="5000"
                 value={settings.width || 800}
-                on:input={e => emitChange({ width: +getValue(e) })}
+                on:input={handleWidthInput}
                 style="width: 80px;"
             />
         </div>
@@ -820,7 +878,7 @@
                 min="100"
                 max="5000"
                 value={settings.height || 600}
-                on:input={e => emitChange({ height: +getValue(e) })}
+                on:input={handleHeightInput}
                 style="width: 80px;"
             />
         </div>
@@ -875,16 +933,6 @@
         {/if}
 
         <div class="row" style="gap: 8px;">
-            <button
-                on:click={() =>
-                    dispatch('action', {
-                        action: 'resizeCanvas',
-                        width: settings.width || 800,
-                        height: settings.height || 600,
-                    })}
-            >
-                应用大小
-            </button>
             <button
                 on:click={() => dispatch('action', { action: 'selectCanvasSize' })}
                 class:active={selectCanvasSizeMode}
