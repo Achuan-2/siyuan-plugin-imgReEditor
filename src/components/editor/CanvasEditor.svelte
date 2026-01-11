@@ -24,6 +24,7 @@
     import NumberMarker from './custom/NumberMarker';
     import CropRect from './custom/CropRect';
     import SelectCanvasSizeRect from './custom/SelectCanvasSizeRect';
+    import CanvasBackgroundRect from './custom/CanvasBackgroundRect';
     import initControls, {
         createCropControls,
         createSelectCanvasSizeControls,
@@ -96,7 +97,6 @@
         '_borderShadowColor',
         '_borderShadowOpacity',
         '_isCanvasBackground',
-        '_isCanvasBoundary',
         'lockMovementX',
         'lockMovementY',
         'lockRotation',
@@ -132,7 +132,6 @@
                 if (
                     obj._isCropRect ||
                     obj._isImageBorder ||
-                    obj._isCanvasBoundary ||
                     obj._isCanvasBackground ||
                     (canvas && obj === canvas.backgroundImage)
                 ) {
@@ -271,6 +270,20 @@
             if (!canvas) return;
             // Use the same logic as toJSON to include background metadata
             let json = (canvas as any).toJSON(HISTORY_PROPS);
+            // Ensure canvas-mode project dimensions and background fill are saved in history
+            if (isCanvasMode) {
+                const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
+                if (boundary) {
+                    json.width = boundary.width;
+                    json.height = boundary.height;
+                    json.bgFill = boundary.fill;
+                } else {
+                    json.width = canvas.getWidth();
+                    json.height = canvas.getHeight();
+                    json.bgFill = json.bgFill || 'transparent';
+                }
+                if (json.backgroundImage) delete json.backgroundImage;
+            }
             if (canvas.backgroundImage && json.backgroundImage) {
                 const bg = canvas.backgroundImage as any;
                 const actual = getActualImage(bg);
@@ -631,12 +644,12 @@
 
         // Attach basic history listeners (use typed scheduling for merging)
         canvas.on('object:added', (opt: any) => {
-            if (opt.target && (opt.target as any)._isCanvasBoundary) return;
+            if (opt.target && (opt.target as any)._isCanvasBackground) return;
             schedulePushWithType('added');
         });
         canvas.on('object:modified', (opt: any) => {
             const target = opt.target;
-            if (target && (target as any)._isCanvasBoundary) return;
+            if (target && (target as any)._isCanvasBackground) return;
             if (target && ['i-text', 'textbox', 'text'].includes(target.type)) {
                 if (target.scaleX !== 1 || target.scaleY !== 1) {
                     const newFontSize = Math.round(target.fontSize * target.scaleX);
@@ -704,7 +717,7 @@
         });
         canvas.on('object:removed', (opt: any) => {
             const target = opt && opt.target;
-            if (target && (target as any)._isCanvasBoundary) return;
+            if (target && (target as any)._isCanvasBackground) return;
             schedulePushWithType('removed');
             if (target && target.type === 'number-marker') {
                 updateCurrentNumberFromCanvas();
@@ -1294,7 +1307,7 @@
                 const active = canvas?.getActiveObject?.();
 
                 // Ignore canvas boundary rectangle
-                if (active && (active as any)._isCanvasBoundary) {
+                if (active && (active as any)._isCanvasBackground) {
                     canvas.discardActiveObject();
                     canvas.requestRenderAll();
                     return;
@@ -1387,7 +1400,7 @@
                 if (isDrawingShape && active !== tempShape) return;
 
                 // Ignore canvas boundary rectangle
-                if (active && (active as any)._isCanvasBoundary) {
+                if (active && (active as any)._isCanvasBackground) {
                     canvas.discardActiveObject();
                     canvas.requestRenderAll();
                     return;
@@ -1906,7 +1919,7 @@
 
             canvas.getObjects().forEach((obj: any) => {
                 // Skip special objects
-                if (obj._isCanvasBoundary || obj._isCanvasBackground || obj._isCropRect) return;
+                if (obj._isCanvasBackground || obj._isCropRect) return;
 
                 // For drawing tools, only allow selecting objects of the same type
                 if (isDrawingTool && tool) {
@@ -2793,7 +2806,7 @@
         });
 
         // Create rectangle with current boundary size
-        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
         const canvasWidth = boundary ? boundary.width : 800;
         const canvasHeight = boundary ? boundary.height : 600;
         const canvasLeft = boundary ? boundary.left : 0;
@@ -2914,7 +2927,7 @@
         // Use bounding rect left/top which are in canvas coordinates.
         canvas.getObjects().forEach((obj: any) => {
             if (!obj) return;
-            if (obj === selectCanvasSizeRect || obj._isCanvasBoundary) return; // Skip the selection rect and boundary
+            if (obj === selectCanvasSizeRect || obj._isCanvasBackground) return; // Skip the selection rect and boundary
 
             // If the object has an origin different than 'left,top' (rare here), we still adjust left/top
             obj.left = (obj.left || 0) - rectLeft;
@@ -2982,7 +2995,7 @@
             canvas.backgroundColor = 'transparent';
 
             // Add a boundary rectangle to show canvas bounds (project size)
-            const boundaryRect = new Rect({
+            const boundaryRect = new CanvasBackgroundRect({
                 left: 0,
                 top: 0,
                 width: imgW,
@@ -2996,7 +3009,6 @@
                 hoverCursor: 'default',
                 excludeFromExport: true,
             });
-            boundaryRect.set('_isCanvasBoundary', true);
             canvas.add(boundaryRect);
 
             // Set initial background rectangle for export
@@ -3207,7 +3219,7 @@
             const bg = canvas.backgroundImage;
             // Robust boundary finding
             const boundary = isCanvasMode
-                ? canvas.getObjects().find((o: any) => (o as any)._isCanvasBoundary)
+                ? canvas.getObjects().find((o: any) => (o as any)._isCanvasBackground)
                 : null;
 
             if (bg || boundary) {
@@ -3424,6 +3436,19 @@
             history = [];
             historyIndex = -1;
             const json = (canvas as any).toJSON(HISTORY_PROPS);
+            // Ensure initial history stores canvas-mode project size and bg fill
+            if (isCanvasMode) {
+                const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
+                if (boundary) {
+                    json.width = boundary.width;
+                    json.height = boundary.height;
+                    json.bgFill = boundary.fill;
+                } else {
+                    json.width = canvas.getWidth();
+                    json.height = canvas.getHeight();
+                }
+                if (json.backgroundImage) delete json.backgroundImage;
+            }
             if (canvas.backgroundImage && json.backgroundImage) {
                 const bg = canvas.backgroundImage as any;
                 const actual = getActualImage(bg);
@@ -3528,9 +3553,61 @@
             if (isImageCropping) exitImageCropMode(); // Exit image crop mode too
 
             isHistoryProcessing = true;
+
+            // Save current canvas dimensions for canvas mode
+            const currentWidth = canvas.getWidth();
+            const currentHeight = canvas.getHeight();
+
             historyIndex--;
             const json = history[historyIndex];
+
+            // For canvas mode, apply the saved project size first and remove existing boundary
+            if (isCanvasMode) {
+                const w = json?.width || currentWidth;
+                const h = json?.height || currentHeight;
+                // Apply logical project dimensions so loaded objects keep correct positions
+                canvas.setDimensions({ width: w, height: h });
+
+                // Remove any existing boundary before loading JSON to avoid duplicates
+                const existingBoundaryPre = canvas.getObjects().find((o: any) => o._isCanvasBackground);
+                if (existingBoundaryPre) canvas.remove(existingBoundaryPre);
+            }
+
             await canvas.loadFromJSON(json);
+
+            // For canvas mode, ensure boundary exists and has correct size/fill
+            if (isCanvasMode) {
+                const w = json?.width || currentWidth;
+                const h = json?.height || currentHeight;
+                const bgFill = (json && json.bgFill) || 'transparent';
+
+                // If JSON included a boundary, update it; otherwise create one
+                const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
+                if (existingBoundary) {
+                    try {
+                        existingBoundary.set({ left: 0, top: 0, width: w, height: h, fill: bgFill });
+                        existingBoundary.setCoords && existingBoundary.setCoords();
+                        canvas.sendObjectToBack(existingBoundary);
+                    } catch (e) {}
+                } else {
+                    const boundaryRect = new CanvasBackgroundRect({
+                        left: 0,
+                        top: 0,
+                        width: w,
+                        height: h,
+                        fill: bgFill,
+                        stroke: '#e0e0e0',
+                        strokeWidth: 2,
+                        strokeDashArray: [10, 5],
+                        selectable: false,
+                        evented: false,
+                        hoverCursor: 'default',
+                        excludeFromExport: true,
+                    });
+                    canvas.add(boundaryRect);
+                    canvas.sendObjectToBack(boundaryRect);
+                }
+            }
 
             // Manually restore metadata to the background image
             if (canvas.backgroundImage && json.backgroundImage) {
@@ -3585,9 +3662,57 @@
             if (isImageCropping) exitImageCropMode(); // Exit image crop mode too
 
             isHistoryProcessing = true;
+
+            // Save current canvas dimensions for canvas mode
+            const currentWidth = canvas.getWidth();
+            const currentHeight = canvas.getHeight();
+
             historyIndex++;
             const json = history[historyIndex];
+
+            // For canvas mode, apply the saved project size first and remove existing boundary
+            if (isCanvasMode) {
+                const w = json?.width || currentWidth;
+                const h = json?.height || currentHeight;
+                canvas.setDimensions({ width: w, height: h });
+                const existingBoundaryPre = canvas.getObjects().find((o: any) => o._isCanvasBackground);
+                if (existingBoundaryPre) canvas.remove(existingBoundaryPre);
+            }
+
             await canvas.loadFromJSON(json);
+
+            // For canvas mode, ensure boundary exists and has correct size/fill
+            if (isCanvasMode) {
+                const w = json?.width || currentWidth;
+                const h = json?.height || currentHeight;
+                const bgFill = (json && json.bgFill) || 'transparent';
+
+                const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
+                if (existingBoundary) {
+                    try {
+                        existingBoundary.set({ left: 0, top: 0, width: w, height: h, fill: bgFill });
+                        existingBoundary.setCoords && existingBoundary.setCoords();
+                        canvas.sendObjectToBack(existingBoundary);
+                    } catch (e) {}
+                } else {
+                    const boundaryRect = new CanvasBackgroundRect({
+                        left: 0,
+                        top: 0,
+                        width: w,
+                        height: h,
+                        fill: bgFill,
+                        stroke: '#e0e0e0',
+                        strokeWidth: 2,
+                        strokeDashArray: [10, 5],
+                        selectable: false,
+                        evented: false,
+                        hoverCursor: 'default',
+                        excludeFromExport: true,
+                    });
+                    canvas.add(boundaryRect);
+                    canvas.sendObjectToBack(boundaryRect);
+                }
+            }
 
             // Manually restore metadata to the background image
             if (canvas.backgroundImage && json.backgroundImage) {
@@ -3621,22 +3746,23 @@
 
             // For canvas mode, add boundary rectangle
             if (isCanvasMode) {
-                const w = canvas.getWidth();
-                const h = canvas.getHeight();
+                const w = json.width || canvas.getWidth();
+                const h = json.height || canvas.getHeight();
+                const bgFill = json.bgFill || 'transparent';
 
                 // Remove any existing boundary
-                const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
                 if (existingBoundary) {
                     canvas.remove(existingBoundary);
                 }
 
                 // Add new boundary rectangle
-                const boundaryRect = new Rect({
+                const boundaryRect = new CanvasBackgroundRect({
                     left: 0,
                     top: 0,
                     width: w,
                     height: h,
-                    fill: 'transparent',
+                    fill: bgFill,
                     stroke: '#e0e0e0',
                     strokeWidth: 2,
                     strokeDashArray: [10, 5],
@@ -3645,9 +3771,12 @@
                     hoverCursor: 'default',
                     excludeFromExport: true,
                 });
-                boundaryRect.set('_isCanvasBoundary', true);
                 canvas.add(boundaryRect);
                 canvas.sendObjectToBack(boundaryRect);
+                // Ensure the logical background fill object exists and is updated
+                try {
+                    setCanvasBackground(bgFill);
+                } catch (e) {}
             }
 
             restoreObjectSelectionStates();
@@ -3719,8 +3848,8 @@
             const opts = { ...(activeToolOptions || {}) };
             if (typeof opts.width === 'undefined' || typeof opts.height === 'undefined') {
                 if (canvas) {
-                    if (isCanvasMode) {
-                        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                        if (isCanvasMode) {
+                        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
                         if (boundary) {
                             opts.width = Math.round(boundary.width);
                             opts.height = Math.round(boundary.height);
@@ -4043,7 +4172,7 @@
 
             if (isCanvasMode && !bg) {
                 // Export based on the boundary rectangle (project size)
-                const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
                 if (boundary) {
                     imgW = boundary.width;
                     imgH = boundary.height;
@@ -4073,10 +4202,16 @@
             canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
 
             // Temporarily hide boundary rectangle for export
-            const boundaryRect = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+            const boundaryRect = canvas.getObjects().find((o: any) => o._isCanvasBackground);
             const boundaryWasVisible = boundaryRect?.visible;
             if (boundaryRect) {
                 boundaryRect.set('visible', false);
+            }
+
+            // Set background color to boundary fill to avoid transparent blanks
+            const currentBgColor = canvas.backgroundColor;
+            if (boundaryRect && boundaryRect.fill) {
+                canvas.backgroundColor = boundaryRect.fill;
             }
 
             canvas.renderAll();
@@ -4089,10 +4224,11 @@
                 enableRetinaScaling: false,
             });
 
-            // Restore boundary visibility
+            // Restore boundary visibility and background color
             if (boundaryRect && boundaryWasVisible) {
                 boundaryRect.set('visible', true);
             }
+            canvas.backgroundColor = currentBgColor;
 
             return result;
         } finally {
@@ -4110,10 +4246,11 @@
 
         // For canvas mode, add project dimensions from boundary rectangle and remove backgroundImage to avoid blob URL issues
         if (isCanvasMode) {
-            const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+            const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
             if (boundary) {
                 json.width = boundary.width;
                 json.height = boundary.height;
+                json.bgFill = boundary.fill; // Save background fill
             } else {
                 json.width = canvas.getWidth();
                 json.height = canvas.getHeight();
@@ -4189,9 +4326,9 @@
             json.backgroundImage._borderShadowOpacity = bg._borderShadowOpacity;
         }
 
-        // Filter out canvas boundary objects from history to prevent them from being undone
+        // Filter out canvas boundary and background objects from history to prevent them from being undone
         if (json.objects) {
-            json.objects = json.objects.filter((obj: any) => !obj._isCanvasBoundary);
+            json.objects = json.objects.filter((obj: any) => obj.type !== 'canvas-boundary' && obj.type !== 'canvas-background');
         }
         return json;
     }
@@ -4203,34 +4340,33 @@
         isHistoryProcessing = true;
 
         try {
+            // Save current canvas dimensions for canvas mode
+            const currentWidth = canvas.getWidth();
+            const currentHeight = canvas.getHeight();
+
             await canvas.loadFromJSON(json);
 
-            // Get workspace dimensions
-            const workspace = container.closest('.canvas-editor');
-            const cw = workspace ? workspace.clientWidth : json.width || 800;
-            const ch = workspace ? workspace.clientHeight : json.height || 600;
-
+            // For canvas mode, restore workspace dimensions (canvas size) and add boundary
             if (isCanvasMode) {
-                // For canvas mode, set canvas size to workspace and use saved width/height for boundary
-                canvas.setDimensions({ width: cw, height: ch });
-                canvas.backgroundColor = 'transparent';
+                canvas.setDimensions({ width: currentWidth, height: currentHeight });
 
-                const w = json.width || 800;
-                const h = json.height || 600;
+                const w = json.width || currentWidth;
+                const h = json.height || currentHeight;
+                const bgFill = json.bgFill || 'transparent';
 
                 // Remove any existing boundary
-                const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                const existingBoundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
                 if (existingBoundary) {
                     canvas.remove(existingBoundary);
                 }
 
-                // Add new boundary rectangle (representing the project area)
-                const boundaryRect = new Rect({
+                // Add new boundary rectangle
+                const boundaryRect = new CanvasBackgroundRect({
                     left: 0,
                     top: 0,
                     width: w,
                     height: h,
-                    fill: 'transparent',
+                    fill: bgFill,
                     stroke: '#e0e0e0',
                     strokeWidth: 2,
                     strokeDashArray: [10, 5],
@@ -4239,77 +4375,8 @@
                     hoverCursor: 'default',
                     excludeFromExport: true,
                 });
-                boundaryRect.set('_isCanvasBoundary', true);
                 canvas.add(boundaryRect);
                 canvas.sendObjectToBack(boundaryRect);
-
-                // Repair flags for both boundary and background if they were lost
-                let boundary = canvas.getObjects().find((o: any) => (o as any)._isCanvasBoundary);
-                if (!boundary) {
-                    // Boundary is always excluded from export and transparent
-                    const bCandidate = canvas
-                        .getObjects()
-                        .find(
-                            (o: any) =>
-                                o.type === 'rect' &&
-                                o.excludeFromExport === true &&
-                                o.fill === 'transparent'
-                        );
-                    if (bCandidate) {
-                        bCandidate.set('_isCanvasBoundary', true);
-                        boundary = bCandidate;
-                    }
-                }
-
-                let bgs = canvas.getObjects().filter((o: any) => (o as any)._isCanvasBackground);
-                if (bgs.length === 0) {
-                    // Background is a Rect that is NOT excluded from export and is at the bottom
-                    const bgCandidate = canvas
-                        .getObjects()
-                        .find(
-                            (o: any) =>
-                                o.type === 'rect' &&
-                                !o.excludeFromExport &&
-                                !(o as any)._isCanvasBoundary
-                        );
-                    if (bgCandidate) {
-                        bgCandidate.set('_isCanvasBackground', true);
-                        bgs = [bgCandidate];
-                    }
-                }
-
-                // Always enforce locked properties on boundary
-                if (boundary) {
-                    boundary.set({
-                        selectable: false,
-                        evented: false,
-                        excludeFromExport: true,
-                        hoverCursor: 'default',
-                    });
-                    canvas.sendObjectToBack(boundary);
-                }
-
-                // Always enforce locked properties on background(s)
-                bgs.forEach(bg => {
-                    bg.set({
-                        selectable: false,
-                        evented: false,
-                        hoverCursor: 'default',
-                        lockMovementX: true,
-                        lockMovementY: true,
-                        lockScalingX: true,
-                        lockScalingY: true,
-                        lockRotation: true,
-                    });
-                    canvas.sendObjectToBack(bg);
-                    // If boundary exists, it must be behind the background
-                    if (boundary) canvas.sendObjectToBack(boundary);
-                });
-            } else {
-                // Standard mode: restore canvas dimensions if they were saved
-                if (json.width && json.height) {
-                    canvas.setDimensions({ width: json.width, height: json.height });
-                }
             }
 
             // Resume number marker sequence if existing markers are found
@@ -4386,7 +4453,7 @@
                 const objs = canvas.getObjects ? canvas.getObjects() : [];
                 objs.forEach((o: any) => {
                     try {
-                        if (o._isCropRect || o === bg || (o as any)._isCanvasBoundary) return;
+                        if (o._isCropRect || o === bg || (o as any)._isCanvasBackground) return;
                         const c = o.getCenterPoint();
                         // Mirror across the vertical axis passing through center.x
                         const newCenterX = center.x + (center.x - c.x);
@@ -4423,7 +4490,7 @@
                 const objs = canvas.getObjects ? canvas.getObjects() : [];
                 objs.forEach((o: any) => {
                     try {
-                        if (o._isCropRect || o === bg || (o as any)._isCanvasBoundary) return;
+                        if (o._isCropRect || o === bg || (o as any)._isCanvasBackground) return;
                         const c = o.getCenterPoint();
                         // Mirror across the horizontal axis passing through center.y
                         const newCenterY = center.y + (center.y - c.y);
@@ -4461,7 +4528,7 @@
             // 2. Rotate all drawable objects relative to the same center
             const objs = canvas
                 .getObjects()
-                .filter(o => o !== bg && !(o as any)._isCropRect && !(o as any)._isCanvasBoundary);
+                .filter(o => o !== bg && !(o as any)._isCropRect && !(o as any)._isCanvasBackground);
             objs.forEach((o: any) => {
                 // Coordinate rotation: (x', y') around (cx, cy)
                 const p = o.getCenterPoint();
@@ -4552,7 +4619,7 @@
 
                 // Fallback to explicit canvas boundary if no background image
                 if (!refRect) {
-                    const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+                    const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
                     if (boundary) {
                         refRect = {
                             left: boundary.left || 0,
@@ -4797,7 +4864,7 @@
 
         try {
             // Update boundary rectangle (the project size)
-            const boundaryRect = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+            const boundaryRect = canvas.getObjects().find((o: any) => o._isCanvasBackground);
             if (boundaryRect) {
                 boundaryRect.set({ width, height });
                 boundaryRect.setCoords();
@@ -4825,7 +4892,7 @@
     function updateCanvasBackgroundSize() {
         if (!canvas || !isCanvasMode) return;
         const bgNode = canvas.getObjects().find((o: any) => o._isCanvasBackground);
-        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBoundary);
+        const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
         if (bgNode && boundary) {
             bgNode.set({
                 width: boundary.width,
@@ -4845,7 +4912,7 @@
         if (!canvas || !isCanvasMode) return;
 
         let bgNode = canvas.getObjects().find((o: any) => (o as any)._isCanvasBackground) as Rect;
-        const boundary = canvas.getObjects().find((o: any) => (o as any)._isCanvasBoundary) as Rect;
+        const boundary = canvas.getObjects().find((o: any) => (o as any)._isCanvasBackground) as Rect;
 
         const w = boundary ? boundary.width : (canvas as any).width || 800;
         const h = boundary ? boundary.height : (canvas as any).height || 600;
@@ -4853,7 +4920,7 @@
         const top = boundary ? boundary.top : 0;
 
         if (!bgNode) {
-            bgNode = new Rect({
+            bgNode = new CanvasBackgroundRect({
                 left,
                 top,
                 width: w,
@@ -4862,7 +4929,6 @@
                 evented: false,
                 excludeFromExport: false,
             });
-            bgNode.set('_isCanvasBackground', true);
             canvas.add(bgNode);
             canvas.sendObjectToBack(bgNode);
             if (boundary) canvas.sendObjectToBack(boundary);
@@ -4870,7 +4936,26 @@
             bgNode.set({ left, top, width: w, height: h });
         }
 
-        if (typeof fill === 'string' && fill.startsWith('linear-gradient')) {
+        // Normalize fill: if missing, default to white to avoid black background on load
+        let effectiveFill = typeof fill === 'undefined' || fill === null ? '#ffffff' : fill;
+
+        // If fill is a serialized gradient object (from toObject), convert to Fabric Gradient
+        if (effectiveFill && typeof effectiveFill === 'object' && effectiveFill.type === 'linear') {
+            try {
+                const gf = effectiveFill as any;
+                bgNode.set(
+                    'fill',
+                    new Gradient({
+                        type: 'linear',
+                        gradientUnits: gf.gradientUnits || 'pixels',
+                        coords: gf.coords || gf.coords || { x1: 0, y1: 0, x2: w, y2: h },
+                        colorStops: gf.colorStops || gf.colorStops || [],
+                    })
+                );
+            } catch (e) {
+                bgNode.set('fill', '#ffffff');
+            }
+        } else if (typeof effectiveFill === 'string' && effectiveFill.startsWith('linear-gradient')) {
             const match = fill.match(
                 /linear-gradient\((\d+)deg,\s*(#[a-fA-F0-9]{3,6})\s+0%,\s*(#[a-fA-F0-9]{3,6})\s+100%\)/i
             );
@@ -4902,7 +4987,7 @@
                 );
             }
         } else {
-            bgNode.set('fill', fill);
+            bgNode.set('fill', effectiveFill);
         }
 
         canvas.requestRenderAll();
@@ -5027,7 +5112,7 @@
         ];
         if (!editableTypes.includes(obj.type)) return false;
         // Exclude special objects
-        if (obj._isCanvasBoundary || obj._isCanvasBackground || obj._isCropRect) return false;
+        if (obj._isCanvasBackground || obj._isCropRect) return false;
         return true;
     }
 
