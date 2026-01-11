@@ -1378,31 +1378,31 @@
                                 箭头设置
                             {:else if activeTool === 'brush'}
                                 画笔设置
-                        {:else if activeTool === 'eraser'}
-                            橡皮设置
-                        {:else if activeTool === 'number-marker'}
-                            序号设置
-                        {:else if activeTool === 'text'}
-                            文本设置
-                        {:else if activeTool === 'transform'}
-                            变换设置
-                        {:else if activeTool === 'crop'}
-                            裁剪设置
-                        {:else if activeTool === 'mosaic'}
-                            马赛克设置
-                        {:else if activeTool === 'image-border'}
-                            图片边框
-                        {:else if activeTool === 'align'}
-                            对齐设置
-                        {:else if activeTool === 'canvas'}
-                            画布设置
-                        {:else if activeTool === 'image'}
-                            图片工具
-                        {:else if activeTool === 'select'}
-                            选择工具
-                        {:else}
-                            {activeTool}
-                        {/if}
+                            {:else if activeTool === 'eraser'}
+                                橡皮设置
+                            {:else if activeTool === 'number-marker'}
+                                序号设置
+                            {:else if activeTool === 'text'}
+                                文本设置
+                            {:else if activeTool === 'transform'}
+                                变换设置
+                            {:else if activeTool === 'crop'}
+                                裁剪设置
+                            {:else if activeTool === 'mosaic'}
+                                马赛克设置
+                            {:else if activeTool === 'image-border'}
+                                图片边框
+                            {:else if activeTool === 'align'}
+                                对齐设置
+                            {:else if activeTool === 'canvas'}
+                                画布设置
+                            {:else if activeTool === 'image'}
+                                图片工具
+                            {:else if activeTool === 'select'}
+                                选择工具
+                            {:else}
+                                {activeTool}
+                            {/if}
                         {:else}
                             未选择形状工具
                         {/if}
@@ -1423,125 +1423,127 @@
                             settings={toolSettings}
                             recentColors={settings.recentColors || {}}
                             {selectCanvasSizeMode}
-                        on:action={e => {
-                            const { action } = e.detail;
-                            try {
-                                if (action === 'setCropRatio') {
-                                    canvasEditorRef.setCropRatio &&
-                                        canvasEditorRef.setCropRatio(e.detail.label || 'none');
-                                    toolSettings = {
-                                        ...toolSettings,
-                                        cropRatioLabel: e.detail.label,
-                                    };
-                                } else if (action === 'applyCrop') {
-                                    canvasEditorRef.applyPendingCrop &&
-                                        canvasEditorRef.applyPendingCrop();
-                                } else if (action === 'flip') {
-                                    const dir = e.detail.dir;
-                                    if (dir === 'horizontal') canvasEditorRef.flipHorizontal();
-                                    else if (dir === 'vertical') canvasEditorRef.flipVertical();
-                                } else if (action === 'rotate') {
-                                    const dir = e.detail.dir;
-                                    if (dir === 'cw') canvasEditorRef.rotate90(true);
-                                    else if (dir === 'ccw') canvasEditorRef.rotate90(false);
-                                } else if (action === 'align') {
-                                    const type = e.detail.type;
-                                    const forceCanvas = !!e.detail.forceCanvas;
-                                    try {
-                                        if (
-                                            canvasEditorRef &&
-                                            typeof canvasEditorRef.alignObjects === 'function'
-                                        ) {
-                                            canvasEditorRef.alignObjects(type, forceCanvas);
+                            on:action={e => {
+                                const { action } = e.detail;
+                                try {
+                                    if (action === 'setCropRatio') {
+                                        canvasEditorRef.setCropRatio &&
+                                            canvasEditorRef.setCropRatio(e.detail.label || 'none');
+                                        toolSettings = {
+                                            ...toolSettings,
+                                            cropRatioLabel: e.detail.label,
+                                        };
+                                    } else if (action === 'applyCrop') {
+                                        canvasEditorRef.applyPendingCrop &&
+                                            canvasEditorRef.applyPendingCrop();
+                                    } else if (action === 'flip') {
+                                        const dir = e.detail.dir;
+                                        if (dir === 'horizontal') canvasEditorRef.flipHorizontal();
+                                        else if (dir === 'vertical') canvasEditorRef.flipVertical();
+                                    } else if (action === 'rotate') {
+                                        const dir = e.detail.dir;
+                                        if (dir === 'cw') canvasEditorRef.rotate90(true);
+                                        else if (dir === 'ccw') canvasEditorRef.rotate90(false);
+                                    } else if (action === 'align') {
+                                        const type = e.detail.type;
+                                        const forceCanvas = !!e.detail.forceCanvas;
+                                        try {
+                                            if (
+                                                canvasEditorRef &&
+                                                typeof canvasEditorRef.alignObjects === 'function'
+                                            ) {
+                                                canvasEditorRef.alignObjects(type, forceCanvas);
+                                            }
+                                        } catch (err) {
+                                            console.warn('align action failed', err);
                                         }
-                                    } catch (err) {
-                                        console.warn('align action failed', err);
-                                    }
-                                } else if (action === 'distribute') {
-                                    const type = e.detail.type;
-                                    try {
-                                        if (
-                                            canvasEditorRef &&
-                                            typeof canvasEditorRef.distributeObjects === 'function'
-                                        ) {
-                                            canvasEditorRef.distributeObjects(type);
+                                    } else if (action === 'distribute') {
+                                        const type = e.detail.type;
+                                        try {
+                                            if (
+                                                canvasEditorRef &&
+                                                typeof canvasEditorRef.distributeObjects ===
+                                                    'function'
+                                            ) {
+                                                canvasEditorRef.distributeObjects(type);
+                                            }
+                                        } catch (err) {
+                                            console.warn('distribute action failed', err);
                                         }
-                                    } catch (err) {
-                                        console.warn('distribute action failed', err);
-                                    }
-                                } else if (action === 'resizeCanvas') {
-                                    canvasEditorRef.resizeCanvas &&
-                                        canvasEditorRef.resizeCanvas(
-                                            e.detail.width,
-                                            e.detail.height
-                                        );
-                                } else if (action === 'selectCanvasSize') {
-                                    try {
-                                        const currentMode =
-                                            canvasEditorRef &&
-                                            typeof canvasEditorRef.getSelectCanvasSizeMode ===
-                                                'function'
-                                                ? canvasEditorRef.getSelectCanvasSizeMode()
-                                                : selectCanvasSizeMode;
-                                        if (currentMode) {
-                                            canvasEditorRef.exitSelectCanvasSizeMode &&
-                                                canvasEditorRef.exitSelectCanvasSizeMode();
-                                        } else {
-                                            canvasEditorRef.enterSelectCanvasSizeMode &&
-                                                canvasEditorRef.enterSelectCanvasSizeMode();
+                                    } else if (action === 'resizeCanvas') {
+                                        canvasEditorRef.resizeCanvas &&
+                                            canvasEditorRef.resizeCanvas(
+                                                e.detail.width,
+                                                e.detail.height
+                                            );
+                                    } else if (action === 'selectCanvasSize') {
+                                        try {
+                                            const currentMode =
+                                                canvasEditorRef &&
+                                                typeof canvasEditorRef.getSelectCanvasSizeMode ===
+                                                    'function'
+                                                    ? canvasEditorRef.getSelectCanvasSizeMode()
+                                                    : selectCanvasSizeMode;
+                                            if (currentMode) {
+                                                canvasEditorRef.exitSelectCanvasSizeMode &&
+                                                    canvasEditorRef.exitSelectCanvasSizeMode();
+                                            } else {
+                                                canvasEditorRef.enterSelectCanvasSizeMode &&
+                                                    canvasEditorRef.enterSelectCanvasSizeMode();
+                                            }
+                                        } catch (err) {
+                                            console.warn('selectCanvasSize toggle failed', err);
                                         }
-                                    } catch (err) {
-                                        console.warn('selectCanvasSize toggle failed', err);
+                                    } else if (action === 'uploadImage') {
+                                        canvasEditorRef.uploadImage &&
+                                            canvasEditorRef.uploadImage();
+                                    } else if (action === 'enterImageCropMode') {
+                                        canvasEditorRef.enterImageCropMode &&
+                                            canvasEditorRef.enterImageCropMode();
                                     }
-                                } else if (action === 'uploadImage') {
-                                    canvasEditorRef.uploadImage && canvasEditorRef.uploadImage();
-                                } else if (action === 'enterImageCropMode') {
-                                    canvasEditorRef.enterImageCropMode &&
-                                        canvasEditorRef.enterImageCropMode();
+                                } catch (err) {
+                                    console.warn('Action failed', err);
                                 }
-                            } catch (err) {
-                                console.warn('Action failed', err);
-                            }
-                        }}
-                        on:change={e => {
-                            const partial = e.detail;
-                            toolSettings = { ...toolSettings, ...partial };
-                            if (toolSettings && toolSettings.shape)
-                                activeShape = toolSettings.shape;
-                            try {
-                                canvasEditorRef.setTool(activeTool, toolSettings);
-                                canvasEditorRef.applyToolOptionsToSelection(
-                                    activeTool === 'image-border' ? toolSettings : partial
-                                );
-                            } catch (err) {}
-                            // Persist settings for the active tool
-                            saveToolSettings(activeTool, toolSettings);
-                        }}
-                        savedGradients={settings.savedGradients || []}
-                        defaultsMigrated={settings.defaultsMigrated}
-                        on:initDefaults={e => {
-                            const defaults = e.detail;
-                            const current = settings.savedGradients || [];
-                            // Ensure defaults are at the start
-                            const combined = Array.from(new Set([...defaults, ...current]));
-                            settings.savedGradients = combined;
-                            settings.defaultsMigrated = true;
-                            dispatch('saveSettings', settings);
-                        }}
-                        on:updateSavedGradients={e => {
-                            settings.savedGradients = e.detail;
-                            dispatch('saveSettings', settings);
-                        }}
-                        on:recentUpdate={e => {
-                            const { colorKey, colors } = e.detail;
-                            if (!settings.recentColors) settings.recentColors = {};
-                            settings.recentColors[colorKey] = colors;
-                            // Notify parent to save settings if needed,
-                            // though in Siyuan we usually save when settings change or on close.
-                            // We can dispatch an event that index.ts listens to.
-                            dispatch('saveSettings', settings);
-                        }}
-                    />
+                            }}
+                            on:change={e => {
+                                const partial = e.detail;
+                                toolSettings = { ...toolSettings, ...partial };
+                                if (toolSettings && toolSettings.shape)
+                                    activeShape = toolSettings.shape;
+                                try {
+                                    canvasEditorRef.setTool(activeTool, toolSettings);
+                                    canvasEditorRef.applyToolOptionsToSelection(
+                                        activeTool === 'image-border' ? toolSettings : partial
+                                    );
+                                } catch (err) {}
+                                // Persist settings for the active tool
+                                saveToolSettings(activeTool, toolSettings);
+                            }}
+                            savedGradients={settings.savedGradients || []}
+                            defaultsMigrated={settings.defaultsMigrated}
+                            on:initDefaults={e => {
+                                const defaults = e.detail;
+                                const current = settings.savedGradients || [];
+                                // Ensure defaults are at the start
+                                const combined = Array.from(new Set([...defaults, ...current]));
+                                settings.savedGradients = combined;
+                                settings.defaultsMigrated = true;
+                                dispatch('saveSettings', settings);
+                            }}
+                            on:updateSavedGradients={e => {
+                                settings.savedGradients = e.detail;
+                                dispatch('saveSettings', settings);
+                            }}
+                            on:recentUpdate={e => {
+                                const { colorKey, colors } = e.detail;
+                                if (!settings.recentColors) settings.recentColors = {};
+                                settings.recentColors[colorKey] = colors;
+                                // Notify parent to save settings if needed,
+                                // though in Siyuan we usually save when settings change or on close.
+                                // We can dispatch an event that index.ts listens to.
+                                dispatch('saveSettings', settings);
+                            }}
+                        />
                     {/if}
                 </div>
             </div>
