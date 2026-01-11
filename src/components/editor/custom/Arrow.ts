@@ -115,19 +115,40 @@ function p2PositionHandler(_dim: any, finalMatrix: any, fabricObject: any) {
     }
     return canvasPoint;
 }
-// Delete control position handler - positioned above the second endpoint
+// Delete control position handler - positioned at the 1/4 position of the arrow
 function deletePositionHandler(_dim: any, finalMatrix: any, fabricObject: any) {
-    const line = fabricObject as any;
-    const canvas = line.canvas;
-    // 计算端点相对于对象中心的局部坐标
-    const centerX = (line.x1 + line.x2) / 2;
-    const centerY = (line.y1 + line.y2) / 2;
-    const localPoint = new Point(line.x2 - centerX, line.y2 - centerY);
-    // 转换到画布坐标
-    const canvasPoint = util.transformPoint(localPoint, line.calcTransformMatrix());
-    // 在画布坐标系中保持固定偏移
-    canvasPoint.y -= 30;
-    // 应用 viewport transform 转换到屏幕坐标
+    const arrow = fabricObject as any;
+    const canvas = arrow.canvas;
+
+    const isCurved = Math.abs(arrow.controlOffsetX) > 0.1 || Math.abs(arrow.controlOffsetY) > 0.1;
+    let localPoint: Point;
+
+    if (isCurved) {
+        // Calculate point on curve at t=0.25
+        const t = 0.25;
+        const centerX = (arrow.x1 + arrow.x2) / 2;
+        const centerY = (arrow.y1 + arrow.y2) / 2;
+        const p1x = centerX + arrow.controlOffsetX;
+        const p1y = centerY + arrow.controlOffsetY;
+        const x = Math.pow(1 - t, 2) * arrow.x1 +
+            2 * (1 - t) * t * p1x +
+            Math.pow(t, 2) * arrow.x2;
+        const y = Math.pow(1 - t, 2) * arrow.y1 +
+            2 * (1 - t) * t * p1y +
+            Math.pow(t, 2) * arrow.y2;
+        localPoint = new Point(x - centerX, y - centerY);
+    } else {
+        // Straight line 1/4 position
+        const x = arrow.x1 + (arrow.x2 - arrow.x1) * 0.25;
+        const y = arrow.y1 + (arrow.y2 - arrow.y1) * 0.25;
+        const centerX = (arrow.x1 + arrow.x2) / 2;
+        const centerY = (arrow.y1 + arrow.y2) / 2;
+        localPoint = new Point(x - centerX, y - centerY);
+    }
+
+    // Transform to canvas coordinates
+    const canvasPoint = util.transformPoint(localPoint, arrow.calcTransformMatrix());
+    // Apply viewport transform to screen coordinates
     if (canvas && canvas.viewportTransform) {
         return util.transformPoint(canvasPoint, canvas.viewportTransform);
     }
