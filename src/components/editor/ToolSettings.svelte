@@ -294,7 +294,6 @@
                 value={settings.strokeWidth || settings.size || 16}
                 on:input={e => emitChange({ strokeWidth: +getValue(e), size: +getValue(e) })}
             />
-            <span class="val">{settings.strokeWidth || settings.size || 16}</span>
         </div>
     {:else if tool === 'arrow'}
         <div class="row">

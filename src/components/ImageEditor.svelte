@@ -1414,18 +1414,8 @@
         </div>
 
         {#if activeTool && showToolPopup}
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div
-                class="tool-popup"
-                role="dialog"
-                aria-label="Tool submenu"
-                style="left: {popupPos.x}px; top: {popupPos.y}px;"
-                on:mousemove={onPopupDragMove}
-                on:mouseup={onPopupDragEnd}
-                on:mouseleave={onPopupDragEnd}
-            >
-                <!-- svelte-ignore a11y-no-static-element-interactions -->
-                <div class="tool-popup-header" on:mousedown={onPopupDragStart}>
+            <div class="tool-sidebar" role="dialog" aria-label="Tool sidebar">
+                <div class="tool-sidebar-header">
                     <div class="title">
                         {#if activeTool === 'shape'}
                             {activeShape === 'rect'
@@ -1470,7 +1460,7 @@
                         ×
                     </button>
                 </div>
-                <div class="tool-popup-body">
+                <div class="tool-sidebar-body">
                     <ToolSettings
                         tool={activeTool}
                         settings={toolSettings}
@@ -1634,6 +1624,44 @@
         border-radius: 6px;
         box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
         user-select: none;
+    }
+    /* New right-side tool sidebar (integrated with canvas) */
+    .tool-sidebar {
+        width: 300px;
+        flex: 0 0 300px;
+        height: 100%;
+        box-sizing: border-box;
+        background: rgba(255, 255, 255, 0.98);
+        border-left: 1px solid rgba(0,0,0,0.06);
+        box-shadow: -6px 0 18px rgba(0,0,0,0.06);
+        display: flex;
+        flex-direction: column;
+        z-index: 900;
+        overflow: hidden;
+    }
+    .tool-sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(0,0,0,0.04);
+        background: transparent;
+    }
+    .tool-sidebar .title {
+        font-weight: 600;
+        font-size: 13px;
+    }
+    .tool-sidebar .close {
+        background: transparent;
+        border: 0;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+    }
+    .tool-sidebar-body {
+        padding: 8px;
+        overflow: auto;
+        flex: 1 1 auto;
     }
     .tool-popup-header {
         display: flex;
