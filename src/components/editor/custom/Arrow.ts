@@ -128,11 +128,20 @@ function deletePositionHandler(_dim: any, finalMatrix: any, fabricObject: any) {
     // Transform to canvas coordinates
     const canvasPoint = util.transformPoint(localPoint, arrow.calcTransformMatrix());
 
+    // Get viewport zoom level to compensate for canvas scaling
+    let zoom = 1;
+    if (canvas && canvas.viewportTransform) {
+        // viewportTransform[0] is the horizontal scale factor
+        zoom = canvas.viewportTransform[0];
+    }
+
     // Offset to top-right corner (offset by control size / 2 + some margin)
-    const offset = 15; // Adjust this value to control distance from endpoint
+    // Divide by zoom to maintain consistent visual distance regardless of canvas zoom
+    const baseOffset = 15; // Base offset in screen pixels
+    const offset = baseOffset / zoom;
     const topRightOffset = new Point(offset, -offset);
 
-    // Apply the offset
+    // Apply the offset in canvas coordinates
     const finalPoint = new Point(
         canvasPoint.x + topRightOffset.x,
         canvasPoint.y + topRightOffset.y
