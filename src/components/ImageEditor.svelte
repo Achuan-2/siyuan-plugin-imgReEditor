@@ -1588,7 +1588,7 @@
     /* New right-side tool sidebar (integrated with canvas) */
     .tool-sidebar {
         /* 使用视口宽度并限制最大值；不设最小值 */
-        --sidebar-w: min(24vw, 400px);
+        --sidebar-w: min(24vw, 300px);
         width: var(--sidebar-w);
         flex: 0 0 var(--sidebar-w);
         height: 100%;
