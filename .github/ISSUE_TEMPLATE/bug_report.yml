@@ -1,5 +1,5 @@
 name: 🐛 错误报告
-description: 
+description: "报告软件中的错误或异常行为。"
 title: "请输入Bug标题"
 body:
   - type: markdown

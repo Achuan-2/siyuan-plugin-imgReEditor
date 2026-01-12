@@ -1,5 +1,5 @@
 name: ✨ 功能请求
-description:
+description: "请求新增功能或改进现有功能。"
 title: "请输入功能请求标题"
 body:
   - type: markdown
