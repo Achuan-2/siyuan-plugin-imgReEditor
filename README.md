@@ -10,7 +10,7 @@
 
 写笔记写博客，常常需要对图片进行标注、编辑。虽然能用系统图片编辑器等外部软件编辑图片，但一直有一个痛点，那就是编辑的图片无法进行二次编辑。过去对图片进行裁剪、添加形状和文字，保存完图片之后就无法再修改原来的操作，只能在原有图片上再添加新内容，要么就直接替换新图片，这就给修改操作带来很大麻烦。（PPT、Photoshop虽然可以重复编辑，但是只是简单编辑笔记里的图片用它们太麻烦了）
 
-于是，我开发了 ImgReEditor 这个插件，不仅仅实现了基础的图片编辑功能，还终于实现了已编辑的图片还能二次编辑。
+于是，我开发了 ImgReEditor 这个插件，不仅仅实现了基础的图片编辑功能，还终于实现了保存的图片还能反复修改图片标注和编辑效果。
 
 一开始是调用 tui.image-editor 这个开源编辑器，但是后来发现不方便修改，想要让裁剪能二次修改、还想添加序号、马赛克工具都很麻烦。于是就让ai使用 fabric.js 从无到有自己写了一个图片编辑器
 
@@ -25,6 +25,16 @@
 <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
 
 <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260113101553-ecn9d05.png" />
+
+**截图**：`Ctrl+~`进行截图，截图后可以贴图、回顾截图历史
+
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260115165131-x52yv3x.png" style="width: 842px;" />
+
+思源笔记顶栏添加了「截图」和「浏览历史截图功能」
+
+<img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/canvas-20260115165419-7hl7uwo.png" style="width: 868px;" />
+
+
 
 ## 功能介绍
 
@@ -65,7 +75,7 @@
 
 **用途**：用于制作拼图、制作文章封面等需求。
 
-**画布模式功能**
+**画布模式具备功能**
 
 - 调节画布宽度和高度
 - 设置背景色，支持设置渐变色
@@ -126,7 +136,7 @@
   - [在思源笔记里也能直接制作文章封面啦](https://zhuanlan.zhihu.com/p/1986456451837862115)
 - 视频
 
-  - [思源笔记插件 ImgReEditor：图片编辑保存还可再编辑，让思源笔记成为你的图文笔记神器](https://www.bilibili.com/video/BV11wBFBvEn8/?vd_source=b4a1fcb6dce305e26d8d16d9cbb71304#reply285851298256)
+  - [思源笔记插件 ImgReEditor：图片编辑保存还可再编辑，让思源笔记成为你的图文笔记神器](https://www.bilibili.com/video/BV11wBFBvEn8)
 
 ## 📄 许可证
 
@@ -154,6 +164,6 @@ pnpm run dev
 
 我需要的功能我会慢慢改进（打赏可以催更），有些我觉得可以改进、但是现阶段不必要的功能需要打赏才改进（会标注打赏标签和需要打赏金额），而不需要的功能、实现很麻烦的功能会直接关闭issue不考虑实现
 
-累积赞赏50元的朋友如果想加我微信，可以发邮件到[achuan-2@outlook.com](mailto:achuan-2@outlook.com)来进行好友申请（赞赏达不到50元的，我不会回复邮件和加好友哦，因为不想当免费客服）
+累积赞赏50元的朋友如果想加我微信和进我的粉丝交流群，可以在赞赏的时候备注微信号，或者发邮件到[achuan-2@outlook.com](mailto:achuan-2@outlook.com)来进行好友申请
 
 <img alt="image" src="https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20241128221208-2024-11-28.png" />
