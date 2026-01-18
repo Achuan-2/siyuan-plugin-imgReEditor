@@ -6,7 +6,7 @@
 
 见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-imgReEditor@main/CHANGELOG.md)
 
-## 开发背景
+## 📝开发背景
 
 写笔记写博客，常常需要对图片进行标注、编辑。虽然能用系统图片编辑器等外部软件编辑图片，但一直有一个痛点，那就是编辑的图片无法进行二次编辑。过去对图片进行裁剪、添加形状和文字，保存完图片之后就无法再修改原来的操作，只能在原有图片上再添加新内容，要么就直接替换新图片，这就给修改操作带来很大麻烦。（PPT、Photoshop虽然可以重复编辑，但是只是简单编辑笔记里的图片用它们太麻烦了）
 
@@ -16,33 +16,15 @@
 
 ## 如何使用
 
-**图片编辑模式**：图片右键菜单选择「ImgReEditor 编辑」按钮打开 ImgReEditor 编辑器
+### **图片编辑**
+
+图片右键菜单选择「ImgReEditor 编辑」按钮打开 ImgReEditor 编辑器
 
 <img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/canvas-20260111165115-aexapt2.png" />
 
-**画布模式**：斜杆菜单输入 `/画布` 可以开启画布模式，在画布添加多个图片，比如上面的图片就是插件绘制的。可以简单替代PPT，用于制作拼图、制作文章封面等需求。
-
-<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
-
-<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260113101553-ecn9d05.png" />
-
-**截图**：`Ctrl+~`进行截图，截图后可以贴图、回顾截图历史
-
-<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260115165131-x52yv3x.png" style="width: 842px;" />
-
-思源笔记顶栏添加了「截图」和「浏览历史截图功能」
-
-<img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/canvas-20260115165419-7hl7uwo.png" style="width: 868px;" />
-
-
-
-## 功能介绍
-
-### 编辑功能
-
 **用途**：编辑图片、标注图片、制作图片边框
 
-在思源笔记中编辑图片，支持：
+**支持功能：**
 
 - **图片基础编辑功能**
 
@@ -51,12 +33,16 @@
   - 添加文字
   - 添加矩形椭圆
   - 添加箭头
+
+    - 支持直线箭头，折角箭头、弯曲箭头
+    - 箭头样式：尖箭头、燕尾箭头、尖箭头空心、燕尾箭头空心
   - 添加数字序号
   - 添加画笔
   - 添加马赛克
+  - 放大镜
   - 添加图片边框
 
-  <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260111170558-yzu6obf.png" />
+  <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260118113809-z828u91.png" />
 
   插件支持快速添加图片边框，把图改为精致的博客风格，如果你想要给笔记里的截图添加圆角 + 边框效果，过去要使用专门的软件才能做到
 
@@ -73,7 +59,11 @@
 
 ### **画布模式**
 
-**用途**：用于制作拼图、制作文章封面等需求。
+斜杆菜单输入 `/画布` 可以开启画布模式，在画布添加多个图片，比如上面的图片就是插件绘制的。可以简单替代PPT，用于制作拼图、制作文章封面等需求。
+
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20251219182552-59o8aso.png" />
+
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260113102430-w6vldff.png" />
 
 **画布模式具备功能**
 
@@ -83,9 +73,19 @@
 - 具有对齐、分布功能
 - 选中形状可以进行图层排列、组合操作
 
-<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260113102430-w6vldff.png" />
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260113101553-ecn9d05.png" />
 
 <img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260113102834-pk8f89m.png" />
+
+### **截图**
+
+​`Ctrl+~`进行截图，截图后可以贴图、回顾截图历史
+
+<img alt="image" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/image-20260115165131-x52yv3x.png" style="width: 842px;" />
+
+思源笔记顶栏添加了「截图」和「浏览历史截图功能」
+
+<img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/canvas-20260115165419-7hl7uwo.png" style="width: 868px;" />
 
 ## 使用细节
 
