@@ -299,6 +299,20 @@
                 const actual = getActualImage(bg);
                 json.backgroundImage._originalSrc = actual?._originalSrc || bg._originalSrc;
                 json.backgroundImage._cropOffset = actual?._cropOffset || bg._cropOffset;
+
+                // Manual save for border props to be safe
+                json.backgroundImage._unborderedSrc = actual?._unborderedSrc ?? bg._unborderedSrc;
+                json.backgroundImage._appliedMargin = actual?._appliedMargin ?? bg._appliedMargin;
+                json.backgroundImage._borderEnabled = actual?._borderEnabled ?? bg._borderEnabled;
+                json.backgroundImage._borderFill = actual?._borderFill ?? bg._borderFill;
+                json.backgroundImage._borderRadius = actual?._borderRadius ?? bg._borderRadius;
+                json.backgroundImage._outerRadius = actual?._outerRadius ?? bg._outerRadius;
+                json.backgroundImage._borderShadowBlur =
+                    actual?._borderShadowBlur ?? bg._borderShadowBlur;
+                json.backgroundImage._borderShadowColor =
+                    actual?._borderShadowColor ?? bg._borderShadowColor;
+                json.backgroundImage._borderShadowOpacity =
+                    actual?._borderShadowOpacity ?? bg._borderShadowOpacity;
             }
 
             // If recent changes are rapid modifications, merge them into the last step
@@ -4053,6 +4067,20 @@
                 const actual = getActualImage(bg);
                 json.backgroundImage._originalSrc = actual?._originalSrc || bg._originalSrc;
                 json.backgroundImage._cropOffset = actual?._cropOffset || bg._cropOffset;
+
+                // Manual save for border props to be safe
+                json.backgroundImage._unborderedSrc = actual?._unborderedSrc ?? bg._unborderedSrc;
+                json.backgroundImage._appliedMargin = actual?._appliedMargin ?? bg._appliedMargin;
+                json.backgroundImage._borderEnabled = actual?._borderEnabled ?? bg._borderEnabled;
+                json.backgroundImage._borderFill = actual?._borderFill ?? bg._borderFill;
+                json.backgroundImage._borderRadius = actual?._borderRadius ?? bg._borderRadius;
+                json.backgroundImage._outerRadius = actual?._outerRadius ?? bg._outerRadius;
+                json.backgroundImage._borderShadowBlur =
+                    actual?._borderShadowBlur ?? bg._borderShadowBlur;
+                json.backgroundImage._borderShadowColor =
+                    actual?._borderShadowColor ?? bg._borderShadowColor;
+                json.backgroundImage._borderShadowOpacity =
+                    actual?._borderShadowOpacity ?? bg._borderShadowOpacity;
             }
             history.push(json);
             historyIndex = 0;
