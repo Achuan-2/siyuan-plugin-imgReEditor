@@ -1302,14 +1302,19 @@
                 // Start drawing magnifier rectangle
                 magnifierStart = { x: pointer.x, y: pointer.y };
                 isDrawingMagnifier = true;
+                // Use saved tool settings for colors and stroke widths
+                const sourceStroke = activeToolOptions.sourceStroke || '#00ccff';
+                const sourceStrokeWidth = activeToolOptions.sourceStrokeWidth || 1;
+                const magnifierShape = activeToolOptions.magnifierShape || 'rect';
+
                 tempMagnifier = new MagnifierSourceRect({
                     left: pointer.x,
                     top: pointer.y,
                     width: 0,
                     height: 0,
-                    stroke: activeToolOptions.sourceStroke || '#00ccff',
-                    strokeWidth: activeToolOptions.sourceStrokeWidth || 1,
-                    magnifierShape: activeToolOptions.magnifierShape || 'rect',
+                    stroke: sourceStroke,
+                    strokeWidth: sourceStrokeWidth,
+                    magnifierShape: magnifierShape,
                     selectable: false,
                     evented: false,
                     erasable: true,
@@ -2229,6 +2234,10 @@
                     const viewLeft = tempMagnifier.left + tempMagnifier.width + 20;
                     const viewTop = tempMagnifier.top;
 
+                    // Use saved tool settings for magnifier view colors
+                    const viewStroke = activeToolOptions.stroke || '#000000';
+                    const viewStrokeWidth = activeToolOptions.strokeWidth || 2;
+
                     const viewRect = new MagnifierRect({
                         id: viewId,
                         sourceId: sourceId,
@@ -2238,8 +2247,8 @@
                         height: tempMagnifier.height * mag,
                         magnification: mag,
                         magnifierShape: shape,
-                        stroke: activeToolOptions.stroke || '#000000',
-                        strokeWidth: activeToolOptions.strokeWidth || 2,
+                        stroke: viewStroke,
+                        strokeWidth: viewStrokeWidth,
                         selectable: true,
                         evented: true,
                     });
@@ -2250,13 +2259,17 @@
                     const sCenter = tempMagnifier.getCenterPoint();
                     const vCenter = viewRect.getCenterPoint();
 
+                    // Use saved tool settings for connection line
+                    const connectionStroke = activeToolOptions.connectionStroke || '#00ccff';
+                    const connectionStrokeWidth = activeToolOptions.connectionStrokeWidth || 1;
+
                     const line = new MagnifierConnectionLine(
                         [sCenter.x, sCenter.y, vCenter.x, vCenter.y],
                         {
                             sourceId: sourceId,
                             viewId: viewId,
-                            stroke: activeToolOptions.connectionStroke || '#00ccff',
-                            strokeWidth: activeToolOptions.connectionStrokeWidth || 1,
+                            stroke: connectionStroke,
+                            strokeWidth: connectionStrokeWidth,
                         }
                     );
 
@@ -2269,6 +2282,27 @@
                     updateMagnifierConnectionLine(viewRect);
 
                     canvas.setActiveObject(viewRect);
+
+                    // Manually dispatch selection to ensure UI gets correct initial settings
+                    // This bypasses potential timing issues in the generic selection handler
+                    dispatch('selection', {
+                        options: {
+                            magnification: mag,
+                            stroke: viewStroke,
+                            strokeWidth: viewStrokeWidth,
+                            // Get source properties from the source object we just finalized
+                            sourceStroke: tempMagnifier.stroke,
+                            sourceStrokeWidth: tempMagnifier.strokeWidth,
+                            // Get connection properties from local variables
+                            connectionStroke: connectionStroke,
+                            connectionStrokeWidth: connectionStrokeWidth,
+                            isSelection: true,
+                            selectionType: 'magnifier',
+                            magnifierShape: shape,
+                        },
+                        type: 'magnifier-rect',
+                    });
+
                     canvas.requestRenderAll();
                     schedulePushWithType('added');
 
@@ -2382,8 +2416,14 @@
             exitSelectCanvasSizeMode();
         }
 
+        // If updating the same tool (especially magnifier), merge options to prevent data loss form partial updates or incomplete selection options
+        if (activeTool === tool && tool === 'magnifier') {
+            activeToolOptions = { ...activeToolOptions, ...(options || {}) };
+        } else {
+            activeToolOptions = options || {};
+        }
+
         activeTool = tool;
-        activeToolOptions = options || {};
         dispatch('toolChange', { tool });
 
         if (tool === 'number-marker') {
@@ -2413,6 +2453,17 @@
             activeToolOptions.strokeWidth = activeToolOptions.strokeWidth || 0;
             activeToolOptions.bold = !!activeToolOptions.bold;
             activeToolOptions.italic = !!activeToolOptions.italic;
+        }
+        // provide sensible defaults for magnifier tool
+        if (tool === 'magnifier') {
+            activeToolOptions.magnification = activeToolOptions.magnification ?? 2;
+            activeToolOptions.magnifierShape = activeToolOptions.magnifierShape || 'rect';
+            activeToolOptions.stroke = activeToolOptions.stroke || '#000000';
+            activeToolOptions.strokeWidth = activeToolOptions.strokeWidth ?? 2;
+            activeToolOptions.sourceStroke = activeToolOptions.sourceStroke || '#00ccff';
+            activeToolOptions.sourceStrokeWidth = activeToolOptions.sourceStrokeWidth ?? 1;
+            activeToolOptions.connectionStroke = activeToolOptions.connectionStroke || '#00ccff';
+            activeToolOptions.connectionStrokeWidth = activeToolOptions.connectionStrokeWidth ?? 1;
         }
         if (tool === 'image-border') {
             const opts = {
@@ -4450,6 +4501,16 @@
                             o.dirty = true;
                         }
                     } else if (o.type === 'magnifier-rect') {
+                        // Apply stroke and strokeWidth to the magnifier view itself
+                        if (typeof options.stroke !== 'undefined') {
+                            o.set('stroke', options.stroke);
+                            o.dirty = true;
+                        }
+                        if (typeof options.strokeWidth !== 'undefined') {
+                            o.set('strokeWidth', options.strokeWidth);
+                            o.dirty = true;
+                        }
+
                         if (typeof options.magnification !== 'undefined') {
                             o.set('magnification', options.magnification);
                             o.dirty = true;
@@ -4588,6 +4649,9 @@
                                     });
                                     o.setPositionByOrigin(center, 'center', 'center');
                                     o.setCoords();
+                                }
+                                if (typeof options.stroke !== 'undefined') {
+                                    viewObj.set('stroke', options.stroke);
                                 }
                                 if (typeof options.strokeWidth !== 'undefined') {
                                     viewObj.set('strokeWidth', options.strokeWidth);

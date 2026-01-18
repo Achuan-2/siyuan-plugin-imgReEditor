@@ -829,41 +829,6 @@
             </div>
         </div>
         <div class="row">
-            <label for="magnifier-zoom">放大倍数</label>
-            <input
-                id="magnifier-zoom"
-                type="range"
-                min="1.5"
-                max="10"
-                step="0.1"
-                value={settings.magnification || 2}
-                on:input={e => emitChange({ magnification: +getValue(e) })}
-            />
-            <span class="val">{parseFloat((settings.magnification || 2).toFixed(1))}x</span>
-        </div>
-        <div class="row">
-            <label for="magnifier-border-color">边框颜色</label>
-            <ColorPicker
-                colorKey="magnifier-border-color"
-                value={settings.stroke || '#000000'}
-                {recentColors}
-                on:change={e => emitChange({ stroke: e.detail })}
-                on:recentUpdate
-            />
-        </div>
-        <div class="row">
-            <label for="magnifier-border-width">边框粗细</label>
-            <input
-                id="magnifier-border-width"
-                type="range"
-                min="0"
-                max="10"
-                value={settings.strokeWidth || 2}
-                on:input={e => emitChange({ strokeWidth: +getValue(e) })}
-            />
-            <span class="val">{settings.strokeWidth || 2}</span>
-        </div>
-        <div class="row">
             <label for="magnifier-source-border-color">框选颜色</label>
             <ColorPicker
                 colorKey="magnifier-source-border-color"
@@ -906,6 +871,41 @@
                 on:input={e => emitChange({ connectionStrokeWidth: +getValue(e) })}
             />
             <span class="val">{settings.connectionStrokeWidth || 1}</span>
+        </div>
+                <div class="row">
+            <label for="magnifier-zoom">放大倍数</label>
+            <input
+                id="magnifier-zoom"
+                type="range"
+                min="1.5"
+                max="10"
+                step="0.1"
+                value={settings.magnification || 2}
+                on:input={e => emitChange({ magnification: +getValue(e) })}
+            />
+            <span class="val">{parseFloat((settings.magnification || 2).toFixed(1))}x</span>
+        </div>
+        <div class="row">
+            <label for="magnifier-border-color">放大边框颜色</label>
+            <ColorPicker
+                colorKey="magnifier-border-color"
+                value={settings.stroke || '#000000'}
+                {recentColors}
+                on:change={e => emitChange({ stroke: e.detail })}
+                on:recentUpdate
+            />
+        </div>
+        <div class="row">
+            <label for="magnifier-border-width">放大边框粗细</label>
+            <input
+                id="magnifier-border-width"
+                type="range"
+                min="0"
+                max="10"
+                value={settings.strokeWidth || 2}
+                on:input={e => emitChange({ strokeWidth: +getValue(e) })}
+            />
+            <span class="val">{settings.strokeWidth || 2}</span>
         </div>
     {:else if tool === 'image'}
         {#if settings.isSelection}

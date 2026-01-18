@@ -1323,6 +1323,11 @@
                                 if (shouldAutoActivate) {
                                     // Auto-activate magnifier tool
                                     activeTool = 'magnifier';
+                                }
+
+                                // Always sync tool options when magnifier is selected
+                                // This ensures UI reflects the actual magnifier settings
+                                if (activeTool === 'magnifier') {
                                     try {
                                         if (
                                             canvasEditorRef &&
@@ -1330,10 +1335,6 @@
                                         )
                                             canvasEditorRef.setTool('magnifier', e.detail.options);
                                     } catch (err) {}
-                                }
-
-                                // Save settings if magnifier tool is active
-                                if (activeTool === 'magnifier') {
                                     saveToolSettings('magnifier', e.detail.options);
                                 }
                             } else if (type === 'image') {
@@ -1407,6 +1408,8 @@
                                 裁剪设置
                             {:else if activeTool === 'mosaic'}
                                 马赛克设置
+                            {:else if activeTool === 'magnifier'}
+                                放大镜设置
                             {:else if activeTool === 'image-border'}
                                 图片边框
                             {:else if activeTool === 'align'}
