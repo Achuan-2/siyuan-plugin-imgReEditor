@@ -668,6 +668,50 @@
 
         dispatch('ready');
 
+        const getIntersection = (rectObj: any, targetPoint: any) => {
+            const center = rectObj.getCenterPoint();
+            const angleRad = (rectObj.angle || 0) * (Math.PI / 180);
+            const width = rectObj.getScaledWidth();
+            const height = rectObj.getScaledHeight();
+
+            // Convert targetPoint to local coords relative to rectObj center
+            const dx = targetPoint.x - center.x;
+            const dy = targetPoint.y - center.y;
+
+            // Rotate -angle to align with axes
+            const localX = dx * Math.cos(-angleRad) - dy * Math.sin(-angleRad);
+            const localY = dx * Math.sin(-angleRad) + dy * Math.cos(-angleRad);
+
+            const absLocalX = Math.abs(localX);
+            const absLocalY = Math.abs(localY);
+            const w2 = width / 2;
+            const h2 = height / 2;
+
+            // Avoid division by zero
+            if (absLocalX < 0.1 && absLocalY < 0.1) return center;
+
+            let scale = 1;
+
+            if (rectObj.magnifierShape === 'circle') {
+                const sqDist = (localX * localX) / (w2 * w2) + (localY * localY) / (h2 * h2);
+                scale = 1 / Math.sqrt(sqDist);
+            } else {
+                const scaleX = w2 / (absLocalX || 0.0001);
+                const scaleY = h2 / (absLocalY || 0.0001);
+                scale = Math.min(scaleX, scaleY);
+            }
+
+            const intersectX = localX * scale;
+            const intersectY = localY * scale;
+
+            const finalX =
+                center.x + (intersectX * Math.cos(angleRad) - intersectY * Math.sin(angleRad));
+            const finalY =
+                center.y + (intersectX * Math.sin(angleRad) + intersectY * Math.cos(angleRad));
+
+            return { x: finalX, y: finalY };
+        };
+
         const updateMagnifierConnectionLine = (target: any) => {
             if (!canvas) return;
             // find relevant lines
@@ -689,59 +733,10 @@
                     const sCenter = sourceObj.getCenterPoint();
                     const vCenter = viewObj.getCenterPoint();
 
-                    // Calculate intersection on ViewObj
-                    const angleRad = (viewObj.angle || 0) * (Math.PI / 180);
-                    const vWidth = viewObj.getScaledWidth();
-                    const vHeight = viewObj.getScaledHeight();
+                    const start = getIntersection(sourceObj, vCenter);
+                    const end = getIntersection(viewObj, sCenter);
 
-                    // Convert source center to local view space
-                    const dx = sCenter.x - vCenter.x;
-                    const dy = sCenter.y - vCenter.y;
-                    const localX = dx * Math.cos(-angleRad) - dy * Math.sin(-angleRad);
-                    const localY = dx * Math.sin(-angleRad) + dy * Math.cos(-angleRad);
-
-                    const absLocalX = Math.abs(localX);
-                    const absLocalY = Math.abs(localY);
-                    const w2 = vWidth / 2;
-                    const h2 = vHeight / 2;
-
-                    let intersectX = 0,
-                        intersectY = 0;
-                    // Prevent updating if source is extremely close to center (avoid jitter)
-                    if (absLocalX > 1 || absLocalY > 1) {
-                        // Project to border
-                        // We want P on boundary such that P is on segment V->S (or S->V).
-                        // Ray from V to S passes through P.
-                        // P = V + t * (S - V).
-                        // In local coords: P_local = t * (localX, localY).
-                        // We need P_local to be on boundary.
-                        // |x| = w2 or |y| = h2.
-                        // t * |localX| = w2 => t = w2 / |localX|
-                        // t * |localY| = h2 => t = h2 / |localY|
-                        // We take smallest t to hit the first boundary.
-                        const scaleX = w2 / (absLocalX || 0.0001);
-                        const scaleY = h2 / (absLocalY || 0.0001);
-                        const scale = Math.min(scaleX, scaleY);
-
-                        // If scale > 1, S is strictly inside.
-                        // If we want line to end at edge regardless, we use limit of 1?
-                        // "End point is edge". If S is inside, line should go from S to edge (away)?
-                        // Current logic: P is on boundary.
-                        // If S inside, P is further away. Line S->P. This is valid.
-                        // If S outside, P is closer. Line S->P. This is valid.
-
-                        intersectX = localX * scale;
-                        intersectY = localY * scale;
-                    }
-
-                    const finalX =
-                        vCenter.x +
-                        (intersectX * Math.cos(angleRad) - intersectY * Math.sin(angleRad));
-                    const finalY =
-                        vCenter.y +
-                        (intersectX * Math.sin(angleRad) + intersectY * Math.cos(angleRad));
-
-                    line.set({ x1: sCenter.x, y1: sCenter.y, x2: finalX, y2: finalY });
+                    line.set({ x1: start.x, y1: start.y, x2: end.x, y2: end.y });
                     line.setCoords();
                 }
             });
