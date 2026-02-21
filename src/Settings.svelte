@@ -338,7 +338,7 @@
         overflow: hidden;
     }
     .config__panel > .b3-tab-bar {
-        width: 170px;
+        width: min(30%, 170px);
     }
 
     .config__tab-wrap {
