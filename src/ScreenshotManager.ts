@@ -6,9 +6,389 @@ import {
 } from "siyuan";
 export class ScreenshotManager {
     private plugin: Plugin;
+    private selectionWin: any | null = null;
 
     constructor(plugin: Plugin) {
         this.plugin = plugin;
+    }
+
+    public async warmupSelectionWindow(): Promise<void> {
+        try {
+            const remote = (window as any).require('@electron/remote');
+            if (!remote) return;
+
+            const { screen } = remote;
+            const currentWin = remote.getCurrentWindow();
+            const display = screen.getDisplayMatching(currentWin.getBounds()) || screen.getPrimaryDisplay();
+            this.ensureSelectionWindow(remote, display);
+        } catch (e) {
+            console.warn('Selection window warmup failed:', e);
+        }
+    }
+
+    public disposeSelectionWindow() {
+        try {
+            if (this.selectionWin && !this.selectionWin.isDestroyed()) {
+                this.selectionWin.destroy();
+            }
+        } catch (e) {
+            console.warn('Failed to dispose selection window:', e);
+        } finally {
+            this.selectionWin = null;
+        }
+    }
+
+    private ensureSelectionWindow(remote: any, display: any) {
+        if (this.selectionWin && !this.selectionWin.isDestroyed()) {
+            const { width, height } = display.size;
+            this.selectionWin.setBounds({
+                x: display.bounds.x,
+                y: display.bounds.y,
+                width,
+                height
+            });
+            return this.selectionWin;
+        }
+
+        const { BrowserWindow } = remote;
+        const { width, height } = display.size;
+
+        this.selectionWin = new BrowserWindow({
+            width,
+            height,
+            x: display.bounds.x,
+            y: display.bounds.y,
+            frame: false,
+            transparent: true,
+            alwaysOnTop: true,
+            skipTaskbar: true,
+            fullscreen: true,
+            resizable: false,
+            enableLargerThanScreen: true,
+            show: false,
+            webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false
+            }
+        });
+
+        const content = this.getSelectionWindowContent();
+        this.selectionWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(content)}`);
+        this.selectionWin.on('closed', () => {
+            this.selectionWin = null;
+        });
+
+        return this.selectionWin;
+    }
+
+    private getSelectionWindowContent(): string {
+        return `
+            <html>
+            <head>
+                <style>
+                    body { margin: 0; padding: 0; overflow: hidden; cursor: crosshair; user-select: none; background: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+                    #background { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+                    #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); pointer-events: none; }
+                    #selection {
+                        position: absolute;
+                        border: 2px solid #007bff;
+                        box-sizing: border-box;
+                        display: none;
+                        background: transparent;
+                        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+                        z-index: 10;
+                    }
+                    #selection.movable { cursor: move; }
+                    .resize-handle {
+                        position: absolute;
+                        background: #007bff;
+                        z-index: 11;
+                    }
+                    .resize-handle.corner {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 50%;
+                    }
+                    .resize-handle.edge {
+                        background: transparent;
+                    }
+                    .resize-handle.edge.horizontal {
+                        height: 8px;
+                        left: 8px;
+                        right: 8px;
+                        cursor: ns-resize;
+                    }
+                    .resize-handle.edge.vertical {
+                        width: 8px;
+                        top: 8px;
+                        bottom: 8px;
+                        cursor: ew-resize;
+                    }
+                    .handle-nw { top: -4px; left: -4px; cursor: nw-resize; }
+                    .handle-n { top: -4px; cursor: n-resize; }
+                    .handle-ne { top: -4px; right: -4px; cursor: ne-resize; }
+                    .handle-e { right: -4px; cursor: e-resize; }
+                    .handle-se { bottom: -4px; right: -4px; cursor: se-resize; }
+                    .handle-s { bottom: -4px; cursor: s-resize; }
+                    .handle-sw { bottom: -4px; left: -4px; cursor: sw-resize; }
+                    .handle-w { left: -4px; cursor: w-resize; }
+                    #info {
+                        position: absolute;
+                        background: rgba(0,0,0,0.7);
+                        color: white;
+                        padding: 4px 8px;
+                        font-size: 12px;
+                        border-radius: 4px;
+                        pointer-events: none;
+                        display: none;
+                        z-index: 20;
+                        white-space: nowrap;
+                    }
+                    .hint {
+                        position: absolute;
+                        top: 20px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: rgba(0,0,0,0.6);
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 20px;
+                        font-size: 14px;
+                        pointer-events: none;
+                        z-index: 100;
+                    }
+                </style>
+            </head>
+            <body>
+                <img id="background" src="">
+                <div id="overlay"></div>
+                <div id="selection">
+                    <div class="resize-handle corner handle-nw"></div>
+                    <div class="resize-handle edge horizontal handle-n"></div>
+                    <div class="resize-handle corner handle-ne"></div>
+                    <div class="resize-handle edge vertical handle-e"></div>
+                    <div class="resize-handle corner handle-se"></div>
+                    <div class="resize-handle edge horizontal handle-s"></div>
+                    <div class="resize-handle corner handle-sw"></div>
+                    <div class="resize-handle edge vertical handle-w"></div>
+                </div>
+                <div id="info"></div>
+                <div class="hint">鼠标左键拖拽进行选择，按回车确认，Esc或右键取消</div>
+                <script>
+                    const { ipcRenderer } = require('electron');
+                    const selection = document.getElementById('selection');
+                    const overlay = document.getElementById('overlay');
+                    const info = document.getElementById('info');
+                    const background = document.getElementById('background');
+
+                    let mode = 'none';
+                    let startX, startY;
+                    let initialRect = { left: 0, top: 0, width: 0, height: 0 };
+                    let resizeDirection = '';
+                    let currentSessionId = '';
+
+                    function resetState() {
+                        mode = 'none';
+                        resizeDirection = '';
+                        selection.style.display = 'none';
+                        selection.style.left = '0px';
+                        selection.style.top = '0px';
+                        selection.style.width = '0px';
+                        selection.style.height = '0px';
+                        selection.classList.remove('movable');
+                        overlay.style.display = 'block';
+                        info.style.display = 'none';
+                    }
+
+                    ipcRenderer.on('imgreeditor-selection-init', (_e, payload) => {
+                        if (!payload) return;
+                        currentSessionId = payload.sessionId || '';
+                        background.src = payload.dataURL || '';
+                        resetState();
+                    });
+
+                    function updateInfo() {
+                        const rect = selection.getBoundingClientRect();
+                        info.style.display = 'block';
+                        info.style.left = rect.left + 'px';
+                        if (rect.top > 30) {
+                            info.style.top = (rect.top - 28) + 'px';
+                        } else {
+                            info.style.top = (rect.top + rect.height + 5) + 'px';
+                        }
+                        info.innerText = Math.round(rect.width) + ' x ' + Math.round(rect.height);
+                    }
+
+                    function isInsideSelection(x, y) {
+                        const rect = selection.getBoundingClientRect();
+                        return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+                    }
+
+                    function getResizeDirection(target) {
+                        if (target.classList.contains('handle-nw')) return 'nw';
+                        if (target.classList.contains('handle-n')) return 'n';
+                        if (target.classList.contains('handle-ne')) return 'ne';
+                        if (target.classList.contains('handle-e')) return 'e';
+                        if (target.classList.contains('handle-se')) return 'se';
+                        if (target.classList.contains('handle-s')) return 's';
+                        if (target.classList.contains('handle-sw')) return 'sw';
+                        if (target.classList.contains('handle-w')) return 'w';
+                        return '';
+                    }
+
+                    document.addEventListener('mousedown', (e) => {
+                        if (!currentSessionId) return;
+                        if (e.button === 2) {
+                            ipcRenderer.send('imgreeditor-selection-cancel', { sessionId: currentSessionId });
+                            return;
+                        }
+                        if (e.button !== 0) return;
+
+                        const target = e.target;
+                        const direction = getResizeDirection(target);
+
+                        if (direction) {
+                            mode = 'resizing';
+                            resizeDirection = direction;
+                            startX = e.clientX;
+                            startY = e.clientY;
+                            const rect = selection.getBoundingClientRect();
+                            initialRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+                        } else if (selection.style.display === 'block' && isInsideSelection(e.clientX, e.clientY)) {
+                            mode = 'moving';
+                            startX = e.clientX;
+                            startY = e.clientY;
+                            const rect = selection.getBoundingClientRect();
+                            initialRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+                            selection.classList.add('movable');
+                        } else {
+                            mode = 'creating';
+                            startX = e.clientX;
+                            startY = e.clientY;
+                            overlay.style.display = 'none';
+                            selection.style.display = 'block';
+                            selection.style.left = startX + 'px';
+                            selection.style.top = startY + 'px';
+                            selection.style.width = '0px';
+                            selection.style.height = '0px';
+                        }
+                    });
+
+                    document.addEventListener('mousemove', (e) => {
+                        if (!currentSessionId) return;
+                        if (mode === 'creating') {
+                            const currentX = e.clientX;
+                            const currentY = e.clientY;
+                            const left = Math.min(startX, currentX);
+                            const top = Math.min(startY, currentY);
+                            const width = Math.abs(currentX - startX);
+                            const height = Math.abs(currentY - startY);
+
+                            selection.style.left = left + 'px';
+                            selection.style.top = top + 'px';
+                            selection.style.width = width + 'px';
+                            selection.style.height = height + 'px';
+
+                            updateInfo();
+                        } else if (mode === 'moving') {
+                            const deltaX = e.clientX - startX;
+                            const deltaY = e.clientY - startY;
+
+                            selection.style.left = (initialRect.left + deltaX) + 'px';
+                            selection.style.top = (initialRect.top + deltaY) + 'px';
+
+                            updateInfo();
+                        } else if (mode === 'resizing') {
+                            const deltaX = e.clientX - startX;
+                            const deltaY = e.clientY - startY;
+
+                            let newLeft = initialRect.left;
+                            let newTop = initialRect.top;
+                            let newWidth = initialRect.width;
+                            let newHeight = initialRect.height;
+
+                            if (resizeDirection.includes('w')) {
+                                newLeft = initialRect.left + deltaX;
+                                newWidth = initialRect.width - deltaX;
+                            } else if (resizeDirection.includes('e')) {
+                                newWidth = initialRect.width + deltaX;
+                            }
+
+                            if (resizeDirection.includes('n')) {
+                                newTop = initialRect.top + deltaY;
+                                newHeight = initialRect.height - deltaY;
+                            } else if (resizeDirection.includes('s')) {
+                                newHeight = initialRect.height + deltaY;
+                            }
+
+                            if (newWidth < 10) {
+                                newWidth = 10;
+                                if (resizeDirection.includes('w')) newLeft = initialRect.left + initialRect.width - 10;
+                            }
+                            if (newHeight < 10) {
+                                newHeight = 10;
+                                if (resizeDirection.includes('n')) newTop = initialRect.top + initialRect.height - 10;
+                            }
+
+                            selection.style.left = newLeft + 'px';
+                            selection.style.top = newTop + 'px';
+                            selection.style.width = newWidth + 'px';
+                            selection.style.height = newHeight + 'px';
+
+                            updateInfo();
+                        }
+                    });
+
+                    document.addEventListener('mouseup', (e) => {
+                        if (!currentSessionId) return;
+                        if (e.button !== 0) return;
+
+                        if (mode === 'creating') {
+                            const rect = selection.getBoundingClientRect();
+                            if (rect.width < 2 || rect.height < 2) {
+                                overlay.style.display = 'block';
+                                selection.style.display = 'none';
+                                info.style.display = 'none';
+                            }
+                        } else if (mode === 'moving') {
+                            selection.classList.remove('movable');
+                        }
+
+                        mode = 'none';
+                        resizeDirection = '';
+                    });
+
+                    document.addEventListener('dblclick', () => {
+                        confirmSelection();
+                    });
+
+                    function confirmSelection() {
+                        const rect = selection.getBoundingClientRect();
+                        if (currentSessionId && rect.width >= 2 && rect.height >= 2) {
+                            ipcRenderer.send('imgreeditor-selection-done', {
+                                sessionId: currentSessionId,
+                                rect: {
+                                    x: Math.round(rect.left),
+                                    y: Math.round(rect.top),
+                                    width: Math.round(rect.width),
+                                    height: Math.round(rect.height)
+                                }
+                            });
+                        }
+                    }
+
+                    document.addEventListener('keydown', (e) => {
+                        if (!currentSessionId) return;
+                        if (e.key === 'Enter') {
+                            confirmSelection();
+                        } else if (e.key === 'Escape') {
+                            ipcRenderer.send('imgreeditor-selection-cancel', { sessionId: currentSessionId });
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+        `;
     }
 
     public async captureScreen(): Promise<string | null> {
@@ -91,7 +471,7 @@ export class ScreenshotManager {
     private async showSelectionWindow(dataURL: string): Promise<{ x: number, y: number, width: number, height: number } | null> {
         return new Promise((resolve) => {
             const remote = (window as any).require('@electron/remote');
-            const { BrowserWindow, screen, ipcMain } = remote;
+            const { screen, ipcMain } = remote;
             const currentWin = remote.getCurrentWindow();
             const display = screen.getDisplayMatching(currentWin.getBounds()) || screen.getPrimaryDisplay();
             const { width, height } = display.size; // These are in DIPs (logical pixels)
@@ -99,336 +479,65 @@ export class ScreenshotManager {
             // Generate a unique ID for this selection session to avoid IPC collisions
             const sessionId = `selection-${Date.now()}`;
 
-            const win = new BrowserWindow({
-                width,
-                height,
+            const win = this.ensureSelectionWindow(remote, display);
+            win.setBounds({
                 x: display.bounds.x,
                 y: display.bounds.y,
-                frame: false,
-                transparent: true,
-                alwaysOnTop: true,
-                skipTaskbar: true,
-                fullscreen: true,
-                resizable: false,
-                enableLargerThanScreen: true,
-                webPreferences: {
-                    nodeIntegration: true,
-                    contextIsolation: false
-                }
+                width,
+                height
             });
 
-            // Use background capture as the UI background
-            const content = `
-            <html>
-            <head>
-                <style>
-                    body { margin: 0; padding: 0; overflow: hidden; cursor: crosshair; user-select: none; background: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-                    #background { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
-                    #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); pointer-events: none; }
-                    #selection { 
-                        position: absolute; 
-                        border: 2px solid #007bff; 
-                        box-sizing: border-box; 
-                        display: none; 
-                        background: transparent;
-                        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
-                        z-index: 10;
-                    }
-                    #selection.movable { cursor: move; }
-                    .resize-handle {
-                        position: absolute;
-                        background: #007bff;
-                        z-index: 11;
-                    }
-                    .resize-handle.corner {
-                        width: 8px;
-                        height: 8px;
-                        border-radius: 50%;
-                    }
-                    .resize-handle.edge {
-                        background: transparent;
-                    }
-                    .resize-handle.edge.horizontal {
-                        height: 8px;
-                        left: 8px;
-                        right: 8px;
-                        cursor: ns-resize;
-                    }
-                    .resize-handle.edge.vertical {
-                        width: 8px;
-                        top: 8px;
-                        bottom: 8px;
-                        cursor: ew-resize;
-                    }
-                    .handle-nw { top: -4px; left: -4px; cursor: nw-resize; }
-                    .handle-n { top: -4px; cursor: n-resize; }
-                    .handle-ne { top: -4px; right: -4px; cursor: ne-resize; }
-                    .handle-e { right: -4px; cursor: e-resize; }
-                    .handle-se { bottom: -4px; right: -4px; cursor: se-resize; }
-                    .handle-s { bottom: -4px; cursor: s-resize; }
-                    .handle-sw { bottom: -4px; left: -4px; cursor: sw-resize; }
-                    .handle-w { left: -4px; cursor: w-resize; }
-                    #info { 
-                        position: absolute; 
-                        background: rgba(0,0,0,0.7); 
-                        color: white; 
-                        padding: 4px 8px; 
-                        font-size: 12px; 
-                        border-radius: 4px; 
-                        pointer-events: none; 
-                        display: none; 
-                        z-index: 20;
-                        white-space: nowrap;
-                    }
-                    .hint {
-                        position: absolute;
-                        top: 20px;
-                        left: 50%;
-                        transform: translateX(-50%);
-                        background: rgba(0,0,0,0.6);
-                        color: white;
-                        padding: 8px 16px;
-                        border-radius: 20px;
-                        font-size: 14px;
-                        pointer-events: none;
-                        z-index: 100;
-                    }
-                </style>
-            </head>
-            <body>
-                <img id="background" src="${dataURL}">
-                <div id="overlay"></div>
-                <div id="selection">
-                    <div class="resize-handle corner handle-nw"></div>
-                    <div class="resize-handle edge horizontal handle-n"></div>
-                    <div class="resize-handle corner handle-ne"></div>
-                    <div class="resize-handle edge vertical handle-e"></div>
-                    <div class="resize-handle corner handle-se"></div>
-                    <div class="resize-handle edge horizontal handle-s"></div>
-                    <div class="resize-handle corner handle-sw"></div>
-                    <div class="resize-handle edge vertical handle-w"></div>
-                </div>
-                <div id="info"></div>
-                <div class="hint">鼠标左键拖拽进行选择，按回车确认，Esc或右键取消</div>
-                <script>
-                    const { ipcRenderer } = require('electron');
-                    const selection = document.getElementById('selection');
-                    const overlay = document.getElementById('overlay');
-                    const info = document.getElementById('info');
-                    
-                    let mode = 'none'; // 'none', 'creating', 'moving', 'resizing'
-                    let startX, startY;
-                    let initialRect = { left: 0, top: 0, width: 0, height: 0 };
-                    let resizeDirection = '';
-                    const session = "${sessionId}";
-
-                    // Update info position and content
-                    function updateInfo() {
-                        const rect = selection.getBoundingClientRect();
-                        info.style.display = 'block';
-                        info.style.left = rect.left + 'px';
-                        if (rect.top > 30) {
-                            info.style.top = (rect.top - 28) + 'px';
-                        } else {
-                            info.style.top = (rect.top + rect.height + 5) + 'px';
-                        }
-                        info.innerText = Math.round(rect.width) + ' x ' + Math.round(rect.height);
-                    }
-
-                    // Check if click is inside selection
-                    function isInsideSelection(x, y) {
-                        const rect = selection.getBoundingClientRect();
-                        return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-                    }
-
-                    // Get resize direction from target element
-                    function getResizeDirection(target) {
-                        if (target.classList.contains('handle-nw')) return 'nw';
-                        if (target.classList.contains('handle-n')) return 'n';
-                        if (target.classList.contains('handle-ne')) return 'ne';
-                        if (target.classList.contains('handle-e')) return 'e';
-                        if (target.classList.contains('handle-se')) return 'se';
-                        if (target.classList.contains('handle-s')) return 's';
-                        if (target.classList.contains('handle-sw')) return 'sw';
-                        if (target.classList.contains('handle-w')) return 'w';
-                        return '';
-                    }
-
-                    document.addEventListener('mousedown', (e) => {
-                        if (e.button === 2) { // Right click to cancel
-                            ipcRenderer.send(session + '-cancel');
-                            return;
-                        }
-                        if (e.button !== 0) return;
-
-                        const target = e.target;
-                        const direction = getResizeDirection(target);
-
-                        if (direction) {
-                            // Start resizing
-                            mode = 'resizing';
-                            resizeDirection = direction;
-                            startX = e.clientX;
-                            startY = e.clientY;
-                            const rect = selection.getBoundingClientRect();
-                            initialRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-                        } else if (selection.style.display === 'block' && isInsideSelection(e.clientX, e.clientY)) {
-                            // Start moving
-                            mode = 'moving';
-                            startX = e.clientX;
-                            startY = e.clientY;
-                            const rect = selection.getBoundingClientRect();
-                            initialRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-                            selection.classList.add('movable');
-                        } else {
-                            // Start creating new selection
-                            mode = 'creating';
-                            startX = e.clientX;
-                            startY = e.clientY;
-                            overlay.style.display = 'none';
-                            selection.style.display = 'block';
-                            selection.style.left = startX + 'px';
-                            selection.style.top = startY + 'px';
-                            selection.style.width = '0px';
-                            selection.style.height = '0px';
-                        }
-                    });
-
-                    document.addEventListener('mousemove', (e) => {
-                        if (mode === 'creating') {
-                            const currentX = e.clientX;
-                            const currentY = e.clientY;
-                            const left = Math.min(startX, currentX);
-                            const top = Math.min(startY, currentY);
-                            const width = Math.abs(currentX - startX);
-                            const height = Math.abs(currentY - startY);
-                            
-                            selection.style.left = left + 'px';
-                            selection.style.top = top + 'px';
-                            selection.style.width = width + 'px';
-                            selection.style.height = height + 'px';
-                            
-                            updateInfo();
-                        } else if (mode === 'moving') {
-                            const deltaX = e.clientX - startX;
-                            const deltaY = e.clientY - startY;
-                            
-                            selection.style.left = (initialRect.left + deltaX) + 'px';
-                            selection.style.top = (initialRect.top + deltaY) + 'px';
-                            
-                            updateInfo();
-                        } else if (mode === 'resizing') {
-                            const deltaX = e.clientX - startX;
-                            const deltaY = e.clientY - startY;
-                            
-                            let newLeft = initialRect.left;
-                            let newTop = initialRect.top;
-                            let newWidth = initialRect.width;
-                            let newHeight = initialRect.height;
-                            
-                            // Handle horizontal resizing
-                            if (resizeDirection.includes('w')) {
-                                newLeft = initialRect.left + deltaX;
-                                newWidth = initialRect.width - deltaX;
-                            } else if (resizeDirection.includes('e')) {
-                                newWidth = initialRect.width + deltaX;
-                            }
-                            
-                            // Handle vertical resizing
-                            if (resizeDirection.includes('n')) {
-                                newTop = initialRect.top + deltaY;
-                                newHeight = initialRect.height - deltaY;
-                            } else if (resizeDirection.includes('s')) {
-                                newHeight = initialRect.height + deltaY;
-                            }
-                            
-                            // Ensure minimum size
-                            if (newWidth < 10) {
-                                newWidth = 10;
-                                if (resizeDirection.includes('w')) newLeft = initialRect.left + initialRect.width - 10;
-                            }
-                            if (newHeight < 10) {
-                                newHeight = 10;
-                                if (resizeDirection.includes('n')) newTop = initialRect.top + initialRect.height - 10;
-                            }
-                            
-                            selection.style.left = newLeft + 'px';
-                            selection.style.top = newTop + 'px';
-                            selection.style.width = newWidth + 'px';
-                            selection.style.height = newHeight + 'px';
-                            
-                            updateInfo();
-                        }
-                    });
-
-                    document.addEventListener('mouseup', (e) => {
-                        if (e.button !== 0) return;
-                        
-                        if (mode === 'creating') {
-                            const rect = selection.getBoundingClientRect();
-                            if (rect.width < 2 || rect.height < 2) {
-                                overlay.style.display = 'block';
-                                selection.style.display = 'none';
-                                info.style.display = 'none';
-                            }
-                        } else if (mode === 'moving') {
-                            selection.classList.remove('movable');
-                        }
-                        
-                        mode = 'none';
-                        resizeDirection = '';
-                    });
-
-                    document.addEventListener('dblclick', () => {
-                        confirmSelection();
-                    });
-
-                    function confirmSelection() {
-                        const rect = selection.getBoundingClientRect();
-                        if (rect.width >= 2 && rect.height >= 2) {
-                            ipcRenderer.send(session + '-done', {
-                                x: Math.round(rect.left),
-                                y: Math.round(rect.top),
-                                width: Math.round(rect.width),
-                                height: Math.round(rect.height)
-                            });
-                        }
-                    }
-
-                    document.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter') {
-                            confirmSelection();
-                        } else if (e.key === 'Escape') {
-                            ipcRenderer.send(session + '-cancel');
-                        }
-                    });
-                </script>
-            </body>
-            </html>
-            `;
-
-            win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(content)}`);
-
-            const onDone = (_event, rect) => {
-                ipcMain.removeListener(sessionId + '-done', onDone);
-                ipcMain.removeListener(sessionId + '-cancel', onCancel);
-                win.destroy();
-                resolve(rect);
-            };
-            const onCancel = () => {
-                ipcMain.removeListener(sessionId + '-done', onDone);
-                ipcMain.removeListener(sessionId + '-cancel', onCancel);
-                win.destroy();
+            const onWindowClosed = () => {
+                cleanupListeners();
                 resolve(null);
             };
 
-            ipcMain.on(sessionId + '-done', onDone);
-            ipcMain.on(sessionId + '-cancel', onCancel);
+            const cleanupListeners = () => {
+                ipcMain.removeListener('imgreeditor-selection-done', onDone);
+                ipcMain.removeListener('imgreeditor-selection-cancel', onCancel);
+                win.removeListener('closed', onWindowClosed);
+            };
 
-            win.on('closed', () => {
-                ipcMain.removeListener(sessionId + '-done', onDone);
-                ipcMain.removeListener(sessionId + '-cancel', onCancel);
-            });
+            const onDone = (_event, payload) => {
+                if (!payload || payload.sessionId !== sessionId) return;
+                cleanupListeners();
+                if (!win.isDestroyed()) {
+                    win.hide();
+                }
+                resolve(payload.rect || null);
+            };
+            const onCancel = (_event, payload) => {
+                if (!payload || payload.sessionId !== sessionId) return;
+                cleanupListeners();
+                if (!win.isDestroyed()) {
+                    win.hide();
+                }
+                resolve(null);
+            };
+
+            ipcMain.on('imgreeditor-selection-done', onDone);
+            ipcMain.on('imgreeditor-selection-cancel', onCancel);
+            win.once('closed', onWindowClosed);
+
+            const startSelection = () => {
+                if (win.isDestroyed()) {
+                    cleanupListeners();
+                    resolve(null);
+                    return;
+                }
+                win.webContents.send('imgreeditor-selection-init', {
+                    sessionId,
+                    dataURL
+                });
+                win.show();
+                win.focus();
+            };
+
+            if (win.webContents.isLoading()) {
+                win.webContents.once('did-finish-load', startSelection);
+            } else {
+                startSelection();
+            }
         });
     }
 

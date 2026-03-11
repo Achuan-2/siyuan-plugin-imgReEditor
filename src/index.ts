@@ -64,6 +64,7 @@ export default class PluginSample extends Plugin {
         // 初始化截图管理器
         this.screenshotManager = new ScreenshotManager(this);
         await this.screenshotManager.registerShortcut();
+        await this.screenshotManager.warmupSelectionWindow();
 
         // 注册顶栏按钮（使用 Menu 类创建下拉菜单）
         const topBarElement = this.addTopBar({
@@ -121,6 +122,9 @@ export default class PluginSample extends Plugin {
             if (this.topBarElement) {
                 this.topBarElement.remove();
                 this.topBarElement = null;
+            }
+            if (this.screenshotManager) {
+                this.screenshotManager.disposeSelectionWindow();
             }
         } catch (e) {
             console.warn('Error while removing event listeners during unload', e);
