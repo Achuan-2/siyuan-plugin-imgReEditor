@@ -1,5 +1,5 @@
 import { Plugin } from "siyuan";
-import { pushErrMsg, readDir, removeFile, pushMsg } from "./api";
+import { getFileBlob, pushErrMsg, readDir, removeFile, pushMsg, putFile } from "./api";
 import { confirm } from "siyuan";
 import {
     Dialog,
@@ -7,6 +7,9 @@ import {
 export class ScreenshotManager {
     private plugin: Plugin;
     private selectionWin: any | null = null;
+    private readonly screenshotHistoryPath = 'data/storage/petal/siyuan-plugin-imgReEditor/screenshot_history';
+    private readonly screenshotCaptureHistoryPath = 'data/storage/petal/siyuan-plugin-imgReEditor/capture_history';
+    private readonly screenshotRangeHistoryLimit = 50;
 
     constructor(plugin: Plugin) {
         this.plugin = plugin;
@@ -35,6 +38,184 @@ export class ScreenshotManager {
             console.warn('Failed to dispose selection window:', e);
         } finally {
             this.selectionWin = null;
+        }
+    }
+
+    private getAbsoluteWorkspacePath(path: string): string {
+        const workspaceDir = (window as any).siyuan?.config?.system?.workspaceDir || '';
+        return `${workspaceDir}/${path}`.replace(/\\/g, '/');
+    }
+
+    private async dataUrlToBlob(dataURL: string): Promise<Blob> {
+        const response = await fetch(dataURL);
+        return response.blob();
+    }
+
+    private async blobToDataURL(blob: Blob): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('Failed to convert blob to data URL'));
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    private getCaptureHistoryEntries(limit: number = this.screenshotRangeHistoryLimit): Array<{
+        id: string,
+        imagePath: string,
+        name: string,
+        rect: { x: number, y: number, width: number, height: number },
+        normalizedRect: { x: number, y: number, width: number, height: number },
+        ts: number,
+    }> {
+        const settings = (this.plugin as any).settings || {};
+        const history = Array.isArray(settings.screenshotCaptureHistory)
+            ? settings.screenshotCaptureHistory
+            : [];
+
+        return history
+            .filter((item: any) => item
+                && typeof item.id === 'string'
+                && typeof item.imagePath === 'string'
+                && item.rect
+                && item.normalizedRect)
+            .slice(0, limit);
+    }
+
+    private async getRecentCaptureHistory(limit: number = this.screenshotRangeHistoryLimit): Promise<Array<{
+        id: string,
+        name: string,
+        absolutePath: string,
+        imagePath: string,
+        rect: { x: number, y: number, width: number, height: number },
+        normalizedRect: { x: number, y: number, width: number, height: number },
+        ts: number,
+    }>> {
+        return this.getCaptureHistoryEntries(limit).map(item => ({
+            id: item.id,
+            name: item.name,
+            absolutePath: this.getAbsoluteWorkspacePath(item.imagePath),
+            imagePath: item.imagePath,
+            rect: item.rect,
+            normalizedRect: item.normalizedRect,
+            ts: item.ts,
+        }));
+    }
+
+    private async rememberCaptureHistory(
+        fullDataURL: string,
+        rect: { x: number, y: number, width: number, height: number },
+        imageSize: { width: number, height: number }
+    ): Promise<void> {
+        try {
+            const settings = ((this.plugin as any).settings ||= {});
+            const existing = this.getCaptureHistoryEntries(this.screenshotRangeHistoryLimit);
+            const id = `capture-${Date.now()}`;
+            const name = `${id}.png`;
+            const imagePath = `${this.screenshotCaptureHistoryPath}/${name}`;
+            const blob = await this.dataUrlToBlob(fullDataURL);
+            const file = new File([blob], name, { type: 'image/png' });
+            await putFile(imagePath, false, file);
+
+            const imageWidth = Math.max(imageSize.width || rect.x + rect.width, 1);
+            const imageHeight = Math.max(imageSize.height || rect.y + rect.height, 1);
+            const entry = {
+                id,
+                imagePath,
+                name,
+                rect,
+                normalizedRect: {
+                    x: Math.max(0, Math.min(1, rect.x / imageWidth)),
+                    y: Math.max(0, Math.min(1, rect.y / imageHeight)),
+                    width: Math.max(0, Math.min(1, rect.width / imageWidth)),
+                    height: Math.max(0, Math.min(1, rect.height / imageHeight)),
+                },
+                ts: Date.now(),
+            };
+
+            settings.screenshotCaptureHistory = [entry].concat(existing).slice(0, this.screenshotRangeHistoryLimit);
+
+            const removedEntries = existing.slice(Math.max(0, this.screenshotRangeHistoryLimit - 1));
+            for (const removed of removedEntries) {
+                if (!removed || !removed.imagePath) continue;
+                try {
+                    await removeFile(removed.imagePath);
+                } catch (e) {
+                    console.warn('Failed to remove old capture history image', e);
+                }
+            }
+
+            if (typeof (this.plugin as any).saveSettings === 'function') {
+                await (this.plugin as any).saveSettings(settings);
+            }
+        } catch (e) {
+            console.warn('Failed to remember capture history', e);
+        }
+    }
+
+    private async loadCaptureHistoryDataURL(imagePath: string): Promise<string | null> {
+        try {
+            const blob = await getFileBlob(imagePath);
+            if (!blob) return null;
+            return await this.blobToDataURL(blob);
+        } catch (e) {
+            console.warn('Failed to load capture history image', e);
+            return null;
+        }
+    }
+
+    private getSelectionRangeHistory(limit: number = this.screenshotRangeHistoryLimit): Array<{ x: number, y: number, width: number, height: number, ts: number }> {
+        const settings = (this.plugin as any).settings || {};
+        const history = Array.isArray(settings.screenshotSelectionHistory)
+            ? settings.screenshotSelectionHistory
+            : [];
+
+        return history
+            .filter((item: any) => item && [item.x, item.y, item.width, item.height].every((value: any) => typeof value === 'number' && Number.isFinite(value)))
+            .slice(0, limit);
+    }
+
+    private isSameSelectionRange(
+        a: { x: number, y: number, width: number, height: number },
+        b: { x: number, y: number, width: number, height: number }
+    ): boolean {
+        const tolerance = 0.002;
+        return Math.abs(a.x - b.x) <= tolerance
+            && Math.abs(a.y - b.y) <= tolerance
+            && Math.abs(a.width - b.width) <= tolerance
+            && Math.abs(a.height - b.height) <= tolerance;
+    }
+
+    private async rememberSelectionRange(
+        rect: { x: number, y: number, width: number, height: number },
+        displaySize: { width: number, height: number }
+    ): Promise<void> {
+        const displayWidth = Math.max(displaySize.width || 0, 1);
+        const displayHeight = Math.max(displaySize.height || 0, 1);
+        const normalized = {
+            x: Math.max(0, Math.min(1, rect.x / displayWidth)),
+            y: Math.max(0, Math.min(1, rect.y / displayHeight)),
+            width: Math.max(0, Math.min(1, rect.width / displayWidth)),
+            height: Math.max(0, Math.min(1, rect.height / displayHeight)),
+            ts: Date.now(),
+        };
+
+        const isFullscreen = normalized.x <= 0.002
+            && normalized.y <= 0.002
+            && normalized.width >= 0.998
+            && normalized.height >= 0.998;
+        if (isFullscreen) {
+            return;
+        }
+
+        const settings = ((this.plugin as any).settings ||= {});
+        const existing = this.getSelectionRangeHistory(this.screenshotRangeHistoryLimit);
+        settings.screenshotSelectionHistory = [normalized]
+            .concat(existing.filter(item => !this.isSameSelectionRange(item, normalized)))
+            .slice(0, this.screenshotRangeHistoryLimit);
+
+        if (typeof (this.plugin as any).saveSettings === 'function') {
+            await (this.plugin as any).saveSettings(settings);
         }
     }
 
@@ -157,6 +338,40 @@ export class ScreenshotManager {
                         pointer-events: none;
                         z-index: 100;
                     }
+                    .history-badge {
+                        position: absolute;
+                        right: 20px;
+                        top: 20px;
+                        background: rgba(0,0,0,0.6);
+                        color: white;
+                        padding: 8px 12px;
+                        border-radius: 999px;
+                        font-size: 12px;
+                        pointer-events: none;
+                        z-index: 101;
+                        display: none;
+                        max-width: 40vw;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+                    .range-badge {
+                        position: absolute;
+                        right: 20px;
+                        top: 58px;
+                        background: rgba(0,0,0,0.6);
+                        color: white;
+                        padding: 8px 12px;
+                        border-radius: 999px;
+                        font-size: 12px;
+                        pointer-events: none;
+                        z-index: 101;
+                        display: none;
+                        max-width: 40vw;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
                 </style>
             </head>
             <body>
@@ -173,38 +388,167 @@ export class ScreenshotManager {
                     <div class="resize-handle edge vertical handle-w"></div>
                 </div>
                 <div id="info"></div>
-                <div class="hint">鼠标左键拖拽进行选择，按回车确认，Esc或右键取消</div>
+                <div class="hint" id="hint">默认全屏，直接回车确认；拖拽可重新框选；按 R / Shift+R 回顾历史范围；按 ， / 。 回顾历史截图</div>
+                <div class="history-badge" id="history-badge"></div>
+                <div class="range-badge" id="range-badge"></div>
                 <script>
                     const { ipcRenderer } = require('electron');
+                    const fs = require('fs');
                     const selection = document.getElementById('selection');
                     const overlay = document.getElementById('overlay');
                     const info = document.getElementById('info');
                     const background = document.getElementById('background');
+                    const hint = document.getElementById('hint');
+                    const historyBadge = document.getElementById('history-badge');
+                    const rangeBadge = document.getElementById('range-badge');
 
                     let mode = 'none';
                     let startX, startY;
                     let initialRect = { left: 0, top: 0, width: 0, height: 0 };
                     let resizeDirection = '';
                     let currentSessionId = '';
+                    let liveDataURL = '';
+                    let historyEntries = [];
+                    let historyCursor = -1;
+                    let rangeEntries = [];
+                    let rangeCursor = -1;
+
+                    function setHintText(text) {
+                        if (hint) hint.textContent = text;
+                    }
+
+                    function updateHistoryBadge() {
+                        if (!historyBadge) return;
+                        if (historyCursor < 0 || !historyEntries[historyCursor]) {
+                            historyBadge.style.display = 'none';
+                            return;
+                        }
+                        const item = historyEntries[historyCursor];
+                        historyBadge.style.display = 'block';
+                        historyBadge.textContent = '历史 ' + (historyCursor + 1) + '/' + historyEntries.length + '  ' + item.name;
+                    }
+
+                    function updateRangeBadge() {
+                        if (!rangeBadge) return;
+                        if (rangeCursor < 0 || !rangeEntries[rangeCursor]) {
+                            rangeBadge.style.display = 'none';
+                            return;
+                        }
+                        const item = rangeEntries[rangeCursor];
+                        rangeBadge.style.display = 'block';
+                        rangeBadge.textContent = '范围 ' + (rangeCursor + 1) + '/' + rangeEntries.length + '  ' + Math.round(item.width * window.innerWidth) + ' x ' + Math.round(item.height * window.innerHeight);
+                    }
+
+                    function clearRangePreview() {
+                        rangeCursor = -1;
+                        updateRangeBadge();
+                    }
+
+                    function applySelectionRect(left, top, width, height) {
+                        selection.style.display = 'block';
+                        selection.style.left = left + 'px';
+                        selection.style.top = top + 'px';
+                        selection.style.width = width + 'px';
+                        selection.style.height = height + 'px';
+                        overlay.style.display = 'none';
+                        updateInfo();
+                    }
+
+                    function applyFullscreenSelection() {
+                        applySelectionRect(0, 0, window.innerWidth, window.innerHeight);
+                    }
 
                     function resetState() {
                         mode = 'none';
                         resizeDirection = '';
-                        selection.style.display = 'none';
+                        clearRangePreview();
                         selection.style.left = '0px';
                         selection.style.top = '0px';
                         selection.style.width = '0px';
                         selection.style.height = '0px';
                         selection.classList.remove('movable');
-                        overlay.style.display = 'block';
                         info.style.display = 'none';
+                        applyFullscreenSelection();
+                    }
+
+                    function isFullSelection() {
+                        const rect = selection.getBoundingClientRect();
+                        return rect.left <= 0 && rect.top <= 0 && Math.abs(rect.width - window.innerWidth) <= 2 && Math.abs(rect.height - window.innerHeight) <= 2;
+                    }
+
+                    function switchToLiveCapture(resetSelection = true) {
+                        historyCursor = -1;
+                        background.src = liveDataURL || '';
+                        updateHistoryBadge();
+                        setHintText('默认全屏，直接回车确认；拖拽可重新框选；按 R / Shift+R 回顾历史范围；按 ， / 。 回顾历史截图');
+                        if (resetSelection) {
+                            resetState();
+                        }
+                    }
+
+                    function getHistoryImageSrc(item) {
+                        if (!item) return '';
+                        if (item.dataURL) return item.dataURL;
+                        try {
+                            const bytes = fs.readFileSync(item.absolutePath);
+                            item.dataURL = 'data:image/png;base64,' + bytes.toString('base64');
+                            return item.dataURL;
+                        } catch (e) {
+                            console.error('Failed to read capture history image', e);
+                            return '';
+                        }
+                    }
+
+                    function applyNormalizedRect(normalizedRect) {
+                        if (!normalizedRect) return;
+                        const left = Math.max(0, Math.min(window.innerWidth - 10, Math.round(normalizedRect.x * window.innerWidth)));
+                        const top = Math.max(0, Math.min(window.innerHeight - 10, Math.round(normalizedRect.y * window.innerHeight)));
+                        const width = Math.max(10, Math.min(window.innerWidth - left, Math.round(normalizedRect.width * window.innerWidth)));
+                        const height = Math.max(10, Math.min(window.innerHeight - top, Math.round(normalizedRect.height * window.innerHeight)));
+                        applySelectionRect(left, top, width, height);
+                    }
+
+                    function previewRange(index) {
+                        if (index < 0 || index >= rangeEntries.length) return;
+                        if (historyCursor >= 0) {
+                            historyCursor = -1;
+                            background.src = liveDataURL || '';
+                            updateHistoryBadge();
+                        }
+                        rangeCursor = index;
+                        const item = rangeEntries[index];
+                        const left = Math.max(0, Math.min(window.innerWidth - 10, Math.round(item.x * window.innerWidth)));
+                        const top = Math.max(0, Math.min(window.innerHeight - 10, Math.round(item.y * window.innerHeight)));
+                        const width = Math.max(10, Math.min(window.innerWidth - left, Math.round(item.width * window.innerWidth)));
+                        const height = Math.max(10, Math.min(window.innerHeight - top, Math.round(item.height * window.innerHeight)));
+                        applySelectionRect(left, top, width, height);
+                        updateRangeBadge();
+                        setHintText('R 回顾更早的框选范围；Shift+R 返回更新的范围；回车确认当前范围；拖拽可微调');
+                    }
+
+                    function previewHistory(index) {
+                        if (index < 0 || index >= historyEntries.length) return;
+                        historyCursor = index;
+                        const item = historyEntries[index];
+                        const historySrc = getHistoryImageSrc(item);
+                        if (!historySrc) return;
+                        background.src = historySrc;
+                        selection.classList.remove('movable');
+                        mode = 'none';
+                        resizeDirection = '';
+                        clearRangePreview();
+                        applyNormalizedRect(item.normalizedRect);
+                        updateHistoryBadge();
+                        setHintText('回车复用当前历史截图；按 。 返回更新的截图；拖拽任意位置回到实时截图重新框选');
                     }
 
                     ipcRenderer.on('imgreeditor-selection-init', (_e, payload) => {
                         if (!payload) return;
                         currentSessionId = payload.sessionId || '';
-                        background.src = payload.dataURL || '';
-                        resetState();
+                        liveDataURL = payload.dataURL || '';
+                        historyEntries = Array.isArray(payload.historyEntries) ? payload.historyEntries : [];
+                        rangeEntries = Array.isArray(payload.selectionRangeEntries) ? payload.selectionRangeEntries : [];
+                        switchToLiveCapture(true);
                     });
 
                     function updateInfo() {
@@ -244,6 +588,11 @@ export class ScreenshotManager {
                         }
                         if (e.button !== 0) return;
 
+                        if (historyCursor >= 0) {
+                            switchToLiveCapture(true);
+                        }
+                        clearRangePreview();
+
                         const target = e.target;
                         const direction = getResizeDirection(target);
 
@@ -254,7 +603,7 @@ export class ScreenshotManager {
                             startY = e.clientY;
                             const rect = selection.getBoundingClientRect();
                             initialRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
-                        } else if (selection.style.display === 'block' && isInsideSelection(e.clientX, e.clientY)) {
+                        } else if (selection.style.display === 'block' && isInsideSelection(e.clientX, e.clientY) && !isFullSelection()) {
                             mode = 'moving';
                             startX = e.clientX;
                             startY = e.clientY;
@@ -363,10 +712,19 @@ export class ScreenshotManager {
                     });
 
                     function confirmSelection() {
+                        if (historyCursor >= 0 && historyEntries[historyCursor]) {
+                            ipcRenderer.send('imgreeditor-selection-done', {
+                                sessionId: currentSessionId,
+                                kind: 'history',
+                                id: historyEntries[historyCursor].id
+                            });
+                            return;
+                        }
                         const rect = selection.getBoundingClientRect();
                         if (currentSessionId && rect.width >= 2 && rect.height >= 2) {
                             ipcRenderer.send('imgreeditor-selection-done', {
                                 sessionId: currentSessionId,
+                                kind: 'capture',
                                 rect: {
                                     x: Math.round(rect.left),
                                     y: Math.round(rect.top),
@@ -383,6 +741,35 @@ export class ScreenshotManager {
                             confirmSelection();
                         } else if (e.key === 'Escape') {
                             ipcRenderer.send('imgreeditor-selection-cancel', { sessionId: currentSessionId });
+                        } else if ((e.key === ',' || e.key === '，') && historyEntries.length > 0) {
+                            e.preventDefault();
+                            const nextIndex = historyCursor < 0 ? 0 : Math.min(historyCursor + 1, historyEntries.length - 1);
+                            previewHistory(nextIndex);
+                        } else if ((e.key === '.' || e.key === '。') && (historyEntries.length > 0 || historyCursor >= 0)) {
+                            e.preventDefault();
+                            if (historyCursor <= 0) {
+                                switchToLiveCapture(true);
+                            } else {
+                                previewHistory(historyCursor - 1);
+                            }
+                        } else if (e.key && e.key.toLowerCase() === 'r' && rangeEntries.length > 0) {
+                            e.preventDefault();
+                            if (e.shiftKey) {
+                                if (rangeCursor <= 0) {
+                                    switchToLiveCapture(true);
+                                } else {
+                                    previewRange(rangeCursor - 1);
+                                }
+                            } else {
+                                const nextIndex = rangeCursor < 0 ? 0 : Math.min(rangeCursor + 1, rangeEntries.length - 1);
+                                previewRange(nextIndex);
+                            }
+                        }
+                    });
+
+                    window.addEventListener('resize', () => {
+                        if (historyCursor < 0 && selection.style.display === 'block' && isFullSelection()) {
+                            applyFullscreenSelection();
                         }
                     });
                 </script>
@@ -431,7 +818,11 @@ export class ScreenshotManager {
         }
     }
 
-    public async captureWithSelection(): Promise<{ dataURL: string, rect: { x: number, y: number, width: number, height: number } } | null> {
+    public async captureWithSelection(): Promise<
+        | { source: 'capture', dataURL: string, rect: { x: number, y: number, width: number, height: number } }
+        | { source: 'history', dataURL: string, rect: { x: number, y: number, width: number, height: number } }
+        | null
+    > {
         const remote = (window as any).require('@electron/remote');
         if (!remote) {
             pushErrMsg('当前环境不支持截图功能');
@@ -450,7 +841,26 @@ export class ScreenshotManager {
         const selection = await this.showSelectionWindow(fullDataURL);
         if (!selection) return null;
 
+        if (selection.kind === 'history') {
+            return {
+                source: 'history',
+                dataURL: selection.dataURL,
+                rect: selection.rect
+            };
+        }
+
         const scaleFactor = display.scaleFactor || 1;
+        void this.rememberSelectionRange(selection, display.size);
+        void this.rememberCaptureHistory(fullDataURL, {
+            x: Math.round(selection.x * scaleFactor),
+            y: Math.round(selection.y * scaleFactor),
+            width: Math.round(selection.width * scaleFactor),
+            height: Math.round(selection.height * scaleFactor)
+        }, {
+            width: Math.round(display.size.width * scaleFactor),
+            height: Math.round(display.size.height * scaleFactor)
+        });
+
         // Focus SiYuan window to ensure the dialog is visible if it was minimized
         try {
             remote.getCurrentWindow().show();
@@ -458,6 +868,7 @@ export class ScreenshotManager {
         } catch (e) { }
         // Selection is in screen (DIPs) coordinates, transform to pixel coordinates
         return {
+            source: 'capture',
             dataURL: fullDataURL,
             rect: {
                 x: Math.round(selection.x * scaleFactor),
@@ -468,7 +879,11 @@ export class ScreenshotManager {
         };
     }
 
-    private async showSelectionWindow(dataURL: string): Promise<{ x: number, y: number, width: number, height: number } | null> {
+    private async showSelectionWindow(dataURL: string): Promise<
+        | { kind: 'capture', x: number, y: number, width: number, height: number }
+        | { kind: 'history', dataURL: string, rect: { x: number, y: number, width: number, height: number } }
+        | null
+    > {
         return new Promise((resolve) => {
             const remote = (window as any).require('@electron/remote');
             const { screen, ipcMain } = remote;
@@ -479,65 +894,86 @@ export class ScreenshotManager {
             // Generate a unique ID for this selection session to avoid IPC collisions
             const sessionId = `selection-${Date.now()}`;
 
-            const win = this.ensureSelectionWindow(remote, display);
-            win.setBounds({
-                x: display.bounds.x,
-                y: display.bounds.y,
-                width,
-                height
-            });
+            void Promise.all([
+                this.getRecentCaptureHistory(50),
+                Promise.resolve(this.getSelectionRangeHistory()),
+            ]).then(([historyEntries, selectionRangeEntries]) => {
+                const win = this.ensureSelectionWindow(remote, display);
+                win.setBounds({
+                    x: display.bounds.x,
+                    y: display.bounds.y,
+                    width,
+                    height
+                });
 
-            const onWindowClosed = () => {
-                cleanupListeners();
-                resolve(null);
-            };
-
-            const cleanupListeners = () => {
-                ipcMain.removeListener('imgreeditor-selection-done', onDone);
-                ipcMain.removeListener('imgreeditor-selection-cancel', onCancel);
-                win.removeListener('closed', onWindowClosed);
-            };
-
-            const onDone = (_event, payload) => {
-                if (!payload || payload.sessionId !== sessionId) return;
-                cleanupListeners();
-                if (!win.isDestroyed()) {
-                    win.hide();
-                }
-                resolve(payload.rect || null);
-            };
-            const onCancel = (_event, payload) => {
-                if (!payload || payload.sessionId !== sessionId) return;
-                cleanupListeners();
-                if (!win.isDestroyed()) {
-                    win.hide();
-                }
-                resolve(null);
-            };
-
-            ipcMain.on('imgreeditor-selection-done', onDone);
-            ipcMain.on('imgreeditor-selection-cancel', onCancel);
-            win.once('closed', onWindowClosed);
-
-            const startSelection = () => {
-                if (win.isDestroyed()) {
+                const onWindowClosed = () => {
                     cleanupListeners();
                     resolve(null);
-                    return;
-                }
-                win.webContents.send('imgreeditor-selection-init', {
-                    sessionId,
-                    dataURL
-                });
-                win.show();
-                win.focus();
-            };
+                };
 
-            if (win.webContents.isLoading()) {
-                win.webContents.once('did-finish-load', startSelection);
-            } else {
-                startSelection();
-            }
+                const cleanupListeners = () => {
+                    ipcMain.removeListener('imgreeditor-selection-done', onDone);
+                    ipcMain.removeListener('imgreeditor-selection-cancel', onCancel);
+                    win.removeListener('closed', onWindowClosed);
+                };
+
+                const onDone = async (_event, payload) => {
+                    if (!payload || payload.sessionId !== sessionId) return;
+                    cleanupListeners();
+                    if (!win.isDestroyed()) {
+                        win.hide();
+                    }
+                    if (payload.kind === 'history' && payload.id) {
+                        const entry = historyEntries.find(item => item.id === payload.id);
+                        if (!entry) {
+                            resolve(null);
+                            return;
+                        }
+                        const historyDataURL = await this.loadCaptureHistoryDataURL(entry.imagePath);
+                        if (!historyDataURL) {
+                            resolve(null);
+                            return;
+                        }
+                        resolve({ kind: 'history', dataURL: historyDataURL, rect: entry.rect });
+                        return;
+                    }
+                    resolve(payload.rect ? { kind: 'capture', ...payload.rect } : null);
+                };
+                const onCancel = (_event, payload) => {
+                    if (!payload || payload.sessionId !== sessionId) return;
+                    cleanupListeners();
+                    if (!win.isDestroyed()) {
+                        win.hide();
+                    }
+                    resolve(null);
+                };
+
+                ipcMain.on('imgreeditor-selection-done', onDone);
+                ipcMain.on('imgreeditor-selection-cancel', onCancel);
+                win.once('closed', onWindowClosed);
+
+                const startSelection = () => {
+                    if (win.isDestroyed()) {
+                        cleanupListeners();
+                        resolve(null);
+                        return;
+                    }
+                    win.webContents.send('imgreeditor-selection-init', {
+                        sessionId,
+                        dataURL,
+                        historyEntries,
+                        selectionRangeEntries
+                    });
+                    win.show();
+                    win.focus();
+                };
+
+                if (win.webContents.isLoading()) {
+                    win.webContents.once('did-finish-load', startSelection);
+                } else {
+                    startSelection();
+                }
+            });
         });
     }
 
@@ -559,7 +995,7 @@ export class ScreenshotManager {
     // saveToHistory removed: ImageEditor.svelte provides screenshot history handling
 
     public async showHistoryDialog(onSelect?: (path: string) => void) {
-        const path = 'data/storage/petal/siyuan-plugin-imgReEditor/screenshot_history';
+        const path = this.screenshotHistoryPath;
 
         try {
             let files = await readDir(path);

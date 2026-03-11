@@ -71,7 +71,7 @@ export default class PluginSample extends Plugin {
             icon: 'iconImgReEditor',
             title: 'ImgReEditor',
             position: 'right',
-            callback: (event) => {
+            callback: () => {
                 let rect = topBarElement.getBoundingClientRect();
                 // 使用 Menu API 创建独立菜单实例
                 const menu = new Menu('imgreeditor-topbar', () => {
