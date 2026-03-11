@@ -412,13 +412,13 @@ export class ScreenshotManager {
             const onDone = (_event, rect) => {
                 ipcMain.removeListener(sessionId + '-done', onDone);
                 ipcMain.removeListener(sessionId + '-cancel', onCancel);
-                win.close();
+                win.destroy();
                 resolve(rect);
             };
             const onCancel = () => {
                 ipcMain.removeListener(sessionId + '-done', onDone);
                 ipcMain.removeListener(sessionId + '-cancel', onCancel);
-                win.close();
+                win.destroy();
                 resolve(null);
             };
 
