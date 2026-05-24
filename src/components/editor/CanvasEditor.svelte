@@ -130,6 +130,49 @@
         return bg;
     }
 
+    function getVisualBounds(obj: any) {
+        if (!obj) return null;
+
+        try {
+            obj.setCoords?.();
+            if (typeof obj.getBoundingRect === 'function') {
+                const rect = obj.getBoundingRect();
+                const width = Number(rect.width || 0);
+                const height = Number(rect.height || 0);
+                if (width > 0 && height > 0) {
+                    const left = Number(rect.left || 0);
+                    const top = Number(rect.top || 0);
+                    return {
+                        left,
+                        top,
+                        width,
+                        height,
+                        centerX: left + width / 2,
+                        centerY: top + height / 2,
+                    };
+                }
+            }
+        } catch (e) {}
+
+        const width = Math.abs(Number(obj.width || 0) * Number(obj.scaleX || 1));
+        const height = Math.abs(Number(obj.height || 0) * Number(obj.scaleY || 1));
+        if (width <= 0 || height <= 0) return null;
+
+        const center =
+            typeof obj.getCenterPoint === 'function'
+                ? obj.getCenterPoint()
+                : new Point(Number(obj.left || 0) + width / 2, Number(obj.top || 0) + height / 2);
+
+        return {
+            left: center.x - width / 2,
+            top: center.y - height / 2,
+            width,
+            height,
+            centerX: center.x,
+            centerY: center.y,
+        };
+    }
+
     function updateCurrentNumberFromCanvas() {
         if (!canvas) return;
         let maxNum = 0;
@@ -4017,12 +4060,12 @@
     const handleZoom1to1 = () => {
         if (!canvas || !canvas.backgroundImage) return;
         const bg = canvas.backgroundImage;
-        const imgW = (bg.width || 0) * (bg.scaleX || 1);
-        const imgH = (bg.height || 0) * (bg.scaleY || 1);
+        const bounds = getVisualBounds(bg);
+        if (!bounds) return;
         const cw = canvas.getWidth();
         const ch = canvas.getHeight();
-        const tx = (cw - imgW) / 2;
-        const ty = (ch - imgH) / 2;
+        const tx = cw / 2 - bounds.centerX;
+        const ty = ch / 2 - bounds.centerY;
         canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
         updateZoomDisplay();
         canvas.requestRenderAll();
@@ -4062,24 +4105,12 @@
 
         if (bg || boundary) {
             // Use logical dimensions for centering to avoid issues with current transform
-            let imgW, imgH, imgCenterX, imgCenterY;
+            const bounds = getVisualBounds(bg || boundary);
 
-            if (bg) {
-                imgW = (bg.width || 0) * (bg.scaleX || 1);
-                imgH = (bg.height || 0) * (bg.scaleY || 1);
-                imgCenterX = (bg.left || 0) + imgW / 2;
-                imgCenterY = (bg.top || 0) + imgH / 2;
-            } else {
-                imgW = (boundary as any).width * ((boundary as any).scaleX || 1);
-                imgH = (boundary as any).height * ((boundary as any).scaleY || 1);
-                imgCenterX = (boundary as any).left + imgW / 2;
-                imgCenterY = (boundary as any).top + imgH / 2;
-            }
-
-            if (imgW > 0 && imgH > 0) {
-                const scale = Math.min(cw / imgW, ch / imgH, 1) * 0.98;
-                const tx = cw / 2 - imgCenterX * scale;
-                const ty = ch / 2 - imgCenterY * scale;
+            if (bounds) {
+                const scale = Math.min(cw / bounds.width, ch / bounds.height, 1) * 0.98;
+                const tx = cw / 2 - bounds.centerX * scale;
+                const ty = ch / 2 - bounds.centerY * scale;
 
                 canvas.setViewportTransform([scale, 0, 0, scale, tx, ty]);
             }
@@ -5736,7 +5767,8 @@
 
             // 1. Rotate background if exists
             if (bg) {
-                bg.set('angle', (bg.angle + angleDelta) % 360);
+                bg.set('angle', ((Number(bg.angle) || 0) + angleDelta) % 360);
+                bg.setPositionByOrigin(center, 'center', 'center');
                 bg.setCoords();
             }
 
@@ -5762,7 +5794,7 @@
                 }
 
                 o.setPositionByOrigin(new Point(newX, newY), 'center', 'center');
-                o.set('angle', (o.angle + angleDelta) % 360);
+                o.set('angle', ((Number(o.angle) || 0) + angleDelta) % 360);
                 o.setCoords();
             });
 
