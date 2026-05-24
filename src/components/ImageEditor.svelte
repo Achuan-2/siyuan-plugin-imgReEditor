@@ -11,6 +11,9 @@
     import { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } from '../utils';
     import { pushMsg, pushErrMsg } from '../api';
 
+    const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
+    type OutputImageFormat = 'png' | 'jpeg';
+
     export let imagePath: string;
     export let blockId: string | null = null;
     export let settings: any;
@@ -117,7 +120,7 @@
                 canvasJSON,
             };
             const metaValue = JSON.stringify(metaObj);
-            const newBuffer = insertPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor', metaValue);
+            const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
             const newBlob = new Blob([newBuffer as any], { type: 'image/png' });
             return { blob: newBlob, dataURL };
         } catch (e) {
@@ -173,7 +176,7 @@
         }
 
         const metaValue = JSON.stringify(metaObj);
-        const newBuffer = insertPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor', metaValue);
+        const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
         const newBlob = new Blob([newBuffer as any], { type: 'image/png' });
 
         // Save image to history
@@ -463,12 +466,49 @@
         });
     }
 
+    function getFileExtension(fileName: string) {
+        const lastDot = fileName.lastIndexOf('.');
+        return lastDot >= 0 ? fileName.slice(lastDot + 1).toLowerCase() : '';
+    }
+
+    function replaceFileExtension(fileName: string, ext: string) {
+        const lastDot = fileName.lastIndexOf('.');
+        return lastDot >= 0 ? fileName.replace(/\.[^.]+$/, `.${ext}`) : `${fileName}.${ext}`;
+    }
+
+    function isSupportedOutputExtension(ext: string) {
+        return ['png', 'jpg', 'jpeg'].includes(ext.toLowerCase());
+    }
+
+    function getOutputFormatByFileName(fileName: string): OutputImageFormat {
+        const ext = getFileExtension(fileName);
+        return ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : 'png';
+    }
+
+    function getOutputMime(format: OutputImageFormat) {
+        return format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    }
+
+    function getImageCompressionQuality() {
+        const rawQuality = Number(settings?.imageCompressionQuality ?? 92);
+        const normalizedQuality = Number.isFinite(rawQuality) ? rawQuality : 92;
+        return Math.min(100, Math.max(1, normalizedQuality)) / 100;
+    }
+
+    function getExportQuality(format: OutputImageFormat) {
+        if (format !== 'jpeg') return 1;
+        return settings?.enableImageCompression === false ? 1 : getImageCompressionQuality();
+    }
+
     // ensureDirExists removed (not used)
 
     // verifyImage helper removed; using direct TUI load with fallback validation
 
     async function loadImage() {
         try {
+            hasExistingMetadata = false;
+            savedEditorData = null;
+
             if (!imagePath) {
                 if (isCanvasMode) {
                     editorReady = true;
@@ -526,13 +566,13 @@
 
             const lastDot = originalFileName.lastIndexOf('.');
             originalExt = lastDot >= 0 ? originalFileName.slice(lastDot + 1).toLowerCase() : 'png';
-            needConvertToPNG = originalExt === 'jpg' || originalExt === 'jpeg';
+            needConvertToPNG = !isSupportedOutputExtension(originalExt);
 
             const buffer = new Uint8Array(await blob.arrayBuffer());
             let editorData = null;
             // use locatePNGtEXt to verify PNG and read with readPNGTextChunk
             if (locatePNGtEXt(buffer)) {
-                const meta = readPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor');
+                const meta = readPNGTextChunk(buffer, EDITOR_METADATA_KEY);
                 if (meta) {
                     try {
                         editorData = JSON.parse(meta);
@@ -546,7 +586,12 @@
             // In backup mode try to load the separate JSON file stored in backup folder
             // Try the embedded metadata's backupFileName first (if present), then fall back
             // to a JSON file named after the current image (`originalFileName`.json).
-            if (settings.storageMode === 'backup') {
+            if (
+                settings.storageMode === 'backup' ||
+                !editorData ||
+                editorData.backupFileName ||
+                getOutputFormatByFileName(originalFileName) !== 'png'
+            ) {
                 try {
                     const expectedBackupName = `${originalFileName}.json`;
                     const candidates: string[] = [];
@@ -574,6 +619,8 @@
                         try {
                             const saved = JSON.parse(loadedText);
                             if (!editorData) editorData = {};
+                            if (typeof saved.isCanvasMode === 'boolean')
+                                editorData.isCanvasMode = saved.isCanvasMode;
                             if (saved.canvasJSON) editorData.canvasJSON = saved.canvasJSON;
                             if (saved.cropData) editorData.cropData = saved.cropData;
                             if (saved.originalImageDimensions)
@@ -684,10 +731,31 @@
 
             const canvasJSON = canvasEditorRef?.toJSON ? await canvasEditorRef.toJSON() : null;
 
-            // export image as PNG dataurl
+            // Determine backup names before export so the output format follows the file suffix.
+            let saveName = '';
+            if (!imagePath && isCanvasMode) {
+                const now = new Date();
+                const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                saveName = `canvas-${timestamp}.png`;
+                originalFileName = saveName;
+                originalExt = 'png';
+            } else {
+                saveName = needConvertToPNG
+                    ? replaceFileExtension(originalFileName, 'png')
+                    : originalFileName;
+            }
+
+            const outputFormat = getOutputFormatByFileName(saveName);
+            const outputMime = getOutputMime(outputFormat);
+            const outputQuality = getExportQuality(outputFormat);
+
+            // Export image data using the same format as the saved filename.
             let dataURL: string | null = null;
             if (canvasEditorRef && typeof canvasEditorRef.toDataURL === 'function') {
-                dataURL = await canvasEditorRef.toDataURL();
+                dataURL = await canvasEditorRef.toDataURL({
+                    format: outputFormat,
+                    quality: outputQuality,
+                });
             } else {
                 // No legacy TUI exporter available
                 dataURL = null;
@@ -698,24 +766,7 @@
             }
             // Convert dataURL to blob
             const blob = dataURLToBlob(dataURL);
-
-            // Determine backup names and write metadata into PNG
-            // Use original filename without -original suffix
-            let saveName = '';
-            if (!imagePath && isCanvasMode) {
-                // generate a new name for the canvas
-                const now = new Date();
-                const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-                saveName = `canvas-${timestamp}.png`;
-                originalFileName = saveName;
-            } else {
-                saveName = needConvertToPNG
-                    ? originalFileName.replace(/\.[^.]+$/, '.png')
-                    : originalFileName;
-            }
-
-            // Base the saved PNG on the edited image bytes (so edits are preserved)
-            const buffer = new Uint8Array(await blob.arrayBuffer());
+            const mustSaveBackupJson = settings.storageMode === 'backup' || outputFormat !== 'png';
             const metaObj: any = {
                 version: 1,
                 isCanvasMode,
@@ -729,35 +780,37 @@
                           : null,
             };
 
-            // When using backup mode, include the backup json filename in the PNG metadata
-            if (settings.storageMode === 'backup') {
-                // backup filename should be image filename + .json
+            // Non-PNG images cannot carry the editor metadata, so they always get a backup JSON.
+            if (mustSaveBackupJson) {
                 metaObj.backupFileName = `${saveName}.json`;
             }
 
-            // Do not embed canvasJSON into PNG metadata when using backup mode
-            if (settings.storageMode !== 'backup') {
-                metaObj.canvasJSON = canvasJSON;
+            let newBlob = blob;
+            if (outputFormat === 'png') {
+                if (settings.storageMode !== 'backup') {
+                    metaObj.canvasJSON = canvasJSON;
+                }
+                const buffer = new Uint8Array(await blob.arrayBuffer());
+                const metaValue = JSON.stringify(metaObj);
+                const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
+                newBlob = new Blob([newBuffer as any], { type: outputMime });
             }
-            const metaValue = JSON.stringify(metaObj);
-            const newBuffer = insertPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor', metaValue);
-            // Convert Uint8Array to ArrayBuffer for Blob constructor
-            const newBlob = new Blob([newBuffer as any], { type: 'image/png' });
 
             // Save to Siyuan using same path - replace
-            // If original ext was jpg/jpeg, we still use PNG and update name suffix
+            // If original ext is unsupported by the editor exporter, save as PNG.
             // saveName already determined above
             // prepare original backup names already determined above
 
             // (Backup mode no longer stores the original image file.)
             // In backup mode, store canvasJSON/cropData as a separate JSON file
-            if (settings.storageMode === 'backup') {
+            if (mustSaveBackupJson) {
                 try {
                     // Save JSON file in backup folder with .json extension
                     const backupJsonName = `${saveName}.json`;
                     const backupJsonPath = `${STORAGE_BACKUP_DIR}/${backupJsonName}`;
                     const jsonObj = {
                         version: 1,
+                        isCanvasMode,
                         canvasJSON,
                         cropData: isCropped ? cropData : null,
                         originalImageDimensions:
@@ -775,7 +828,7 @@
                 }
             }
             // create File and upload
-            const file = new File([newBlob], saveName, { type: 'image/png' });
+            const file = new File([newBlob], saveName, { type: outputMime });
             await putFile(`data/assets/${saveName}`, false, file);
             // verify saved asset exists in data/assets
             const checkSaved = await getFileBlob(`data/assets/${saveName}`);

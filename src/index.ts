@@ -14,6 +14,83 @@ import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
 
 export const SETTINGS_FILE = "settings.json";
+const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
+
+type CompressibleImageFormat = 'png' | 'jpeg';
+
+function getFileExtension(fileName: string) {
+    const lastDot = fileName.lastIndexOf('.');
+    return lastDot >= 0 ? fileName.slice(lastDot + 1).toLowerCase() : '';
+}
+
+function getCompressibleImageFormat(fileName: string): CompressibleImageFormat | null {
+    const ext = getFileExtension(fileName);
+    if (ext === 'png') return 'png';
+    if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
+    return null;
+}
+
+function getMimeByFormat(format: CompressibleImageFormat) {
+    return format === 'jpeg' ? 'image/jpeg' : 'image/png';
+}
+
+function getCompressionQuality(settings: any) {
+    const rawQuality = Number(settings?.imageCompressionQuality ?? 92);
+    const normalizedQuality = Number.isFinite(rawQuality) ? rawQuality : 92;
+    return Math.min(100, Math.max(1, normalizedQuality)) / 100;
+}
+
+function formatBytes(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function reencodeImageBlob(blob: Blob, format: CompressibleImageFormat, quality: number) {
+    return new Promise<Blob>((resolve, reject) => {
+        const image = new Image();
+        const objectURL = URL.createObjectURL(blob);
+        image.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = image.naturalWidth || image.width;
+                canvas.height = image.naturalHeight || image.height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('Failed to create canvas context'));
+                    return;
+                }
+
+                if (format === 'jpeg') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+                ctx.drawImage(image, 0, 0);
+
+                canvas.toBlob(
+                    outputBlob => {
+                        URL.revokeObjectURL(objectURL);
+                        if (outputBlob) {
+                            resolve(outputBlob);
+                        } else {
+                            reject(new Error('Failed to encode image'));
+                        }
+                    },
+                    getMimeByFormat(format),
+                    format === 'jpeg' ? quality : undefined
+                );
+            } catch (error) {
+                URL.revokeObjectURL(objectURL);
+                reject(error);
+            }
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(objectURL);
+            reject(new Error('Failed to load image'));
+        };
+        image.src = objectURL;
+    });
+}
 
 
 
@@ -198,6 +275,86 @@ export default class PluginSample extends Plugin {
         });
     }
 
+    private async compressImageAsset(imageURL: string, imageElement?: HTMLImageElement) {
+        const fileName = imageURL.split('/').pop() || '';
+        const format = getCompressibleImageFormat(fileName);
+        const { getFileBlob, putFile, pushMsg, pushErrMsg } = await import('./api');
+
+        if (!format) {
+            await pushErrMsg('暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG');
+            return;
+        }
+
+        try {
+            const blob = await getFileBlob(`data/${imageURL}`);
+            if (!blob || blob.size === 0) {
+                await pushErrMsg('无法获取图片文件或文件为空');
+                return;
+            }
+
+            const quality = getCompressionQuality(this.settings);
+            let compressedBlob = await reencodeImageBlob(blob, format, quality);
+
+            if (format === 'png') {
+                try {
+                    const { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } = await import(
+                        './utils'
+                    );
+                    const originalBuffer = new Uint8Array(await blob.arrayBuffer());
+                    const meta = locatePNGtEXt(originalBuffer)
+                        ? readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY)
+                        : null;
+
+                    if (meta) {
+                        const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
+                        const newBuffer = insertPNGTextChunk(
+                            compressedBuffer,
+                            EDITOR_METADATA_KEY,
+                            meta
+                        );
+                        compressedBlob = new Blob([newBuffer as any], { type: 'image/png' });
+                    }
+                } catch (error) {
+                    console.warn('Failed to preserve PNG editor metadata during compression', error);
+                }
+            }
+
+            if (compressedBlob.size >= blob.size) {
+                await pushMsg(
+                    `压缩后不会更小，已保留原图（原 ${formatBytes(blob.size)}，压缩后 ${formatBytes(compressedBlob.size)}）`
+                );
+                return;
+            }
+
+            const file = new File([compressedBlob], fileName, { type: getMimeByFormat(format) });
+            await putFile(`data/${imageURL}`, false, file);
+
+            const saved = await getFileBlob(`data/${imageURL}`);
+            if (!saved || saved.size === 0) {
+                await pushErrMsg('压缩后写入图片失败');
+                return;
+            }
+
+            const cacheBustURL = `${imageURL}?t=${Date.now()}`;
+            const refreshImage = (img: HTMLImageElement) => {
+                if (img.dataset?.src === imageURL) {
+                    img.setAttribute('data-src', imageURL);
+                    img.src = cacheBustURL;
+                }
+            };
+
+            if (imageElement) refreshImage(imageElement);
+            document.querySelectorAll('img[data-src]').forEach((img: Element) => {
+                refreshImage(img as HTMLImageElement);
+            });
+
+            await pushMsg(`压缩完成：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}`);
+        } catch (error) {
+            console.error('Compress image failed:', error);
+            await pushErrMsg('压缩图片失败');
+        }
+    }
+
     async openMenuImageHandler({ detail }) {
         const selectedElement = detail.element as HTMLElement;
         const imageElement = selectedElement.querySelector('img') as HTMLImageElement;
@@ -226,7 +383,7 @@ export default class PluginSample extends Plugin {
                     if (blob) {
                         const buffer = new Uint8Array(await blob.arrayBuffer());
                         if (locatePNGtEXt(buffer)) {
-                            const meta = readPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor');
+                            const meta = readPNGTextChunk(buffer, EDITOR_METADATA_KEY);
                             if (meta) {
                                 try {
                                     const editorData = JSON.parse(meta);
@@ -243,6 +400,21 @@ export default class PluginSample extends Plugin {
 
                 // 打开编辑器对话框
                 this.openImageEditorDialog(imageURL, blockID, isCanvasMode);
+            }
+        });
+        menu.addItem({
+            id: 'compress-image',
+            icon: 'iconImage',
+            label: '压缩图片',
+            index: 1,
+            click: async () => {
+                confirm(
+                    '压缩图片',
+                    '将使用当前压缩设置覆盖原图片，并保留原图片格式。继续吗？',
+                    async () => {
+                        await this.compressImageAsset(imageURL, imageElement);
+                    }
+                );
             }
         });
         menu.addItem({
@@ -544,7 +716,7 @@ export default class PluginSample extends Plugin {
                 originalImageDimensions: null,
             };
             const metaValue = JSON.stringify(metaObj);
-            const newBuffer = insertPNGTextChunk(buffer, 'siyuan-plugin-imgReEditor', metaValue);
+            const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
 
             // 生成唯一文件名
             const imageName = `canvas-${window.Lute.NewNodeID()}.png`;

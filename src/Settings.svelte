@@ -43,6 +43,27 @@
                     },
                 },
                 {
+                    key: 'enableImageCompression',
+                    value: settings.enableImageCompression,
+                    type: 'checkbox',
+                    title: '编辑保存后压缩图片',
+                    description:
+                        '开启后保存编辑结果时按原图片格式重新编码；PNG 保持无损，JPG/JPEG 使用下方质量比例。',
+                },
+                {
+                    key: 'imageCompressionQuality',
+                    value: settings.imageCompressionQuality,
+                    type: 'slider',
+                    title: '默认压缩质量',
+                    description:
+                        '默认 92。',
+                    slider: {
+                        min: 10,
+                        max: 100,
+                        step: 1,
+                    },
+                },
+                {
                     key: 'enableScreenshot',
                     value: settings.enableScreenshot,
                     type: 'checkbox',
