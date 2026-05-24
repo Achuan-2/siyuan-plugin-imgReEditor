@@ -2688,6 +2688,74 @@
             obj.evented = false;
         });
 
+        const createCropRectFromBounds = (bounds: {
+            left: number;
+            top: number;
+            width: number;
+            height: number;
+        }) => {
+            if (!canvas || bounds.width <= 0 || bounds.height <= 0) return;
+
+            cropRect = new CropRect({
+                left: bounds.left,
+                top: bounds.top,
+                width: bounds.width,
+                height: bounds.height,
+                fill: 'transparent',
+                stroke: null,
+                strokeWidth: 2,
+                strokeDashArray: [5, 5],
+                selectable: true,
+                evented: true,
+                lockRotation: true,
+                hasControls: true,
+                hasBorders: true,
+                transparentCorners: false,
+                cornerColor: 'white',
+                cornerStrokeColor: 'black',
+                cornerSize: 10,
+            });
+            (cropRect as any)._isCropRect = true;
+
+            const cropControls = createCropControls(
+                () => {
+                    applyCrop();
+                    return true;
+                },
+                () => {
+                    exitCropMode();
+                    return true;
+                }
+            );
+            cropRect.setCustomControls(cropControls);
+
+            canvas.add(cropRect);
+            canvas.setActiveObject(cropRect);
+            cropRect.setCoords();
+            canvas.requestRenderAll();
+        };
+
+        const getBackgroundCropBounds = () => {
+            const bg = canvas?.backgroundImage as any;
+            if (!bg) return null;
+
+            if (typeof bg.getBoundingRect === 'function') {
+                const bounds = bg.getBoundingRect();
+                if (bounds.width > 0 && bounds.height > 0) return bounds;
+            }
+
+            const width = (bg.width || 0) * (bg.scaleX || 1);
+            const height = (bg.height || 0) * (bg.scaleY || 1);
+            if (width <= 0 || height <= 0) return null;
+
+            return {
+                left: bg.left || 0,
+                top: bg.top || 0,
+                width,
+                height,
+            };
+        };
+
         // If we are re-cropping, restore the full canvas view
         if (restoreCrop && (canvas.backgroundImage as any)?._originalSrc) {
             try {
@@ -2724,42 +2792,12 @@
                     canvas.backgroundImage = origImg;
 
                     // 4. Create and show the crop rectangle at its previous position
-                    cropRect = new CropRect({
+                    createCropRectFromBounds({
                         left: offset.x,
                         top: offset.y,
                         width: restoreCrop.width,
                         height: restoreCrop.height,
-                        fill: 'transparent',
-                        stroke: null,
-                        strokeWidth: 2,
-                        strokeDashArray: [5, 5],
-                        selectable: true,
-                        evented: true,
-                        lockRotation: true,
-                        hasControls: true,
-                        hasBorders: true,
-                        transparentCorners: false,
-                        cornerColor: 'white',
-                        cornerStrokeColor: 'black',
-                        cornerSize: 10,
                     });
-                    (cropRect as any)._isCropRect = true;
-
-                    // Add custom controls with confirm and delete buttons
-                    const cropControls = createCropControls(
-                        () => {
-                            applyCrop();
-                            return true;
-                        },
-                        () => {
-                            exitCropMode();
-                            return true;
-                        }
-                    );
-                    cropRect.setCustomControls(cropControls);
-
-                    canvas.add(cropRect);
-                    canvas.setActiveObject(cropRect);
 
                     fitImageToViewport();
                     canvas.requestRenderAll();
@@ -2767,6 +2805,9 @@
             } catch (e) {
                 console.warn('Failed to restore pre-crop view', e);
             }
+        } else {
+            const bounds = getBackgroundCropBounds();
+            if (bounds) createCropRectFromBounds(bounds);
         }
 
         let isDrawing = false;
@@ -2779,14 +2820,8 @@
                 const target = opt.target;
                 if (target === cropRect) return;
 
-                // If in restore mode, do not create new crop rect, only adjust existing
-                if (restoreCrop) return;
-
-                // If user clicks outside existing crop rect, remove existing and start new
-                if (cropRect.selectable) {
-                    canvas.remove(cropRect);
-                    cropRect = null;
-                }
+                // Keep the initial image-sized crop rect; users resize/move it instead of drawing a new one.
+                return;
             }
 
             if (cropRect) return; // Should allow Fabric to handle drag if exists
@@ -2839,7 +2874,7 @@
             canvas.requestRenderAll();
         };
 
-        const applyCrop = async () => {
+        async function applyCrop() {
             if (!cropRect || !canvas || !canvas.backgroundImage) {
                 if (cropRect && canvas) canvas.remove(cropRect);
                 return;
@@ -2951,7 +2986,7 @@
             } catch (e) {
                 console.warn('Failed to apply crop', e);
             }
-        };
+        }
 
         const onMouseUp = async () => {
             if (!isDrawing) return;
