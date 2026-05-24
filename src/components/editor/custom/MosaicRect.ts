@@ -1,4 +1,4 @@
-import { Rect, classRegistry, Canvas, util } from 'fabric';
+import { Rect, classRegistry, Canvas } from 'fabric';
 
 /**
  * MosaicRect - A custom rectangle that applies a mosaic/pixelation effect
@@ -22,14 +22,17 @@ export class MosaicRect extends Rect {
         this.objectCaching = false; // Disable caching to update effect on move
     }
 
-    /**
-     * Override _render to draw the mosaic effect
-     */
     _render(ctx: CanvasRenderingContext2D): void {
         const w = this.width || 0;
         const h = this.height || 0;
 
-        // Draw the stroke first
+        const fabricCanvas = this.canvas as Canvas;
+        if (!fabricCanvas) {
+            this._drawGrayMosaic(ctx, w, h);
+        } else {
+            this._drawMosaicEffect(ctx, w, h, fabricCanvas);
+        }
+
         if (this.stroke && this.strokeWidth) {
             ctx.save();
             ctx.strokeStyle = this.stroke as string;
@@ -40,16 +43,6 @@ export class MosaicRect extends Rect {
             ctx.strokeRect(-w / 2, -h / 2, w, h);
             ctx.restore();
         }
-
-        // Get the canvas to sample from
-        const fabricCanvas = this.canvas as Canvas;
-        if (!fabricCanvas) {
-            this._drawGrayMosaic(ctx, w, h);
-            return;
-        }
-
-        // Draw mosaic effect
-        this._drawMosaicEffect(ctx, w, h, fabricCanvas);
     }
 
     /**
@@ -73,157 +66,103 @@ export class MosaicRect extends Rect {
         }
     }
 
-    /**
-     * Draw mosaic effect by sampling from background image and other objects
-     */
-    private _drawMosaicEffect(ctx: CanvasRenderingContext2D, width: number, height: number, fabricCanvas: Canvas): void {
-        const blockSize = this.blockSize;
-        if (blockSize <= 0) return;
+    private _drawMosaicEffect(
+        ctx: CanvasRenderingContext2D,
+        width: number,
+        height: number,
+        fabricCanvas: Canvas
+    ): void {
+        const blockSize = Math.max(1, Math.round(this.blockSize || 15));
+        if (width <= 0 || height <= 0) return;
+
+        const sourceBounds = this.getBoundingRect();
+        const sourceWidth = Math.max(1, Math.ceil(sourceBounds.width));
+        const sourceHeight = Math.max(1, Math.ceil(sourceBounds.height));
+
+        if (sourceWidth <= 0 || sourceHeight <= 0) {
+            this._drawGrayMosaic(ctx, width, height);
+            return;
+        }
+
+        const sceneCanvas = document.createElement('canvas');
+        sceneCanvas.width = sourceWidth;
+        sceneCanvas.height = sourceHeight;
+        const sceneCtx = sceneCanvas.getContext('2d');
+        if (!sceneCtx) {
+            this._drawGrayMosaic(ctx, width, height);
+            return;
+        }
+
+        sceneCtx.save();
+        sceneCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+
+        const backgroundColor = (fabricCanvas as any).backgroundColor;
+        if (
+            typeof backgroundColor === 'string' &&
+            backgroundColor &&
+            backgroundColor !== 'transparent'
+        ) {
+            sceneCtx.fillStyle = backgroundColor;
+            sceneCtx.fillRect(0, 0, sourceWidth, sourceHeight);
+        }
+
+        sceneCtx.translate(-sourceBounds.left, -sourceBounds.top);
 
         const bgImage = fabricCanvas.backgroundImage as any;
-        const canvasBg = fabricCanvas.getObjects().find((o: any) => (o as any)._isCanvasBackground);
-
-        // Determine reference bounds
-        let boundingRect: any = null;
-        if (bgImage) {
-            boundingRect = bgImage.getBoundingRect();
-        } else if (canvasBg) {
-            boundingRect = canvasBg.getBoundingRect();
-        } else {
-            // Fallback to canvas dimensions
-            boundingRect = {
-                left: 0,
-                top: 0,
-                width: fabricCanvas.getWidth(),
-                height: fabricCanvas.getHeight()
-            };
+        if (bgImage && bgImage.visible !== false) {
+            bgImage.render(sceneCtx);
         }
 
-        if (!boundingRect) {
-            this._drawGrayMosaic(ctx, width, height);
-            return;
-        }
-
-        const tempWidth = Math.ceil(boundingRect.width);
-        const tempHeight = Math.ceil(boundingRect.height);
-
-        if (tempWidth <= 0 || tempHeight <= 0) {
-            this._drawGrayMosaic(ctx, width, height);
-            return;
-        }
-
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = tempWidth;
-        tempCanvas.height = tempHeight;
-        const tempCtx = tempCanvas.getContext('2d');
-        if (!tempCtx) {
-            this._drawGrayMosaic(ctx, width, height);
-            return;
-        }
-
-        // Render scene to temp canvas (Composite)
-        tempCtx.save();
-        tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
-
-        // Translate so that boundingRect top-left is at 0,0
-        tempCtx.translate(-boundingRect.left, -boundingRect.top);
-
-        // 1. Draw Background Image if exists
-        if (bgImage) {
-            const bgElement = bgImage.getElement();
-            if (bgElement) {
-                tempCtx.save();
-                tempCtx.translate(bgImage.left || 0, bgImage.top || 0);
-                tempCtx.rotate((bgImage.angle || 0) * Math.PI / 180);
-                tempCtx.scale(bgImage.scaleX || 1, bgImage.scaleY || 1);
-                if (bgImage.flipX) {
-                    tempCtx.scale(-1, 1);
-                    tempCtx.translate(-bgImage.width, 0);
-                }
-                if (bgImage.flipY) {
-                    tempCtx.scale(1, -1);
-                    tempCtx.translate(0, -bgImage.height);
-                }
-                if (bgImage.originX === 'center') tempCtx.translate(-bgImage.width / 2, 0);
-                if (bgImage.originY === 'center') tempCtx.translate(0, -bgImage.height / 2);
-
-                tempCtx.drawImage(bgElement, 0, 0);
-                tempCtx.restore();
-            }
-        }
-
-        // 2. Draw other visible objects
         const objects = fabricCanvas.getObjects();
-        objects.forEach((obj: any) => {
-            // Exclude self
-            if (obj === this) return;
-            // Exclude tools that shouldn't be part of the image
-            if (obj.type === 'crop-rect' ||
-                obj.type === 'magnifier-rect' ||
-                obj.type === 'magnifier-source-rect' ||
-                obj.type === 'magnifier-connection-line' ||
-                obj.type === 'mosaic-rect' || // exclude other mosaics to prevent recursive weirdness
-                (obj as any)._isCropRect) {
-                return;
-            }
-            if (!obj.visible) return;
+        const selfIndex = objects.indexOf(this);
+        const renderLimit = selfIndex === -1 ? objects.length : selfIndex;
+        let renderedObjectCount = bgImage && bgImage.visible !== false ? 1 : 0;
 
-            obj.render(tempCtx);
-        });
+        for (let index = 0; index < renderLimit; index++) {
+            const obj = objects[index] as any;
+            if (!obj || obj === this || obj.visible === false) continue;
+            if (this._shouldSkipSourceObject(obj)) continue;
 
-        tempCtx.restore();
-
-        // Get all image data at once for performance
-        const imageData = tempCtx.getImageData(0, 0, tempWidth, tempHeight);
-        const pixels = imageData.data;
-
-        // Get transform matrix to convert local object coordinates to global canvas coordinates
-        const matrix = this.calcTransformMatrix();
-
-        // Grid alignment origin
-        const bgOriginX = bgImage ? (bgImage.left || 0) : 0;
-        const bgOriginY = bgImage ? (bgImage.top || 0) : 0;
-        const scaleX = Math.abs(this.scaleX || 1);
-        const scaleY = Math.abs(this.scaleY || 1);
-
-        // Draw mosaic blocks
-        for (let x = -width / 2; x < width / 2; x += blockSize) {
-            for (let y = -height / 2; y < height / 2; y += blockSize) {
-                const blockW = Math.min(blockSize, width / 2 - x);
-                const blockH = Math.min(blockSize, height / 2 - y);
-
-                // Calculate the center of this block in local coordinates
-                const localX = x + blockW / 2;
-                const localY = y + blockH / 2;
-
-                // Convert local coordinates to global canvas coordinates
-                const point = util.transformPoint({ x: localX, y: localY } as any, matrix);
-
-                // Snap global point to a grid aligned with the background/origin
-                const gridStepX = blockSize * scaleX;
-                const gridStepY = blockSize * scaleY;
-
-                const gridX = Math.floor((point.x - bgOriginX) / gridStepX) * gridStepX + gridStepX / 2 + bgOriginX;
-                const gridY = Math.floor((point.y - bgOriginY) / gridStepY) * gridStepY + gridStepY / 2 + bgOriginY;
-
-                // Adjust for bounding rect offset to get coordinates in temp canvas
-                const tempX = Math.floor(gridX - boundingRect.left);
-                const tempY = Math.floor(gridY - boundingRect.top);
-
-                if (tempX >= 0 && tempX < tempWidth && tempY >= 0 && tempY < tempHeight) {
-                    const pixelIdx = (tempY * tempWidth + tempX) * 4;
-                    const r = pixels[pixelIdx];
-                    const g = pixels[pixelIdx + 1];
-                    const b = pixels[pixelIdx + 2];
-                    const a = pixels[pixelIdx + 3];
-
-                    if (a > 0) {
-                        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
-                        ctx.fillRect(x, y, blockW, blockH);
-                    }
-                }
-            }
+            obj.render(sceneCtx);
+            renderedObjectCount++;
         }
+
+        sceneCtx.restore();
+
+        if (renderedObjectCount === 0) {
+            this._drawGrayMosaic(ctx, width, height);
+            return;
+        }
+
+        const pixelWidth = Math.max(1, Math.ceil(width / blockSize));
+        const pixelHeight = Math.max(1, Math.ceil(height / blockSize));
+        const pixelCanvas = document.createElement('canvas');
+        pixelCanvas.width = pixelWidth;
+        pixelCanvas.height = pixelHeight;
+        const pixelCtx = pixelCanvas.getContext('2d');
+
+        if (!pixelCtx) {
+            this._drawGrayMosaic(ctx, width, height);
+            return;
+        }
+
+        pixelCtx.imageSmoothingEnabled = true;
+        pixelCtx.drawImage(sceneCanvas, 0, 0, pixelWidth, pixelHeight);
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(pixelCanvas, -width / 2, -height / 2, width, height);
+        ctx.restore();
+    }
+
+    private _shouldSkipSourceObject(obj: any): boolean {
+        return (
+            obj._isCropRect ||
+            obj.type === 'crop-rect' ||
+            obj.type === 'select-canvas-size-rect' ||
+            obj.type === 'magnifier-source-rect' ||
+            obj.type === 'magnifier-connection-line'
+        );
     }
 
     /**
