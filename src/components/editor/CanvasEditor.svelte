@@ -112,6 +112,13 @@
         'lockScalingX',
         'lockScalingY',
         'hasControls',
+        'textBackgroundEnabled',
+        'textBackgroundFill',
+        'textBackgroundOpacity',
+        'textBackgroundRadius',
+        'textBackgroundPadding',
+        'textBackgroundStrokeEnabled',
+        'textBackgroundStroke',
     ];
     // Flag to prevent recursive history updates during undo/redo
     let isHistoryProcessing = false;
@@ -164,15 +171,7 @@
                                 obj.set('width', obj.width * obj.scaleX);
                             }
                         }
-                        obj.set(
-                            getTextStrokeOptions(
-                                obj.stroke,
-                                obj.strokeWidth,
-                                obj.fontSize,
-                                '#ffffff'
-                            )
-                        );
-                        obj.dirty = true;
+                        applyTextRenderingOptions(obj);
                     }
                 }
                 obj.setCoords();
@@ -262,6 +261,142 @@
             strokeLineJoin: 'round',
             strokeMiterLimit: 2,
         };
+    }
+
+    const TEXT_BACKGROUND_PROPS = [
+        'textBackgroundEnabled',
+        'textBackgroundFill',
+        'textBackgroundOpacity',
+        'textBackgroundRadius',
+        'textBackgroundPadding',
+        'textBackgroundStrokeEnabled',
+        'textBackgroundStroke',
+    ];
+
+    function clampNumber(value: any, fallback: number, min: number, max: number) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.min(max, Math.max(min, n));
+    }
+
+    function hasTextBackgroundOption(options: any) {
+        if (!options) return false;
+        return TEXT_BACKGROUND_PROPS.some(prop => typeof options[prop] !== 'undefined');
+    }
+
+    function getTextBackgroundOptions(options: any = {}) {
+        return {
+            textBackgroundEnabled: !!options.textBackgroundEnabled,
+            textBackgroundFill: options.textBackgroundFill || '#ffffff',
+            textBackgroundOpacity: clampNumber(options.textBackgroundOpacity, 0.8, 0, 1),
+            textBackgroundRadius: clampNumber(options.textBackgroundRadius, 4, 0, 120),
+            textBackgroundPadding: clampNumber(options.textBackgroundPadding, 6, 0, 120),
+            textBackgroundStrokeEnabled: !!options.textBackgroundStrokeEnabled,
+            textBackgroundStroke:
+                options.textBackgroundStroke || options.textBackgroundFill || '#ffffff',
+        };
+    }
+
+    function isTransparentColor(color: any) {
+        if (!color || typeof color !== 'string') return !color;
+        const c = color.trim().toLowerCase();
+        return (
+            c === 'transparent' ||
+            c === 'none' ||
+            c === 'rgba(0,0,0,0)' ||
+            c === 'rgba(0, 0, 0, 0)'
+        );
+    }
+
+    function drawRoundRectPath(
+        ctx: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        radius: number
+    ) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        if ((ctx as any).roundRect) {
+            (ctx as any).roundRect(x, y, width, height, r);
+            return;
+        }
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + width - r, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+        ctx.lineTo(x + width, y + height - r);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        ctx.lineTo(x + r, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    }
+
+    function drawTextBackground(ctx: CanvasRenderingContext2D, textObj: any) {
+        const opts = getTextBackgroundOptions(textObj);
+        if (!opts.textBackgroundEnabled) return;
+
+        const width = Number(textObj.width || 0);
+        const height = Number(textObj.height || 0);
+        if (width <= 0 || height <= 0) return;
+
+        const padding = opts.textBackgroundPadding;
+        const rectLeft = -width / 2 - padding;
+        const rectTop = -height / 2 - padding;
+        const rectWidth = width + padding * 2;
+        const rectHeight = height + padding * 2;
+        const fill = colorWithOpacity(opts.textBackgroundFill, opts.textBackgroundOpacity);
+
+        ctx.save();
+        if (!isTransparentColor(fill)) {
+            drawRoundRectPath(ctx, rectLeft, rectTop, rectWidth, rectHeight, opts.textBackgroundRadius);
+            ctx.fillStyle = fill as string;
+            ctx.fill();
+        }
+
+        if (opts.textBackgroundStrokeEnabled && !isTransparentColor(opts.textBackgroundStroke)) {
+            drawRoundRectPath(
+                ctx,
+                rectLeft + 0.5,
+                rectTop + 0.5,
+                rectWidth - 1,
+                rectHeight - 1,
+                opts.textBackgroundRadius
+            );
+            ctx.strokeStyle = opts.textBackgroundStroke;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    function applyTextBackgroundRenderer(textObj: any) {
+        if (!textObj || !['i-text', 'textbox', 'text'].includes(textObj.type)) return;
+
+        if (!textObj.__imgReEditorOriginalRender && typeof textObj._render === 'function') {
+            textObj.__imgReEditorOriginalRender = textObj._render;
+        }
+
+        if (!textObj.__imgReEditorTextBackgroundRenderer) {
+            textObj._render = function (ctx: CanvasRenderingContext2D) {
+                drawTextBackground(ctx, this);
+                return this.__imgReEditorOriginalRender.call(this, ctx);
+            };
+            textObj.__imgReEditorTextBackgroundRenderer = true;
+        }
+
+        textObj.objectCaching = false;
+        textObj.dirty = true;
+    }
+
+    function applyTextRenderingOptions(textObj: any) {
+        if (!textObj || !['i-text', 'textbox', 'text'].includes(textObj.type)) return;
+        textObj.set(
+            getTextStrokeOptions(textObj.stroke, textObj.strokeWidth, textObj.fontSize, '#ffffff')
+        );
+        applyTextBackgroundRenderer(textObj);
     }
 
     function applyFill(ctx: CanvasRenderingContext2D, fill: any, tw: number, th: number) {
@@ -837,14 +972,7 @@
                         target.set('width', target.width * target.scaleX);
                     }
                     target.setCoords();
-                    target.set(
-                        getTextStrokeOptions(
-                            target.stroke,
-                            target.strokeWidth,
-                            target.fontSize,
-                            '#ffffff'
-                        )
-                    );
+                    applyTextRenderingOptions(target);
 
                     // Update tool options so UI stays in sync
                     if (activeTool === 'text') {
@@ -1417,7 +1545,8 @@
                                           (hit as any).fontSize
                                       )
                                     : activeToolOptions.strokeWidth;
-                            hit.set(getTextStrokeOptions(hit.stroke, hit.strokeWidth, hit.fontSize));
+                            Object.assign(activeToolOptions, getTextBackgroundOptions(hit));
+                            applyTextRenderingOptions(hit);
                             canvas.requestRenderAll();
                         } catch (e) {
                             console.warn('CanvasEditor: failed to select existing text', e);
@@ -1437,6 +1566,7 @@
                         activeToolOptions.strokeWidth,
                         fontSize
                     );
+                    const textBackgroundOptions = getTextBackgroundOptions(activeToolOptions);
                     const fontWeight = activeToolOptions.bold ? 'bold' : 'normal';
                     const fontStyle = activeToolOptions.italic ? 'italic' : 'normal';
 
@@ -1450,6 +1580,7 @@
                             fontSize,
                             fill,
                             ...textStrokeOptions,
+                            ...textBackgroundOptions,
                             fontWeight,
                             fontStyle,
                             selectable: true,
@@ -1470,6 +1601,7 @@
                                 fontSize,
                                 fill,
                                 ...textStrokeOptions,
+                                ...textBackgroundOptions,
                                 fontWeight,
                                 fontStyle,
                                 selectable: true,
@@ -1491,6 +1623,7 @@
                                 fontSize,
                                 fill,
                                 ...textStrokeOptions,
+                                ...textBackgroundOptions,
                                 fontWeight,
                                 fontStyle,
                                 selectable: true,
@@ -1514,6 +1647,7 @@
                     }
 
                     canvas.add(itext);
+                    applyTextRenderingOptions(itext);
                     canvas.setActiveObject(itext);
                     canvas.requestRenderAll();
 
@@ -1601,6 +1735,7 @@
                                 active.strokeWidth,
                                 (active as any).fontSize
                             ),
+                            ...getTextBackgroundOptions(active),
                         },
                         type: active.type,
                     });
@@ -1783,6 +1918,7 @@
                                 representativeObject.strokeWidth,
                                 (representativeObject as any).fontSize
                             ),
+                            ...getTextBackgroundOptions(representativeObject),
                             bold: (representativeObject as any).fontWeight === 'bold',
                             italic: (representativeObject as any).fontStyle === 'italic',
                             isSelection: true,
@@ -2547,6 +2683,7 @@
                 activeToolOptions.strokeWidth ?? 0,
                 activeToolOptions.size
             );
+            Object.assign(activeToolOptions, getTextBackgroundOptions(activeToolOptions));
             activeToolOptions.bold = !!activeToolOptions.bold;
             activeToolOptions.italic = !!activeToolOptions.italic;
         }
@@ -4947,6 +5084,7 @@
                             typeof options.stroke !== 'undefined' ||
                             typeof options.strokeWidth !== 'undefined' ||
                             typeof options.size !== 'undefined';
+                        const shouldUpdateBackground = hasTextBackgroundOption(options);
                         const textStrokeOptions = getTextStrokeOptions(
                             typeof options.stroke !== 'undefined'
                                 ? options.stroke
@@ -4956,6 +5094,10 @@
                                 : o.strokeWidth,
                             nextFontSize
                         );
+                        const textBackgroundOptions = getTextBackgroundOptions({
+                            ...getTextBackgroundOptions(o),
+                            ...options,
+                        });
 
                         o.set({
                             paintFirst: 'stroke',
@@ -4974,6 +5116,9 @@
                             if (shouldUpdateStroke) {
                                 styles.stroke = textStrokeOptions.stroke;
                                 styles.strokeWidth = textStrokeOptions.strokeWidth;
+                            }
+                            if (shouldUpdateBackground) {
+                                o.set(textBackgroundOptions);
                             }
                             if (typeof options.bold !== 'undefined')
                                 styles.fontWeight = options.bold ? 'bold' : 'normal';
@@ -5011,6 +5156,9 @@
                                 cleanStyle('stroke');
                                 cleanStyle('strokeWidth');
                             }
+                            if (shouldUpdateBackground) {
+                                o.set(textBackgroundOptions);
+                            }
                             if (typeof options.bold !== 'undefined') {
                                 o.set('fontWeight', options.bold ? 'bold' : 'normal');
                                 cleanStyle('fontWeight');
@@ -5020,6 +5168,7 @@
                                 cleanStyle('fontStyle');
                             }
                         }
+                        applyTextBackgroundRenderer(o);
                         o.dirty = true;
                         o.setCoords && o.setCoords();
                     } else {

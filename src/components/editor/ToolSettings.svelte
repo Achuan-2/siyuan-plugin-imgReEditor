@@ -548,6 +548,107 @@
             />
             <span class="val">{settings.strokeWidth ?? 0}px</span>
         </div>
+        <div class="row">
+            <label for="text-bg-enabled">背景</label>
+            <input
+                id="text-bg-enabled"
+                type="checkbox"
+                checked={!!settings.textBackgroundEnabled}
+                on:change={e =>
+                    emitChange({
+                        textBackgroundEnabled: getChecked(e),
+                        textBackgroundFill: settings.textBackgroundFill || '#ffffff',
+                        textBackgroundOpacity: settings.textBackgroundOpacity ?? 0.8,
+                        textBackgroundRadius: settings.textBackgroundRadius ?? 4,
+                        textBackgroundPadding: settings.textBackgroundPadding ?? 6,
+                        textBackgroundStrokeEnabled: settings.textBackgroundStrokeEnabled ?? false,
+                        textBackgroundStroke:
+                            settings.textBackgroundStroke ||
+                            settings.textBackgroundFill ||
+                            '#ffffff',
+                    })}
+            />
+        </div>
+        {#if settings.textBackgroundEnabled}
+            <div class="row">
+                <label for="text-bg-fill">背景色</label>
+                <ColorPicker
+                    colorKey="text-background-fill"
+                    value={settings.textBackgroundFill || '#ffffff'}
+                    {recentColors}
+                    on:change={e => emitChange({ textBackgroundFill: e.detail })}
+                    on:recentUpdate
+                />
+            </div>
+            <div class="row">
+                <label for="text-bg-opacity">背景不透明度</label>
+                <input
+                    id="text-bg-opacity"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}
+                    on:input={e => emitChange({ textBackgroundOpacity: +getValue(e) / 100 })}
+                />
+                <span class="val">{Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}%</span>
+            </div>
+            <div class="row">
+                <label for="text-bg-radius">圆角</label>
+                <input
+                    id="text-bg-radius"
+                    type="number"
+                    min="0"
+                    max="120"
+                    step="1"
+                    value={settings.textBackgroundRadius ?? 4}
+                    on:input={e => emitChange({ textBackgroundRadius: +getValue(e) })}
+                    style="width: 72px;"
+                />
+                <span class="val">px</span>
+            </div>
+            <div class="row">
+                <label for="text-bg-padding">内边距</label>
+                <input
+                    id="text-bg-padding"
+                    type="number"
+                    min="0"
+                    max="120"
+                    step="1"
+                    value={settings.textBackgroundPadding ?? 6}
+                    on:input={e => emitChange({ textBackgroundPadding: +getValue(e) })}
+                    style="width: 72px;"
+                />
+                <span class="val">px</span>
+            </div>
+            <div class="row">
+                <label for="text-bg-stroke-enabled">边框</label>
+                <input
+                    id="text-bg-stroke-enabled"
+                    type="checkbox"
+                    checked={!!settings.textBackgroundStrokeEnabled}
+                    on:change={e =>
+                        emitChange({
+                            textBackgroundStrokeEnabled: getChecked(e),
+                            textBackgroundStroke:
+                                settings.textBackgroundStroke ||
+                                settings.textBackgroundFill ||
+                                '#ffffff',
+                        })}
+                />
+            </div>
+            {#if settings.textBackgroundStrokeEnabled}
+                <div class="row">
+                    <label for="text-bg-stroke">边框颜色</label>
+                    <ColorPicker
+                        colorKey="text-background-stroke"
+                        value={settings.textBackgroundStroke || settings.textBackgroundFill || '#ffffff'}
+                        {recentColors}
+                        on:change={e => emitChange({ textBackgroundStroke: e.detail })}
+                        on:recentUpdate
+                    />
+                </div>
+            {/if}
+        {/if}
     {:else if tool === 'number-marker'}
         <div class="row">
             <label for="num-bg-color">背景颜色</label>
