@@ -12,11 +12,10 @@ import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
+import { reencodeImageBlob, getMimeByFormat, type CompressibleImageFormat } from "./utils";
 
 export const SETTINGS_FILE = "settings.json";
 const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
-
-type CompressibleImageFormat = 'png' | 'jpeg';
 
 function getFileExtension(fileName: string) {
     const lastDot = fileName.lastIndexOf('.');
@@ -30,10 +29,6 @@ function getCompressibleImageFormat(fileName: string): CompressibleImageFormat |
     return null;
 }
 
-function getMimeByFormat(format: CompressibleImageFormat) {
-    return format === 'jpeg' ? 'image/jpeg' : 'image/png';
-}
-
 function getCompressionQuality(settings: any) {
     const rawQuality = Number(settings?.imageCompressionQuality ?? 92);
     const normalizedQuality = Number.isFinite(rawQuality) ? rawQuality : 92;
@@ -44,52 +39,6 @@ function formatBytes(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function reencodeImageBlob(blob: Blob, format: CompressibleImageFormat, quality: number) {
-    return new Promise<Blob>((resolve, reject) => {
-        const image = new Image();
-        const objectURL = URL.createObjectURL(blob);
-        image.onload = () => {
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = image.naturalWidth || image.width;
-                canvas.height = image.naturalHeight || image.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    reject(new Error('Failed to create canvas context'));
-                    return;
-                }
-
-                if (format === 'jpeg') {
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                }
-                ctx.drawImage(image, 0, 0);
-
-                canvas.toBlob(
-                    outputBlob => {
-                        URL.revokeObjectURL(objectURL);
-                        if (outputBlob) {
-                            resolve(outputBlob);
-                        } else {
-                            reject(new Error('Failed to encode image'));
-                        }
-                    },
-                    getMimeByFormat(format),
-                    format === 'jpeg' ? quality : undefined
-                );
-            } catch (error) {
-                URL.revokeObjectURL(objectURL);
-                reject(error);
-            }
-        };
-        image.onerror = () => {
-            URL.revokeObjectURL(objectURL);
-            reject(new Error('Failed to load image'));
-        };
-        image.src = objectURL;
-    });
 }
 
 

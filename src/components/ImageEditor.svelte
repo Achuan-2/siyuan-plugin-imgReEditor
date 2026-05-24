@@ -8,7 +8,7 @@
     import ToolSettings from './editor/ToolSettings.svelte';
     // TUI Image Editor removed; only Fabric (CanvasEditor) is used now
     import { getFileBlob, putFile, readDir, removeFile } from '../api';
-    import { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } from '../utils';
+    import { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt, reencodeImageBlob } from '../utils';
     import { pushMsg, pushErrMsg } from '../api';
 
     const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
@@ -151,7 +151,18 @@
 
         // Convert dataURL to blob and insert metadata depending on mode
         const rawBlob = dataURLToBlob(dataURL);
-        const buffer = new Uint8Array(await rawBlob.arrayBuffer());
+        let compressedBlob = rawBlob;
+        if (settings?.enableImageCompression !== false) {
+            const quality = getImageCompressionQuality();
+            if (quality < 1) {
+                try {
+                    compressedBlob = await reencodeImageBlob(rawBlob, 'png', quality);
+                } catch (e) {
+                    console.warn('Failed to compress history screenshot:', e);
+                }
+            }
+        }
+        const buffer = new Uint8Array(await compressedBlob.arrayBuffer());
 
         const metaObj: any = {
             version: 1,
@@ -496,8 +507,8 @@
     }
 
     function getExportQuality(format: OutputImageFormat) {
-        if (format !== 'jpeg') return 1;
-        return settings?.enableImageCompression === false ? 1 : getImageCompressionQuality();
+        if (settings?.enableImageCompression === false) return 1;
+        return getImageCompressionQuality();
     }
 
     // ensureDirExists removed (not used)
@@ -765,7 +776,14 @@
                 return;
             }
             // Convert dataURL to blob
-            const blob = dataURLToBlob(dataURL);
+            let blob = dataURLToBlob(dataURL);
+            if (outputFormat === 'png' && settings?.enableImageCompression !== false && outputQuality < 1) {
+                try {
+                    blob = await reencodeImageBlob(blob, 'png', outputQuality);
+                } catch (e) {
+                    console.warn('Failed to compress PNG during save:', e);
+                }
+            }
             const mustSaveBackupJson = settings.storageMode === 'backup' || outputFormat !== 'png';
             const metaObj: any = {
                 version: 1,

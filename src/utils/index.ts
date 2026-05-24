@@ -1,3 +1,70 @@
+import UPNG from 'upng-js';
+
+export type CompressibleImageFormat = 'png' | 'jpeg';
+
+export function getMimeByFormat(format: CompressibleImageFormat): string {
+    return format === 'jpeg' ? 'image/jpeg' : 'image/png';
+}
+
+export function reencodeImageBlob(blob: Blob, format: CompressibleImageFormat, quality: number): Promise<Blob> {
+    return new Promise<Blob>((resolve, reject) => {
+        const image = new Image();
+        const objectURL = URL.createObjectURL(blob);
+        image.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = image.naturalWidth || image.width;
+                canvas.height = image.naturalHeight || image.height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('Failed to create canvas context'));
+                    return;
+                }
+
+                if (format === 'jpeg') {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(image, 0, 0);
+
+                    canvas.toBlob(
+                        outputBlob => {
+                            URL.revokeObjectURL(objectURL);
+                            if (outputBlob) {
+                                resolve(outputBlob);
+                            } else {
+                                reject(new Error('Failed to encode image'));
+                            }
+                        },
+                        getMimeByFormat(format),
+                        quality
+                    );
+                } else if (format === 'png') {
+                    ctx.drawImage(image, 0, 0);
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const cnum = quality >= 1 ? 0 : Math.max(2, Math.min(256, Math.round(quality * 256)));
+                    
+                    try {
+                        const pngArrayBuffer = UPNG.encode([imgData.data.buffer], canvas.width, canvas.height, cnum);
+                        const outputBlob = new Blob([pngArrayBuffer], { type: 'image/png' });
+                        URL.revokeObjectURL(objectURL);
+                        resolve(outputBlob);
+                    } catch (err) {
+                        URL.revokeObjectURL(objectURL);
+                        reject(err);
+                    }
+                }
+            } catch (error) {
+                URL.revokeObjectURL(objectURL);
+                reject(error);
+            }
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(objectURL);
+            reject(new Error('Failed to load image'));
+        };
+        image.src = objectURL;
+    });
+}
 
 export function HTMLToElement(html: string): HTMLElement {
     const div = document.createElement("div");

@@ -20,12 +20,14 @@
     "fabric": "^6.9.1",
     "svelte-awesome-color-picker": "^3.1.4",
     "tui-code-snippet": "^2.3.3",
-    "tui-color-picker": "^2.2.8"
+    "tui-color-picker": "^2.2.8",
+    "upng-js": "^2.1.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.0",
     "@tsconfig/svelte": "^4.0.1",
     "@types/node": "^20.3.0",
+    "@types/upng-js": "^2.1.5",
     "cross-env": "^7.0.3",
     "fast-glob": "^3.2.12",
     "glob": "^10.0.0",
