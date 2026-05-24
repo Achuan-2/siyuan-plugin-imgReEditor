@@ -21,6 +21,12 @@ export class ScreenshotManager {
 
     public async warmupSelectionWindow(): Promise<void> {
         try {
+            // Do not pre-create the fullscreen selection window on macOS startup.
+            // The window is created lazily when a screenshot is actually requested.
+            if (typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || '')) {
+                return;
+            }
+
             const remote = (window as any).require('@electron/remote');
             if (!remote) return;
 
@@ -740,6 +746,10 @@ export class ScreenshotManager {
                     }
 
                     document.addEventListener('keydown', (e) => {
+                        if (!currentSessionId && e.key === 'Escape') {
+                            window.close();
+                            return;
+                        }
                         if (!currentSessionId) return;
                         if (e.key === 'Enter') {
                             confirmSelection();

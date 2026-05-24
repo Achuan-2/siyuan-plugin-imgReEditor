@@ -142,7 +142,6 @@ export default class PluginSample extends Plugin {
             await screenshotManager.registerShortcut();
             this.screenshotCommandRegistered = true;
         }
-        await screenshotManager.warmupSelectionWindow();
         this.registerScreenshotTopBar();
     }
 
