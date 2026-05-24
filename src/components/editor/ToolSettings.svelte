@@ -538,13 +538,15 @@
             <label for="font-stroke-width">描边粗细</label>
             <input
                 id="font-stroke-width"
-                type="range"
+                type="number"
                 min="0"
-                max="10"
-                step="0.2"
-                value={settings.strokeWidth || 0}
+                max="20"
+                step="0.5"
+                value={settings.strokeWidth ?? 0}
                 on:input={e => emitChange({ strokeWidth: +getValue(e) })}
+                style="width: 72px;"
             />
+            <span class="val">{settings.strokeWidth ?? 0}px</span>
         </div>
     {:else if tool === 'number-marker'}
         <div class="row">
