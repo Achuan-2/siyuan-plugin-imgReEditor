@@ -6,6 +6,7 @@ export const getDefaultSettings = () => ({
     recentColors: {} as Record<string, string[]>,
     // Last used tool settings, keyed by tool name
     lastToolSettings: {} as Record<string, any>,
+    enableScreenshot: false,
     screenshotLimit: 200,
     screenshotSelectionHistory: [] as Array<{ x: number, y: number, width: number, height: number, ts: number }>,
     screenshotCaptureHistory: [] as Array<{

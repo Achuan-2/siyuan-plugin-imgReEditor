@@ -20,8 +20,9 @@ export const SETTINGS_FILE = "settings.json";
 export default class PluginSample extends Plugin {
     _openMenuImageHandler: any;
     settings: any;
-    screenshotManager: ScreenshotManager;
-    private topBarElement: HTMLElement;
+    screenshotManager: ScreenshotManager | null = null;
+    private topBarElement: HTMLElement | null = null;
+    private screenshotCommandRegistered = false;
 
 
     async onload() {
@@ -61,12 +62,23 @@ export default class PluginSample extends Plugin {
             },
         }];
 
-        // 初始化截图管理器
-        this.screenshotManager = new ScreenshotManager(this);
-        await this.screenshotManager.registerShortcut();
-        await this.screenshotManager.warmupSelectionWindow();
+        await this.applyScreenshotFeatureSettings();
+    }
 
-        // 注册顶栏按钮（使用 Menu 类创建下拉菜单）
+    private isScreenshotEnabled() {
+        return this.settings?.enableScreenshot === true;
+    }
+
+    private getScreenshotManager() {
+        if (!this.screenshotManager) {
+            this.screenshotManager = new ScreenshotManager(this);
+        }
+        return this.screenshotManager;
+    }
+
+    private registerScreenshotTopBar() {
+        if (this.topBarElement) return;
+
         const topBarElement = this.addTopBar({
             icon: 'iconImgReEditor',
             title: 'ImgReEditor',
@@ -78,11 +90,13 @@ export default class PluginSample extends Plugin {
                     // 菜单关闭时的回调（可选）
                 });
 
+                const screenshotManager = this.getScreenshotManager();
+
                 menu.addItem({
                     icon: 'iconScreenshot',
                     label: '截图',
                     click: async () => {
-                        const result = await this.screenshotManager.captureWithSelection();
+                        const result = await screenshotManager.captureWithSelection();
                         if (result) {
                             this.openImageEditorDialog(result.dataURL, null, false, true, null, result.rect);
                         }
@@ -94,7 +108,7 @@ export default class PluginSample extends Plugin {
                     icon: 'iconHistory',
                     label: '浏览历史截图',
                     click: () => {
-                        this.screenshotManager.showHistoryDialog((filePath) => {
+                        screenshotManager.showHistoryDialog((filePath) => {
                             this.openImageEditorDialog(filePath, null, false, true);
                         });
                         menu.close && menu.close();
@@ -105,6 +119,31 @@ export default class PluginSample extends Plugin {
             }
         });
         this.topBarElement = topBarElement;
+    }
+
+    private teardownScreenshotFeature() {
+        if (this.topBarElement) {
+            this.topBarElement.remove();
+            this.topBarElement = null;
+        }
+        if (this.screenshotManager) {
+            this.screenshotManager.disposeSelectionWindow();
+        }
+    }
+
+    async applyScreenshotFeatureSettings() {
+        if (!this.isScreenshotEnabled()) {
+            this.teardownScreenshotFeature();
+            return;
+        }
+
+        const screenshotManager = this.getScreenshotManager();
+        if (!this.screenshotCommandRegistered) {
+            await screenshotManager.registerShortcut();
+            this.screenshotCommandRegistered = true;
+        }
+        await screenshotManager.warmupSelectionWindow();
+        this.registerScreenshotTopBar();
     }
 
     async onLayoutReady() {
@@ -315,7 +354,7 @@ export default class PluginSample extends Plugin {
         });
 
         comp.$on('openHistory', () => {
-            this.screenshotManager.showHistoryDialog((filePath) => {
+            this.getScreenshotManager().showHistoryDialog((filePath) => {
                 // When a history item is selected, close the current editor and open the new one
                 (dialog as any)._skipDirtyCheck = true;
                 dialog.destroy();
@@ -325,7 +364,7 @@ export default class PluginSample extends Plugin {
 
         comp.$on('pin', (e) => {
             if (e.detail && e.detail.dataURL) {
-                this.screenshotManager.openSticker(e.detail.dataURL);
+                this.getScreenshotManager().openSticker(e.detail.dataURL);
             }
         });
 
@@ -416,14 +455,14 @@ export default class PluginSample extends Plugin {
                 });
 
                 comp.$on('openHistory', () => {
-                    plugin.screenshotManager.showHistoryDialog((filePath) => {
+                    plugin.getScreenshotManager().showHistoryDialog((filePath) => {
                         plugin.openImageEditorInTab(filePath, null, false, true);
                     });
                 });
 
                 comp.$on('pin', (e) => {
                     if (e.detail && e.detail.dataURL) {
-                        plugin.screenshotManager.openSticker(e.detail.dataURL);
+                        plugin.getScreenshotManager().openSticker(e.detail.dataURL);
                     }
                 });
 

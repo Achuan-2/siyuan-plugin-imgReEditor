@@ -15,6 +15,10 @@ export class ScreenshotManager {
         this.plugin = plugin;
     }
 
+    private isScreenshotEnabled(): boolean {
+        return (this.plugin as any).settings?.enableScreenshot === true;
+    }
+
     public async warmupSelectionWindow(): Promise<void> {
         try {
             const remote = (window as any).require('@electron/remote');
@@ -780,6 +784,11 @@ export class ScreenshotManager {
 
     public async captureScreen(): Promise<string | null> {
         try {
+            if (!this.isScreenshotEnabled()) {
+                pushErrMsg('截图功能已禁用，请在插件设置中启用');
+                return null;
+            }
+
             const remote = (window as any).require('@electron/remote');
             if (!remote) {
                 pushErrMsg('当前环境不支持截图功能');
@@ -823,6 +832,11 @@ export class ScreenshotManager {
         | { source: 'history', dataURL: string, rect: { x: number, y: number, width: number, height: number } }
         | null
     > {
+        if (!this.isScreenshotEnabled()) {
+            pushErrMsg('截图功能已禁用，请在插件设置中启用');
+            return null;
+        }
+
         const remote = (window as any).require('@electron/remote');
         if (!remote) {
             pushErrMsg('当前环境不支持截图功能');
@@ -983,6 +997,11 @@ export class ScreenshotManager {
             langText: "截图编辑",
             hotkey: "⌘`", // Shift+Command+A default
             globalCallback: async () => {
+                if (!this.isScreenshotEnabled()) {
+                    pushErrMsg('截图功能已禁用，请在插件设置中启用');
+                    return;
+                }
+
                 const result = await this.captureWithSelection();
                 if (result) {
                     (this.plugin as any).openImageEditorDialog(result.dataURL, null, false, true, null, result.rect);

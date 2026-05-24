@@ -43,6 +43,13 @@
                     },
                 },
                 {
+                    key: 'enableScreenshot',
+                    value: settings.enableScreenshot,
+                    type: 'checkbox',
+                    title: '启用截图功能',
+                    description: '关闭后不注册截图快捷键，也不显示顶栏截图入口；默认关闭。',
+                },
+                {
                     key: 'screenshotLimit',
                     value: settings.screenshotLimit,
                     type: 'number',
@@ -269,16 +276,23 @@
         value: any;
     }
 
-    const onChanged = ({ detail }: CustomEvent<ChangeEvent>) => {
+    const onChanged = async ({ detail }: CustomEvent<ChangeEvent>) => {
         const setting = settings[detail.key];
         if (setting !== undefined) {
             settings[detail.key] = detail.value;
-            saveSettings();
+            await saveSettings();
+            if (
+                detail.key === 'enableScreenshot' &&
+                typeof plugin.applyScreenshotFeatureSettings === 'function'
+            ) {
+                await plugin.applyScreenshotFeatureSettings();
+            }
         }
     };
 
     async function saveSettings() {
-        await plugin.saveSettings(settings);
+        plugin.settings = { ...settings };
+        await plugin.saveSettings(plugin.settings);
     }
 
     onMount(async () => {
