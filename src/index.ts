@@ -41,10 +41,64 @@ function formatBytes(bytes: number) {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+type CompressionResult =
+    | { status: 'compressed'; originalSize: number; savedSize: number }
+    | {
+        status: 'skipped';
+        reason: 'unsupported' | 'empty' | 'not-smaller' | 'write-failed';
+        originalSize?: number;
+        compressedSize?: number;
+    }
+    | { status: 'failed' };
 
+function normalizeAssetPath(rawPath?: string | null) {
+    if (!rawPath) return null;
+
+    let path = rawPath.trim();
+    if (!path || path.startsWith('data:') || path.startsWith('blob:')) return null;
+
+    const isAbsoluteURL = /^[a-z][a-z\d+.-]*:\/\//i.test(path) || path.startsWith('//');
+    if (isAbsoluteURL) {
+        try {
+            const baseOrigin = window.location.origin;
+            const url = new URL(path, baseOrigin);
+            if ((url.protocol === 'http:' || url.protocol === 'https:') && url.origin === baseOrigin) {
+                path = url.pathname;
+            } else {
+                return null;
+            }
+        } catch (_e) {
+            return null;
+        }
+    } else {
+        path = path.split(/[?#]/)[0];
+    }
+
+    try {
+        const url = new URL(path, window.location.origin);
+        if (url.protocol === 'http:' || url.protocol === 'https:') {
+            path = url.pathname;
+        }
+    } catch (_e) {
+        // Relative asset paths can be normalized below without URL parsing.
+    }
+
+    try {
+        path = decodeURIComponent(path);
+    } catch (_e) {
+        // Keep the original path when it is not URI encoded.
+    }
+
+    path = path.replace(/^\/+/, '').replace(/^data\//, '');
+    const assetsIndex = path.indexOf('assets/');
+    if (assetsIndex >= 0) path = path.slice(assetsIndex);
+
+    return path.startsWith('assets/') ? path : null;
+}
 
 export default class PluginSample extends Plugin {
     _openMenuImageHandler: any;
+    _clickEditorTitleIconHandler: any;
     settings: any;
     screenshotManager: ScreenshotManager | null = null;
     private topBarElement: HTMLElement | null = null;
@@ -75,6 +129,10 @@ export default class PluginSample extends Plugin {
         // 监听图片菜单打开事件, 在右键图片菜单中加入 编辑 菜单项
         this._openMenuImageHandler = this.openMenuImageHandler.bind(this);
         this.eventBus.on('open-menu-image', this._openMenuImageHandler);
+
+        // 监听文档标题图标菜单，加入文档级批量压缩入口
+        this._clickEditorTitleIconHandler = this.openEditorTitleIconHandler.bind(this);
+        this.eventBus.on('click-editortitleicon', this._clickEditorTitleIconHandler);
 
         // 注册斜杠菜单
         this.protyleSlash = [{
@@ -183,6 +241,10 @@ export default class PluginSample extends Plugin {
                 this.eventBus.off('open-menu-image', this._openMenuImageHandler);
                 this._openMenuImageHandler = null;
             }
+            if (this._clickEditorTitleIconHandler) {
+                this.eventBus.off('click-editortitleicon', this._clickEditorTitleIconHandler);
+                this._clickEditorTitleIconHandler = null;
+            }
             if (this.topBarElement) {
                 this.topBarElement.remove();
                 this.topBarElement = null;
@@ -224,21 +286,162 @@ export default class PluginSample extends Plugin {
         });
     }
 
-    private async compressImageAsset(imageURL: string, imageElement?: HTMLImageElement) {
-        const fileName = imageURL.split('/').pop() || '';
-        const format = getCompressibleImageFormat(fileName);
-        const { getFileBlob, putFile, pushMsg, pushErrMsg } = await import('./api');
+    private addNormalizedAssetPath(paths: Set<string>, rawPath?: string | null) {
+        const normalizedPath = normalizeAssetPath(rawPath);
+        if (normalizedPath) {
+            paths.add(normalizedPath);
+        }
+    }
 
-        if (!format) {
-            await pushErrMsg('暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG');
-            return;
+    private collectImageAssetPathsFromElement(rootElement: Element, paths: Set<string>) {
+        rootElement.querySelectorAll('img, [data-type="img"], [data-src]').forEach((element: Element) => {
+            const htmlElement = element as HTMLElement;
+            this.addNormalizedAssetPath(paths, htmlElement.getAttribute('data-src'));
+            this.addNormalizedAssetPath(paths, htmlElement.getAttribute('src'));
+        });
+    }
+
+    private collectImageAssetPathsFromHTML(html: string, paths: Set<string>) {
+        const documentFragment = new DOMParser().parseFromString(html, 'text/html');
+        this.collectImageAssetPathsFromElement(documentFragment.body, paths);
+    }
+
+    private collectImageAssetPathsFromMarkdown(markdown: string, paths: Set<string>) {
+        const imagePattern = /!\[[^\]]*]\(([^)]+)\)/g;
+        let match: RegExpExecArray | null;
+
+        while ((match = imagePattern.exec(markdown)) !== null) {
+            let target = match[1].trim();
+            if (target.startsWith('<')) {
+                const closeIndex = target.indexOf('>');
+                if (closeIndex > 0) {
+                    target = target.slice(1, closeIndex);
+                }
+            } else {
+                const titleMatch = target.match(/\s+["']/);
+                if (titleMatch?.index) {
+                    target = target.slice(0, titleMatch.index);
+                }
+            }
+            this.addNormalizedAssetPath(paths, target);
+        }
+    }
+
+    private async getDocumentImageAssetPaths(docID: string, protyle?: any) {
+        const paths = new Set<string>();
+        const { getBlockDOM, exportMdContent } = await import('./api');
+
+        try {
+            const blockDOM = await getBlockDOM(docID) as any;
+            const html = typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || blockDOM?.content || '';
+            if (html) {
+                this.collectImageAssetPathsFromHTML(html, paths);
+            }
+        } catch (error) {
+            console.warn('Failed to collect images from document DOM:', error);
         }
 
         try {
-            const blob = await getFileBlob(`data/${imageURL}`);
+            const exported = await exportMdContent(docID) as any;
+            const markdown = typeof exported === 'string' ? exported : exported?.content || '';
+            if (markdown) {
+                this.collectImageAssetPathsFromMarkdown(markdown, paths);
+                this.collectImageAssetPathsFromHTML(markdown, paths);
+            }
+        } catch (error) {
+            console.warn('Failed to collect images from exported markdown:', error);
+        }
+
+        if (protyle?.element) {
+            this.collectImageAssetPathsFromElement(protyle.element, paths);
+        }
+
+        return Array.from(paths);
+    }
+
+    private getDocIDFromEditorTitleDetail(detail: any) {
+        return detail?.data?.rootID || detail?.data?.id || detail?.protyle?.block?.rootID || detail?.protyle?.block?.id || '';
+    }
+
+    private async compressDocumentImageAssets(imageURLs: string[]) {
+        const { pushMsg, pushErrMsg } = await import('./api');
+        const uniqueURLs = Array.from(new Set(imageURLs
+            .map((imageURL) => normalizeAssetPath(imageURL))
+            .filter((imageURL): imageURL is string => !!imageURL && !!getCompressibleImageFormat(imageURL))));
+
+        if (uniqueURLs.length === 0) {
+            await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG 图片');
+            return;
+        }
+
+        await pushMsg(`开始压缩 ${uniqueURLs.length} 张文档图片...`);
+
+        const stats = {
+            compressed: 0,
+            skipped: 0,
+            failed: 0,
+            writeFailed: 0,
+            originalSize: 0,
+            savedSize: 0,
+        };
+
+        for (const imageURL of uniqueURLs) {
+            const result = await this.compressImageAsset(imageURL, undefined, { silent: true });
+            if (result.status === 'compressed') {
+                stats.compressed += 1;
+                stats.originalSize += result.originalSize;
+                stats.savedSize += result.savedSize;
+            } else if (result.status === 'failed') {
+                stats.failed += 1;
+            } else if (result.reason === 'write-failed') {
+                stats.writeFailed += 1;
+            } else {
+                stats.skipped += 1;
+            }
+        }
+
+        const failedCount = stats.failed + stats.writeFailed;
+        const sizeText = stats.compressed > 0
+            ? `，${formatBytes(stats.originalSize)} -> ${formatBytes(stats.savedSize)}`
+            : '';
+
+        if (failedCount > 0) {
+            await pushErrMsg(
+                `文档图片压缩完成：成功 ${stats.compressed} 张，失败 ${failedCount} 张，跳过 ${stats.skipped} 张${sizeText}`
+            );
+            return;
+        }
+
+        const skippedText = stats.skipped > 0 ? `，跳过 ${stats.skipped} 张` : '';
+        await pushMsg(`文档图片压缩完成：成功 ${stats.compressed}/${uniqueURLs.length} 张${skippedText}${sizeText}`);
+    }
+
+    private async compressImageAsset(
+        imageURL: string,
+        imageElement?: HTMLImageElement,
+        options: { silent?: boolean } = {}
+    ): Promise<CompressionResult> {
+        const imagePath = normalizeAssetPath(imageURL);
+        const fileName = imagePath?.split('/').pop() || '';
+        const format = imagePath ? getCompressibleImageFormat(fileName) : null;
+        const { getFileBlob, putFile, pushMsg, pushErrMsg } = await import('./api');
+        const notifyMsg = async (message: string) => {
+            if (!options.silent) await pushMsg(message);
+        };
+        const notifyErr = async (message: string) => {
+            if (!options.silent) await pushErrMsg(message);
+        };
+
+        if (!format || !imagePath) {
+            await notifyErr('暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG');
+            return { status: 'skipped', reason: 'unsupported' };
+        }
+
+        try {
+            const blob = await getFileBlob(`data/${imagePath}`);
             if (!blob || blob.size === 0) {
-                await pushErrMsg('无法获取图片文件或文件为空');
-                return;
+                await notifyErr('无法获取图片文件或文件为空');
+                return { status: 'skipped', reason: 'empty' };
             }
 
             const quality = getCompressionQuality(this.settings);
@@ -269,25 +472,30 @@ export default class PluginSample extends Plugin {
             }
 
             if (compressedBlob.size >= blob.size) {
-                await pushMsg(
+                await notifyMsg(
                     `压缩后不会更小，已保留原图（原 ${formatBytes(blob.size)}，压缩后 ${formatBytes(compressedBlob.size)}）`
                 );
-                return;
+                return {
+                    status: 'skipped',
+                    reason: 'not-smaller',
+                    originalSize: blob.size,
+                    compressedSize: compressedBlob.size,
+                };
             }
 
             const file = new File([compressedBlob], fileName, { type: getMimeByFormat(format) });
-            await putFile(`data/${imageURL}`, false, file);
+            await putFile(`data/${imagePath}`, false, file);
 
-            const saved = await getFileBlob(`data/${imageURL}`);
+            const saved = await getFileBlob(`data/${imagePath}`);
             if (!saved || saved.size === 0) {
-                await pushErrMsg('压缩后写入图片失败');
-                return;
+                await notifyErr('压缩后写入图片失败');
+                return { status: 'skipped', reason: 'write-failed' };
             }
 
-            const cacheBustURL = `${imageURL}?t=${Date.now()}`;
+            const cacheBustURL = `${imagePath}?t=${Date.now()}`;
             const refreshImage = (img: HTMLImageElement) => {
-                if (img.dataset?.src === imageURL) {
-                    img.setAttribute('data-src', imageURL);
+                if (normalizeAssetPath(img.dataset?.src || img.getAttribute('src')) === imagePath) {
+                    img.setAttribute('data-src', imagePath);
                     img.src = cacheBustURL;
                 }
             };
@@ -297,18 +505,63 @@ export default class PluginSample extends Plugin {
                 refreshImage(img as HTMLImageElement);
             });
 
-            await pushMsg(`压缩完成：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}`);
+            await notifyMsg(`压缩完成：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}`);
+            return { status: 'compressed', originalSize: blob.size, savedSize: saved.size };
         } catch (error) {
             console.error('Compress image failed:', error);
-            await pushErrMsg('压缩图片失败');
+            await notifyErr('压缩图片失败');
+            return { status: 'failed' };
         }
+    }
+
+    async openEditorTitleIconHandler({ detail }) {
+        const menu = detail?.menu;
+        const docID = this.getDocIDFromEditorTitleDetail(detail);
+        if (!menu || !docID) return;
+
+        menu.addItem({
+            id: 'compress-document-images',
+            icon: 'iconImage',
+            label: '批量压缩文档图片',
+            index: 1,
+            click: async () => {
+                const { pushMsg, pushErrMsg } = await import('./api');
+
+                try {
+                    const imageURLs = await this.getDocumentImageAssetPaths(docID, detail.protyle);
+                    const compressibleImageURLs = imageURLs.filter((imageURL) => getCompressibleImageFormat(imageURL));
+
+                    if (imageURLs.length === 0) {
+                        await pushMsg('当前文档没有本地图片');
+                        return;
+                    }
+
+                    if (compressibleImageURLs.length === 0) {
+                        await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG 图片');
+                        return;
+                    }
+
+                    confirm(
+                        '批量压缩文档图片',
+                        `将使用当前压缩设置覆盖当前文档中的 ${compressibleImageURLs.length} 张 PNG/JPG/JPEG 图片，并跳过压缩后不变小的图片。继续吗？`,
+                        async () => {
+                            await this.compressDocumentImageAssets(compressibleImageURLs);
+                        }
+                    );
+                } catch (error) {
+                    console.error('Compress document images failed:', error);
+                    await pushErrMsg('扫描文档图片失败');
+                }
+            }
+        });
     }
 
     async openMenuImageHandler({ detail }) {
         const selectedElement = detail.element as HTMLElement;
         const imageElement = selectedElement.querySelector('img') as HTMLImageElement;
         if (!imageElement) return;
-        const imageURL = imageElement.dataset.src;
+        const imageURL = normalizeAssetPath(imageElement.dataset.src || imageElement.getAttribute('src'));
+        if (!imageURL) return;
         const blockElement = selectedElement.closest("div[data-type='NodeParagraph']") as HTMLElement;
         if (!blockElement) return;
         const blockID = blockElement.getAttribute('data-node-id');
