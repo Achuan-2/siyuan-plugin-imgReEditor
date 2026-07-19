@@ -37,6 +37,51 @@
     import { pushErrMsg } from '../../api';
     import { generateId } from '../../utils/uuid';
 
+    // Register custom properties globally on FabricObject so they are serialized and deserialized
+    (FabricObject as any).customProperties = [
+        'erasable',
+        '_isArrow',
+        'arrowHead',
+        '_isCropRect',
+        'count',
+        'textColor',
+        'fontSize',
+        '_originalSrc',
+        '_cropOffset',
+        '_isImageBorder',
+        '_appliedMargin',
+        '_unborderedSrc',
+        '_outerRadius',
+        '_borderEnabled',
+        '_borderFill',
+        '_borderRadius',
+        '_borderShadowBlur',
+        '_borderShadowColor',
+        '_borderShadowOpacity',
+        '_isCanvasBackground',
+        'lockMovementX',
+        'lockMovementY',
+        'lockRotation',
+        'lockScalingX',
+        'lockScalingY',
+        'hasControls',
+        'textBackgroundEnabled',
+        'textBackgroundFill',
+        'textBackgroundOpacity',
+        'textBackgroundRadius',
+        'textBackgroundPadding',
+        'textBackgroundStrokeEnabled',
+        'textBackgroundStrokeWidth',
+        'textBackgroundStrokeFill',
+        'textBackgroundStrokeDashArray',
+        'textBackgroundShadowEnabled',
+        'textBackgroundShadowBlur',
+        'textBackgroundShadowColor',
+        'textBackgroundShadowOffsetX',
+        'textBackgroundShadowOffsetY',
+        'textBackgroundShadowOpacity',
+    ];
+
     export let dataURL: string | null = null;
     export let fileName: string | undefined;
     export let blobURL: string | null = null;
