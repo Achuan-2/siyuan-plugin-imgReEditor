@@ -100,6 +100,8 @@ export default class PluginSample extends Plugin {
     _openMenuImageHandler: any;
     _clickEditorTitleIconHandler: any;
     settings: any;
+    _pasteCompressHandler: any;
+    private processedPasteEvents = new WeakSet<ClipboardEvent>();
     screenshotManager: ScreenshotManager | null = null;
     private topBarElement: HTMLElement | null = null;
     private screenshotCommandRegistered = false;
@@ -133,6 +135,10 @@ export default class PluginSample extends Plugin {
         // 监听文档标题图标菜单，加入文档级批量压缩入口
         this._clickEditorTitleIconHandler = this.openEditorTitleIconHandler.bind(this);
         this.eventBus.on('click-editortitleicon', this._clickEditorTitleIconHandler);
+
+        // 监听粘贴事件，开启后自动压缩粘贴的 PNG/JPG/JPEG 图片
+        this._pasteCompressHandler = this.pasteCompressHandler.bind(this);
+        document.addEventListener('paste', this._pasteCompressHandler, true);
 
         // 注册斜杠菜单
         this.protyleSlash = [{
@@ -244,6 +250,10 @@ export default class PluginSample extends Plugin {
             if (this._clickEditorTitleIconHandler) {
                 this.eventBus.off('click-editortitleicon', this._clickEditorTitleIconHandler);
                 this._clickEditorTitleIconHandler = null;
+            }
+            if (this._pasteCompressHandler) {
+                document.removeEventListener('paste', this._pasteCompressHandler, true);
+                this._pasteCompressHandler = null;
             }
             if (this.topBarElement) {
                 this.topBarElement.remove();
@@ -445,31 +455,7 @@ export default class PluginSample extends Plugin {
             }
 
             const quality = getCompressionQuality(this.settings);
-            let compressedBlob = await reencodeImageBlob(blob, format, quality);
-
-            if (format === 'png') {
-                try {
-                    const { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } = await import(
-                        './utils'
-                    );
-                    const originalBuffer = new Uint8Array(await blob.arrayBuffer());
-                    const meta = locatePNGtEXt(originalBuffer)
-                        ? readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY)
-                        : null;
-
-                    if (meta) {
-                        const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
-                        const newBuffer = insertPNGTextChunk(
-                            compressedBuffer,
-                            EDITOR_METADATA_KEY,
-                            meta
-                        );
-                        compressedBlob = new Blob([newBuffer as any], { type: 'image/png' });
-                    }
-                } catch (error) {
-                    console.warn('Failed to preserve PNG editor metadata during compression', error);
-                }
-            }
+            const compressedBlob = await this.compressImageBlob(blob, format, quality);
 
             if (compressedBlob.size >= blob.size) {
                 await notifyMsg(
@@ -511,6 +497,140 @@ export default class PluginSample extends Plugin {
             console.error('Compress image failed:', error);
             await notifyErr('压缩图片失败');
             return { status: 'failed' };
+        }
+    }
+
+    /**
+     * 压缩图片 Blob；PNG 会保留编辑器元数据。返回压缩后的 Blob。
+     */
+    private async compressImageBlob(blob: Blob, format: CompressibleImageFormat, quality: number): Promise<Blob> {
+        let compressedBlob = await reencodeImageBlob(blob, format, quality);
+
+        if (format === 'png') {
+            try {
+                const { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } = await import(
+                    './utils'
+                );
+                const originalBuffer = new Uint8Array(await blob.arrayBuffer());
+                const meta = locatePNGtEXt(originalBuffer)
+                    ? readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY)
+                    : null;
+
+                if (meta) {
+                    const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
+                    const newBuffer = insertPNGTextChunk(
+                        compressedBuffer,
+                        EDITOR_METADATA_KEY,
+                        meta
+                    );
+                    compressedBlob = new Blob([newBuffer as any], { type: 'image/png' });
+                }
+            } catch (error) {
+                console.warn('Failed to preserve PNG editor metadata during compression', error);
+            }
+        }
+
+        return compressedBlob;
+    }
+
+    /**
+     * 粘贴事件处理：开启“粘贴图片自动压缩”后，拦截编辑器内的粘贴事件，
+     * 压缩其中的 PNG/JPG/JPEG 图片，再以新粘贴事件重新派发，
+     * 沿用思源自身的粘贴上传流程（命名、上传、插入）。
+     */
+    private pasteCompressHandler(event: ClipboardEvent) {
+        if (this.processedPasteEvents.has(event)) return;
+        if (this.settings?.enablePasteImageCompression !== true) return;
+
+        const clipboardData = event.clipboardData;
+        if (!clipboardData || !clipboardData.items || clipboardData.items.length === 0) return;
+
+        // 仅处理编辑器正文内的粘贴，避免影响插件对话框等其他输入区域
+        const target = event.target as HTMLElement | null;
+        if (!target || typeof target.closest !== 'function' || !target.closest('.protyle-wysiwyg')) {
+            return;
+        }
+
+        const items = Array.from(clipboardData.items);
+        const hasCompressibleImage = items.some(
+            (item) => item.kind === 'file' && (item.type === 'image/png' || item.type === 'image/jpeg')
+        );
+        if (!hasCompressibleImage) return;
+
+        // 拦截原始粘贴，压缩完成后重新派发
+        event.preventDefault();
+        event.stopPropagation();
+
+        this.compressPastedImagesAndRedispatch(clipboardData, target).catch((error) => {
+            console.error('Paste image compression failed:', error);
+        });
+    }
+
+    private async compressPastedImagesAndRedispatch(clipboardData: DataTransfer, target: HTMLElement) {
+        const quality = getCompressionQuality(this.settings);
+        let redispatchData: DataTransfer = clipboardData;
+        let compressedCount = 0;
+        let originalTotalSize = 0;
+        let compressedTotalSize = 0;
+
+        try {
+            const dataTransfer = new DataTransfer();
+            const items = Array.from(clipboardData.items);
+
+            for (const item of items) {
+                if (item.kind === 'string') {
+                    const text = await new Promise<string>((resolve) => item.getAsString(resolve));
+                    if (text) dataTransfer.setData(item.type, text);
+                    continue;
+                }
+                if (item.kind !== 'file') continue;
+
+                const file = item.getAsFile();
+                if (!file) continue;
+
+                if (item.type === 'image/png' || item.type === 'image/jpeg') {
+                    const format: CompressibleImageFormat = item.type === 'image/png' ? 'png' : 'jpeg';
+                    try {
+                        const compressedBlob = await this.compressImageBlob(file, format, quality);
+                        if (compressedBlob.size > 0 && compressedBlob.size < file.size) {
+                            const fileName = file.name || (format === 'png' ? 'image.png' : 'image.jpg');
+                            dataTransfer.items.add(
+                                new File([compressedBlob], fileName, { type: getMimeByFormat(format) })
+                            );
+                            compressedCount += 1;
+                            originalTotalSize += file.size;
+                            compressedTotalSize += compressedBlob.size;
+                            continue;
+                        }
+                    } catch (error) {
+                        console.warn('Failed to compress pasted image, keep original:', error);
+                    }
+                }
+                dataTransfer.items.add(file);
+            }
+
+            if (compressedCount > 0) {
+                redispatchData = dataTransfer;
+            }
+        } catch (error) {
+            console.error('Paste image compression failed, fallback to original paste:', error);
+            redispatchData = clipboardData;
+        }
+
+        // 以新粘贴事件重新派发，交由思源自身的粘贴流程处理
+        const syntheticEvent = new ClipboardEvent('paste', {
+            clipboardData: redispatchData,
+            bubbles: true,
+            cancelable: true,
+        });
+        this.processedPasteEvents.add(syntheticEvent);
+        target.dispatchEvent(syntheticEvent);
+
+        if (compressedCount > 0) {
+            const { pushMsg } = await import('./api');
+            await pushMsg(
+                `已自动压缩 ${compressedCount} 张粘贴图片：${formatBytes(originalTotalSize)} -> ${formatBytes(compressedTotalSize)}`
+            );
         }
     }
 

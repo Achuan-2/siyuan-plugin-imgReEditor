@@ -64,6 +64,14 @@
                     },
                 },
                 {
+                    key: 'enablePasteImageCompression',
+                    value: settings.enablePasteImageCompression,
+                    type: 'checkbox',
+                    title: '粘贴图片自动压缩',
+                    description:
+                        '开启后，在编辑器中粘贴 PNG、JPG/JPEG 图片时会先按上方默认压缩质量自动压缩，再写入 assets；默认关闭。',
+                },
+                {
                     key: 'enableScreenshot',
                     value: settings.enableScreenshot,
                     type: 'checkbox',

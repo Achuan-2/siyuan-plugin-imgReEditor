@@ -8,6 +8,7 @@ export const getDefaultSettings = () => ({
     lastToolSettings: {} as Record<string, any>,
     enableImageCompression: true,
     imageCompressionQuality: 92,
+    enablePasteImageCompression: false,
     enableScreenshot: false,
     screenshotLimit: 200,
     screenshotSelectionHistory: [] as Array<{ x: number, y: number, width: number, height: number, ts: number }>,
