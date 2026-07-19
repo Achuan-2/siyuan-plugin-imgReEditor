@@ -4440,6 +4440,9 @@
             const currentWidth = canvas.getWidth();
             const currentHeight = canvas.getHeight();
 
+            // Save current viewport transform to preserve zoom/pan position
+            const currentTransform = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
+
             historyIndex--;
             const json = history[historyIndex];
 
@@ -4534,7 +4537,24 @@
             restoreObjectSelectionStates();
             updateCurrentNumberFromCanvas();
             canvas.renderAll();
-            fitImageToViewport();
+
+            // Sync canvas dimensions with container to prevent stretching, but keep viewport transform
+            const workspace = container.closest('.canvas-editor');
+            if (workspace) {
+                const cw = workspace.clientWidth;
+                const ch = workspace.clientHeight;
+                if (cw > 0 && ch > 0) {
+                    canvas.setDimensions({ width: cw, height: ch });
+                }
+            }
+            if (currentTransform) {
+                canvas.setViewportTransform(currentTransform);
+                updateZoomDisplay();
+                canvas.requestRenderAll();
+            } else {
+                fitImageToViewport();
+            }
+
             notifyHistoryUpdate();
         } catch (e) {
             console.warn('CanvasEditor: undo failed', e);
@@ -4558,6 +4578,9 @@
             // Save current canvas dimensions for canvas mode
             const currentWidth = canvas.getWidth();
             const currentHeight = canvas.getHeight();
+
+            // Save current viewport transform to preserve zoom/pan position
+            const currentTransform = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
 
             historyIndex++;
             const json = history[historyIndex];
@@ -4686,7 +4709,24 @@
             restoreObjectSelectionStates();
             updateCurrentNumberFromCanvas();
             canvas.renderAll();
-            fitImageToViewport();
+
+            // Sync canvas dimensions with container to prevent stretching, but keep viewport transform
+            const workspace = container.closest('.canvas-editor');
+            if (workspace) {
+                const cw = workspace.clientWidth;
+                const ch = workspace.clientHeight;
+                if (cw > 0 && ch > 0) {
+                    canvas.setDimensions({ width: cw, height: ch });
+                }
+            }
+            if (currentTransform) {
+                canvas.setViewportTransform(currentTransform);
+                updateZoomDisplay();
+                canvas.requestRenderAll();
+            } else {
+                fitImageToViewport();
+            }
+
             notifyHistoryUpdate();
         } catch (e) {
             console.warn('CanvasEditor: redo failed', e);
