@@ -104,6 +104,9 @@ export default class PluginSample extends Plugin {
     screenshotManager: ScreenshotManager | null = null;
     private topBarElement: HTMLElement | null = null;
     private screenshotCommandRegistered = false;
+    private originalXhrOpen: any = null;
+    private originalXhrSend: any = null;
+    private originalFetch: any = null;
 
 
     async onload() {
@@ -152,6 +155,7 @@ export default class PluginSample extends Plugin {
         }];
 
         await this.applyScreenshotFeatureSettings();
+        this.setupNetworkInterceptors();
     }
 
     private isScreenshotEnabled() {
@@ -242,6 +246,7 @@ export default class PluginSample extends Plugin {
     async onunload() {
         // 移除所有已注册的事件监听
         try {
+            this.teardownNetworkInterceptors();
             if (this._openMenuImageHandler) {
                 this.eventBus.off('open-menu-image', this._openMenuImageHandler);
                 this._openMenuImageHandler = null;
@@ -1107,6 +1112,191 @@ export default class PluginSample extends Plugin {
      */
     async saveSettings(settings: any) {
         await this.saveData(SETTINGS_FILE, settings);
+    }
+
+    private setupNetworkInterceptors() {
+        const self = this;
+        this.originalXhrOpen = XMLHttpRequest.prototype.open;
+        this.originalXhrSend = XMLHttpRequest.prototype.send;
+        this.originalFetch = window.fetch;
+
+        XMLHttpRequest.prototype.open = function(method: string, url: string | URL, ...args: any[]) {
+            (this as any)._url = typeof url === 'string' ? url : url.toString();
+            return self.originalXhrOpen.apply(this, [method, url, ...args]);
+        };
+
+        XMLHttpRequest.prototype.send = function(body?: any) {
+            const xhr = this as any;
+            const url = xhr._url || '';
+
+            if (
+                body instanceof FormData &&
+                url.includes('/upload') &&
+                self.settings?.enablePasteImageCompression === true
+            ) {
+                self.compressFormData(body).then((newBody) => {
+                    self.originalXhrSend.call(xhr, newBody);
+                }).catch((err) => {
+                    console.error('Failed to compress files in XHR interceptor, sending original', err);
+                    self.originalXhrSend.call(xhr, body);
+                });
+                return;
+            }
+
+            return self.originalXhrSend.call(this, body);
+        };
+
+        window.fetch = function(input: any, init?: any) {
+            const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : input?.toString?.() || '');
+
+            if (
+                init &&
+                init.method === 'POST' &&
+                url.includes('/api/asset/insertLocalAssets') &&
+                self.settings?.enablePasteImageCompression === true
+            ) {
+                return self.interceptInsertLocalAssets(init).then((newInit) => {
+                    return self.originalFetch.call(window, input, newInit);
+                }).catch((err) => {
+                    console.error('Failed to intercept local assets, sending original fetch', err);
+                    return self.originalFetch.call(window, input, init);
+                });
+            }
+
+            return self.originalFetch.call(window, input, init);
+        };
+    }
+
+    private teardownNetworkInterceptors() {
+        if (this.originalXhrOpen) {
+            XMLHttpRequest.prototype.open = this.originalXhrOpen;
+            this.originalXhrOpen = null;
+        }
+        if (this.originalXhrSend) {
+            XMLHttpRequest.prototype.send = this.originalXhrSend;
+            this.originalXhrSend = null;
+        }
+        if (this.originalFetch) {
+            window.fetch = this.originalFetch;
+            this.originalFetch = null;
+        }
+    }
+
+    private async compressFormData(formData: FormData): Promise<FormData> {
+        const quality = getCompressionQuality(this.settings);
+        let compressedCount = 0;
+        let originalTotalSize = 0;
+        let compressedTotalSize = 0;
+
+        const entries = Array.from(formData.entries());
+        const newEntries = await Promise.all(
+            entries.map(async ([key, value]) => {
+                if (
+                    key === 'file[]' &&
+                    value instanceof File &&
+                    (value.type === 'image/png' || value.type === 'image/jpeg')
+                ) {
+                    const format: CompressibleImageFormat = value.type === 'image/png' ? 'png' : 'jpeg';
+                    try {
+                        const compressedBlob = await this.compressImageBlob(value, format, quality);
+                        if (compressedBlob.size > 0 && compressedBlob.size < value.size) {
+                            const fileName = value.name || (format === 'png' ? 'image.png' : 'image.jpg');
+                            const compressedFile = new File([compressedBlob], fileName, {
+                                type: getMimeByFormat(format)
+                            });
+                            compressedCount += 1;
+                            originalTotalSize += value.size;
+                            compressedTotalSize += compressedBlob.size;
+                            return [key, compressedFile];
+                        }
+                    } catch (error) {
+                        console.warn('Failed to compress file in XHR interceptor:', value.name, error);
+                    }
+                }
+                return [key, value];
+            })
+        );
+
+        const newFormData = new FormData();
+        for (const [key, value] of newEntries) {
+            newFormData.append(key, value as any);
+        }
+
+        if (compressedCount > 0) {
+            const { pushMsg } = await import('./api');
+            await pushMsg(
+                `已自动压缩 ${compressedCount} 张上传图片：${formatBytes(originalTotalSize)} -> ${formatBytes(compressedTotalSize)}`
+            );
+        }
+
+        return newFormData;
+    }
+
+    private async interceptInsertLocalAssets(init: any): Promise<any> {
+        try {
+            if (typeof init.body !== 'string') return init;
+            const data = JSON.parse(init.body);
+            if (!data || !Array.isArray(data.assetPaths)) return init;
+
+            const quality = getCompressionQuality(this.settings);
+            let compressedCount = 0;
+            let originalTotalSize = 0;
+            let compressedTotalSize = 0;
+
+            let fs: any, path: any, os: any;
+            try {
+                fs = window.require('fs');
+                path = window.require('path');
+                os = window.require('os');
+            } catch (e) {
+                console.warn('Node modules not available for localFiles compression', e);
+            }
+
+            if (!fs || !path || !os) return init;
+
+            const newAssetPaths = [];
+            for (const assetPath of data.assetPaths) {
+                const ext = assetPath.split('.').pop()?.toLowerCase();
+                if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+                    const format: CompressibleImageFormat = ext === 'png' ? 'png' : 'jpeg';
+                    try {
+                        const fileBuffer = fs.readFileSync(assetPath);
+                        const originalSize = fileBuffer.length;
+                        const blob = new Blob([fileBuffer], { type: getMimeByFormat(format) });
+                        const compressedBlob = await this.compressImageBlob(blob, format, quality);
+
+                        if (compressedBlob.size > 0 && compressedBlob.size < originalSize) {
+                            const fileName = assetPath.split(/[\\/]/).pop() || (format === 'png' ? 'image.png' : 'image.jpg');
+                            const tempPath = path.join(os.tmpdir(), fileName);
+                            const compressedBuffer = Buffer.from(await compressedBlob.arrayBuffer());
+                            fs.writeFileSync(tempPath, compressedBuffer);
+
+                            newAssetPaths.push(tempPath);
+                            compressedCount += 1;
+                            originalTotalSize += originalSize;
+                            compressedTotalSize += compressedBlob.size;
+                            continue;
+                        }
+                    } catch (error) {
+                        console.warn('Failed to compress local asset file during drag and drop:', assetPath, error);
+                    }
+                }
+                newAssetPaths.push(assetPath);
+            }
+
+            if (compressedCount > 0) {
+                data.assetPaths = newAssetPaths;
+                init.body = JSON.stringify(data);
+
+                const { pushMsg } = await import('./api');
+                await pushMsg(
+                    `已自动压缩 ${compressedCount} 张上传图片：${formatBytes(originalTotalSize)} -> ${formatBytes(compressedTotalSize)}`
+                );
+            }
+        } catch (error) {
+            console.error('Failed to intercept local assets insertion:', error);
+        }
+        return init;
     }
 
 
