@@ -100,7 +100,6 @@ export default class PluginSample extends Plugin {
     _openMenuImageHandler: any;
     _clickEditorTitleIconHandler: any;
     settings: any;
-    _pasteCompressHandler: any;
     screenshotManager: ScreenshotManager | null = null;
     private topBarElement: HTMLElement | null = null;
     private screenshotCommandRegistered = false;
@@ -137,10 +136,6 @@ export default class PluginSample extends Plugin {
         // 监听文档标题图标菜单，加入文档级批量压缩入口
         this._clickEditorTitleIconHandler = this.openEditorTitleIconHandler.bind(this);
         this.eventBus.on('click-editortitleicon', this._clickEditorTitleIconHandler);
-
-        // 监听粘贴事件，开启后自动压缩粘贴的 PNG/JPG/JPEG 图片
-        this._pasteCompressHandler = this.pasteCompressHandler.bind(this);
-        this.eventBus.on('paste', this._pasteCompressHandler);
 
         // 注册斜杠菜单
         this.protyleSlash = [{
@@ -254,10 +249,6 @@ export default class PluginSample extends Plugin {
             if (this._clickEditorTitleIconHandler) {
                 this.eventBus.off('click-editortitleicon', this._clickEditorTitleIconHandler);
                 this._clickEditorTitleIconHandler = null;
-            }
-            if (this._pasteCompressHandler) {
-                this.eventBus.off('paste', this._pasteCompressHandler);
-                this._pasteCompressHandler = null;
             }
             if (this.topBarElement) {
                 this.topBarElement.remove();
@@ -535,137 +526,6 @@ export default class PluginSample extends Plugin {
         }
 
         return compressedBlob;
-    }
-
-    /**
-     * 粘贴事件处理：使用思源 EventBus 拦截并压缩粘贴的 PNG/JPG/JPEG 图片。
-     */
-    private pasteCompressHandler(event: CustomEvent) {
-        if (this.settings?.enablePasteImageCompression !== true) return;
-
-        const { resolve, files, localFiles } = event.detail;
-
-        let hasCompressible = false;
-        if (files && files.length > 0) {
-            hasCompressible = Array.from(files).some((file: File) =>
-                file.type === 'image/png' || file.type === 'image/jpeg'
-            );
-        } else if (localFiles && localFiles.length > 0) {
-            hasCompressible = localFiles.some((lf: any) => {
-                const ext = lf.path?.split('.').pop()?.toLowerCase();
-                return ext === 'png' || ext === 'jpg' || ext === 'jpeg';
-            });
-        }
-
-        if (!hasCompressible) return;
-
-        // 同步阻止思源默认的直接继续，从而等待我们的 resolve 回调
-        event.preventDefault();
-
-        this.compressPastedImagesAndResolve(event.detail).catch((error) => {
-            console.error('Paste image compression failed:', error);
-            // 失败时也必须调用 resolve()，避免思源粘贴流程挂起
-            resolve();
-        });
-    }
-
-    private async compressPastedImagesAndResolve(detail: any) {
-        const { resolve, files, localFiles } = detail;
-        const quality = getCompressionQuality(this.settings);
-        let compressedCount = 0;
-        let originalTotalSize = 0;
-        let compressedTotalSize = 0;
-
-        const response: any = {};
-
-        try {
-            if (files && files.length > 0) {
-                const newFiles: File[] = [];
-                for (const file of Array.from(files) as File[]) {
-                    if (file.type === 'image/png' || file.type === 'image/jpeg') {
-                        const format: CompressibleImageFormat = file.type === 'image/png' ? 'png' : 'jpeg';
-                        try {
-                            const compressedBlob = await this.compressImageBlob(file, format, quality);
-                            if (compressedBlob.size > 0 && compressedBlob.size < file.size) {
-                                const fileName = file.name || (format === 'png' ? 'image.png' : 'image.jpg');
-                                newFiles.push(
-                                    new File([compressedBlob], fileName, { type: getMimeByFormat(format) })
-                                );
-                                compressedCount += 1;
-                                originalTotalSize += file.size;
-                                compressedTotalSize += compressedBlob.size;
-                                continue;
-                            }
-                        } catch (error) {
-                            console.warn('Failed to compress pasted file image, keep original:', error);
-                        }
-                    }
-                    newFiles.push(file);
-                }
-                if (compressedCount > 0) {
-                    response.files = newFiles;
-                }
-            } else if (localFiles && localFiles.length > 0) {
-                let fs: any, path: any, os: any;
-                try {
-                    fs = window.require('fs');
-                    path = window.require('path');
-                    os = window.require('os');
-                } catch (e) {
-                    console.warn('Node modules not available for localFiles compression', e);
-                }
-
-                if (fs && path && os) {
-                    const newLocalFiles: any[] = [];
-                    for (const lf of localFiles) {
-                        const ext = lf.path?.split('.').pop()?.toLowerCase();
-                        if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
-                            const format: CompressibleImageFormat = ext === 'png' ? 'png' : 'jpeg';
-                            try {
-                                const fileBuffer = fs.readFileSync(lf.path);
-                                const originalSize = fileBuffer.length;
-                                const blob = new Blob([fileBuffer], { type: getMimeByFormat(format) });
-                                const compressedBlob = await this.compressImageBlob(blob, format, quality);
-
-                                if (compressedBlob.size > 0 && compressedBlob.size < originalSize) {
-                                    const fileName = lf.path.split(/[\\/]/).pop() || (format === 'png' ? 'image.png' : 'image.jpg');
-                                    const tempPath = path.join(os.tmpdir(), fileName);
-                                    const compressedBuffer = Buffer.from(await compressedBlob.arrayBuffer());
-                                    fs.writeFileSync(tempPath, compressedBuffer);
-
-                                    newLocalFiles.push({
-                                        path: tempPath,
-                                        size: compressedBlob.size
-                                    });
-                                    compressedCount += 1;
-                                    originalTotalSize += originalSize;
-                                    compressedTotalSize += compressedBlob.size;
-                                    continue;
-                                }
-                            } catch (error) {
-                                console.warn('Failed to compress pasted local image, keep original:', error);
-                            }
-                        }
-                        newLocalFiles.push(lf);
-                    }
-                    if (compressedCount > 0) {
-                        response.localFiles = newLocalFiles;
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Failed to compress pasted images:', error);
-        }
-
-        // 最终返回结果给思源，思源会写入/上传这些新文件并进行粘贴操作
-        resolve(response);
-
-        if (compressedCount > 0) {
-            const { pushMsg } = await import('./api');
-            await pushMsg(
-                `已自动压缩 ${compressedCount} 张粘贴图片：${formatBytes(originalTotalSize)} -> ${formatBytes(compressedTotalSize)}`
-            );
-        }
     }
 
     async openEditorTitleIconHandler({ detail }) {
