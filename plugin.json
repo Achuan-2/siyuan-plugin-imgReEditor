@@ -17,7 +17,7 @@
   },
   "description": {
     "default": "Edit images in SiYuan with crop, shapes, arrows, text, markers and more. Supports re-editing.",
-    "zh_CN": "一款思源笔记图片编辑/标注插件，支持裁剪、旋转图片，支持添加形状、文字、支持添加图片边框、设置图片圆角等功能，最大亮点是已编辑的图片支持再编辑！"
+    "zh_CN": "一款思源笔记图片编辑/标注插件，支持裁剪、旋转图片，支持添加形状、文字、支持添加图片边框、设置图片圆角等功能，最大亮点是已编辑的图片支持再编辑！并支持上传图片自动压缩和编辑图片自动压缩！"
   },
   "readme": {
     "default": "README_en_US.md",
