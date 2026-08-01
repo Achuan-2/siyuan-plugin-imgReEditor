@@ -177,7 +177,7 @@
                 updatePopupPosition();
             }
         }}
-        title="选择颜色"
+        title="Select color"
     >
         <span class="color-indicator"></span>
     </button>
@@ -192,7 +192,7 @@
         >
             {#if myRecentColors.length > 0}
                 <div class="color-section">
-                    <div class="section-title">最近使用</div>
+                    <div class="section-title">Recently used</div>
                     <div class="color-grid recent">
                         {#each myRecentColors as color}
                             <button
@@ -208,7 +208,7 @@
             {/if}
 
             <div class="color-section">
-                <div class="section-title">默认颜色</div>
+                <div class="section-title">Default colors</div>
                 <div class="color-grid default">
                     {#each defaultColors as color}
                         <button
@@ -225,7 +225,7 @@
             <div class="color-section more">
                 <button class="more-colors-btn" on:click={openNativePicker}>
                     <span class="rainbow-icon">🎨</span>
-                    更多颜色...
+                    More colors...
                 </button>
             </div>
         </div>
@@ -242,7 +242,7 @@
                 addToRecent(value);
                 showAwesomePicker = false;
             }}
-            title="关闭"
+            title="Close"
         >
             ×
         </button>
