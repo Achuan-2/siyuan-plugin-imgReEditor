@@ -12,7 +12,7 @@ import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
-import { reencodeImageBlob, getMimeByFormat, type CompressibleImageFormat } from "./utils";
+import { reencodeImageBlob, getMimeByFormat, type CompressibleImageFormat, type ReencodeOptions } from "./utils";
 
 export const SETTINGS_FILE = "settings.json";
 const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
@@ -29,10 +29,18 @@ function getCompressibleImageFormat(fileName: string): CompressibleImageFormat |
     return null;
 }
 
-function getCompressionQuality(settings: any) {
-    const rawQuality = Number(settings?.imageCompressionQuality ?? 92);
-    const normalizedQuality = Number.isFinite(rawQuality) ? rawQuality : 92;
-    return Math.min(100, Math.max(1, normalizedQuality)) / 100;
+function getFormatCompressionOptions(settings: any, format: CompressibleImageFormat): ReencodeOptions {
+    const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
+    const rawPngQuality = Number(settings?.pngQuality ?? settings?.imageCompressionQuality ?? 92);
+    const pngQuality = Math.min(100, Math.max(1, Number.isFinite(rawPngQuality) ? rawPngQuality : 92)) / 100;
+
+    const rawJpegQuality = Number(settings?.jpegQuality ?? settings?.imageCompressionQuality ?? 92);
+    const jpegQuality = Math.min(100, Math.max(1, Number.isFinite(rawJpegQuality) ? rawJpegQuality : 92)) / 100;
+
+    if (format === 'png') {
+        return { pngMode, quality: pngQuality };
+    }
+    return { quality: jpegQuality };
 }
 
 function formatBytes(bytes: number) {
@@ -449,8 +457,8 @@ export default class PluginSample extends Plugin {
                 return { status: 'skipped', reason: 'empty' };
             }
 
-            const quality = getCompressionQuality(this.settings);
-            const compressedBlob = await this.compressImageBlob(blob, format, quality);
+            const compressionOptions = getFormatCompressionOptions(this.settings, format);
+            const compressedBlob = await this.compressImageBlob(blob, format, compressionOptions);
 
             if (compressedBlob.size >= blob.size) {
                 await notifyMsg(
@@ -498,8 +506,13 @@ export default class PluginSample extends Plugin {
     /**
      * 压缩图片 Blob；PNG 会保留编辑器元数据。返回压缩后的 Blob。
      */
-    private async compressImageBlob(blob: Blob, format: CompressibleImageFormat, quality: number): Promise<Blob> {
-        let compressedBlob = await reencodeImageBlob(blob, format, quality);
+    private async compressImageBlob(
+        blob: Blob,
+        format: CompressibleImageFormat,
+        options?: ReencodeOptions
+    ): Promise<Blob> {
+        const effectiveOptions = options || getFormatCompressionOptions(this.settings, format);
+        let compressedBlob = await reencodeImageBlob(blob, format, effectiveOptions);
 
         if (format === 'png') {
             try {
@@ -1043,7 +1056,6 @@ export default class PluginSample extends Plugin {
     }
 
     private async compressFormData(formData: FormData): Promise<FormData> {
-        const quality = getCompressionQuality(this.settings);
         let compressedCount = 0;
         let originalTotalSize = 0;
         let compressedTotalSize = 0;
@@ -1057,8 +1069,9 @@ export default class PluginSample extends Plugin {
                     (value.type === 'image/png' || value.type === 'image/jpeg')
                 ) {
                     const format: CompressibleImageFormat = value.type === 'image/png' ? 'png' : 'jpeg';
+                    const compressionOptions = getFormatCompressionOptions(this.settings, format);
                     try {
-                        const compressedBlob = await this.compressImageBlob(value, format, quality);
+                        const compressedBlob = await this.compressImageBlob(value, format, compressionOptions);
                         if (compressedBlob.size > 0 && compressedBlob.size < value.size) {
                             const fileName = value.name || (format === 'png' ? 'image.png' : 'image.jpg');
                             const compressedFile = new File([compressedBlob], fileName, {
@@ -1098,7 +1111,6 @@ export default class PluginSample extends Plugin {
             const data = JSON.parse(init.body);
             if (!data || !Array.isArray(data.assetPaths)) return init;
 
-            const quality = getCompressionQuality(this.settings);
             let compressedCount = 0;
             let originalTotalSize = 0;
             let compressedTotalSize = 0;
@@ -1119,11 +1131,12 @@ export default class PluginSample extends Plugin {
                 const ext = assetPath.split('.').pop()?.toLowerCase();
                 if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
                     const format: CompressibleImageFormat = ext === 'png' ? 'png' : 'jpeg';
+                    const compressionOptions = getFormatCompressionOptions(this.settings, format);
                     try {
                         const fileBuffer = fs.readFileSync(assetPath);
                         const originalSize = fileBuffer.length;
                         const blob = new Blob([fileBuffer], { type: getMimeByFormat(format) });
-                        const compressedBlob = await this.compressImageBlob(blob, format, quality);
+                        const compressedBlob = await this.compressImageBlob(blob, format, compressionOptions);
 
                         if (compressedBlob.size > 0 && compressedBlob.size < originalSize) {
                             const fileName = assetPath.split(/[\\/]/).pop() || (format === 'png' ? 'image.png' : 'image.jpg');

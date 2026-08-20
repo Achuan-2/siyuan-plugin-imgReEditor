@@ -153,13 +153,12 @@
         const rawBlob = dataURLToBlob(dataURL);
         let compressedBlob = rawBlob;
         if (settings?.enableImageCompression !== false) {
-            const quality = getImageCompressionQuality();
-            if (quality < 1) {
-                try {
-                    compressedBlob = await reencodeImageBlob(rawBlob, 'png', quality);
-                } catch (e) {
-                    console.warn('Failed to compress history screenshot:', e);
-                }
+            const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
+            const quality = getExportQuality('png');
+            try {
+                compressedBlob = await reencodeImageBlob(rawBlob, 'png', { pngMode, quality });
+            } catch (e) {
+                console.warn('Failed to compress history screenshot:', e);
             }
         }
         const buffer = new Uint8Array(await compressedBlob.arrayBuffer());
@@ -500,15 +499,16 @@
         return format === 'jpeg' ? 'image/jpeg' : 'image/png';
     }
 
-    function getImageCompressionQuality() {
-        const rawQuality = Number(settings?.imageCompressionQuality ?? 92);
-        const normalizedQuality = Number.isFinite(rawQuality) ? rawQuality : 92;
-        return Math.min(100, Math.max(1, normalizedQuality)) / 100;
-    }
-
     function getExportQuality(format: OutputImageFormat) {
         if (settings?.enableImageCompression === false) return 1;
-        return getImageCompressionQuality();
+        if (format === 'jpeg') {
+            const rawQuality = Number(settings?.jpegQuality ?? settings?.imageCompressionQuality ?? 92);
+            return Math.min(100, Math.max(1, Number.isFinite(rawQuality) ? rawQuality : 92)) / 100;
+        } else if (format === 'png') {
+            const rawQuality = Number(settings?.pngQuality ?? settings?.imageCompressionQuality ?? 92);
+            return Math.min(100, Math.max(1, Number.isFinite(rawQuality) ? rawQuality : 92)) / 100;
+        }
+        return 1;
     }
 
     // ensureDirExists removed (not used)
@@ -777,9 +777,10 @@
             }
             // Convert dataURL to blob
             let blob = dataURLToBlob(dataURL);
-            if (outputFormat === 'png' && settings?.enableImageCompression !== false && outputQuality < 1) {
+            if (outputFormat === 'png' && settings?.enableImageCompression !== false) {
                 try {
-                    blob = await reencodeImageBlob(blob, 'png', outputQuality);
+                    const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
+                    blob = await reencodeImageBlob(blob, 'png', { pngMode, quality: outputQuality });
                 } catch (e) {
                     console.warn('Failed to compress PNG during save:', e);
                 }

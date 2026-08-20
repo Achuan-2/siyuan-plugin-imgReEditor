@@ -1,12 +1,83 @@
 import UPNG from 'upng-js';
+import { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions } from './oxipng';
 
 export type CompressibleImageFormat = 'png' | 'jpeg';
+
+export { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions };
+
+export interface ReencodeOptions {
+    pngMode?: 'lossless' | 'lossy';
+    quality?: number; // 0.01 ~ 1.0
+}
 
 export function getMimeByFormat(format: CompressibleImageFormat): string {
     return format === 'jpeg' ? 'image/jpeg' : 'image/png';
 }
 
-export function reencodeImageBlob(blob: Blob, format: CompressibleImageFormat, quality: number): Promise<Blob> {
+export async function reencodeImageBlob(
+    blob: Blob,
+    format: CompressibleImageFormat,
+    qualityOrOptions?: number | ReencodeOptions
+): Promise<Blob> {
+    let options: ReencodeOptions;
+    if (typeof qualityOrOptions === 'number') {
+        options = { quality: qualityOrOptions };
+    } else {
+        options = qualityOrOptions || {};
+    }
+
+    const quality = options.quality ?? 0.92;
+    const pngMode = options.pngMode ?? (quality >= 1 ? 'lossless' : 'lossy');
+
+    if (format === 'png') {
+        if (pngMode === 'lossless') {
+            try {
+                return await optimizePNGBlob(blob, { level: 2, optimiseAlpha: true });
+            } catch (err) {
+                console.warn('Oxipng direct optimization failed, falling back to canvas PNG export:', err);
+            }
+        } else {
+            // PNG 有损调色板量化压缩
+            return new Promise<Blob>((resolve, reject) => {
+                const image = new Image();
+                const objectURL = URL.createObjectURL(blob);
+                image.onload = async () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = image.naturalWidth || image.width;
+                        canvas.height = image.naturalHeight || image.height;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            URL.revokeObjectURL(objectURL);
+                            reject(new Error('Failed to create canvas context'));
+                            return;
+                        }
+                        ctx.drawImage(image, 0, 0);
+                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const cnum = Math.max(2, Math.min(256, Math.round(quality * 256)));
+                        const pngArrayBuffer = UPNG.encode([imgData.data.buffer], canvas.width, canvas.height, cnum);
+                        URL.revokeObjectURL(objectURL);
+
+                        try {
+                            const optimizedBuffer = await optimizePNGData(pngArrayBuffer, { level: 2 });
+                            resolve(new Blob([optimizedBuffer as any], { type: 'image/png' }));
+                        } catch {
+                            resolve(new Blob([pngArrayBuffer], { type: 'image/png' }));
+                        }
+                    } catch (error) {
+                        URL.revokeObjectURL(objectURL);
+                        reject(error);
+                    }
+                };
+                image.onerror = () => {
+                    URL.revokeObjectURL(objectURL);
+                    reject(new Error('Failed to load image'));
+                };
+                image.src = objectURL;
+            });
+        }
+    }
+
     return new Promise<Blob>((resolve, reject) => {
         const image = new Image();
         const objectURL = URL.createObjectURL(blob);
@@ -17,6 +88,7 @@ export function reencodeImageBlob(blob: Blob, format: CompressibleImageFormat, q
                 canvas.height = image.naturalHeight || image.height;
                 const ctx = canvas.getContext('2d');
                 if (!ctx) {
+                    URL.revokeObjectURL(objectURL);
                     reject(new Error('Failed to create canvas context'));
                     return;
                 }
@@ -40,18 +112,22 @@ export function reencodeImageBlob(blob: Blob, format: CompressibleImageFormat, q
                     );
                 } else if (format === 'png') {
                     ctx.drawImage(image, 0, 0);
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const cnum = quality >= 1 ? 0 : Math.max(2, Math.min(256, Math.round(quality * 256)));
-                    
-                    try {
-                        const pngArrayBuffer = UPNG.encode([imgData.data.buffer], canvas.width, canvas.height, cnum);
-                        const outputBlob = new Blob([pngArrayBuffer], { type: 'image/png' });
-                        URL.revokeObjectURL(objectURL);
-                        resolve(outputBlob);
-                    } catch (err) {
-                        URL.revokeObjectURL(objectURL);
-                        reject(err);
-                    }
+                    canvas.toBlob(
+                        async outputBlob => {
+                            URL.revokeObjectURL(objectURL);
+                            if (!outputBlob) {
+                                reject(new Error('Failed to encode image'));
+                                return;
+                            }
+                            try {
+                                const optimized = await optimizePNGBlob(outputBlob, { level: 2, optimiseAlpha: true });
+                                resolve(optimized);
+                            } catch {
+                                resolve(outputBlob);
+                            }
+                        },
+                        'image/png'
+                    );
                 }
             } catch (error) {
                 URL.revokeObjectURL(objectURL);

@@ -5,8 +5,10 @@ export const getDefaultSettings = () => ({
     // Recent colors storage, keyed by color picker identifier
     recentColors: {} as Record<string, string[]>,
     // Last used tool settings, keyed by tool name
-    lastToolSettings: {} as Record<string, any>,
     enableImageCompression: true,
+    pngCompressionMode: 'lossless' as 'lossless' | 'lossy',
+    pngQuality: 92,
+    jpegQuality: 92,
     imageCompressionQuality: 92,
     enablePasteImageCompression: false,
     enableScreenshot: false,

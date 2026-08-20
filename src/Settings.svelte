@@ -48,15 +48,40 @@
                     type: 'checkbox',
                     title: '编辑保存后压缩图片',
                     description:
-                        '开启后保存编辑结果时按原图片格式重新编码；PNG 保持无损，JPG/JPEG 使用下方质量比例。',
+                        '开启后保存编辑结果时自动进行压缩，并保持原图片格式。',
                 },
                 {
-                    key: 'imageCompressionQuality',
-                    value: settings.imageCompressionQuality,
-                    type: 'slider',
-                    title: '默认压缩质量',
+                    key: 'pngCompressionMode',
+                    value: settings.pngCompressionMode || 'lossless',
+                    type: 'select',
+                    title: 'PNG 压缩模式',
                     description:
-                        '默认 92。',
+                        '无损压缩使用 Oxipng 引擎（完全保留 32 位原始画质）；有损压缩通过调色板颜色量化大幅减小体积。',
+                    options: {
+                        lossless: '无损压缩 (Oxipng 引擎)',
+                        lossy: '有损压缩 (调色板量化)',
+                    },
+                },
+                {
+                    key: 'pngQuality',
+                    value: settings.pngQuality ?? 92,
+                    type: 'slider',
+                    title: 'PNG 有损压缩质量',
+                    description:
+                        '默认 92。仅在 PNG 模式为“有损压缩”时生效，用于控制调色板颜色数（值越低体积越小）。',
+                    slider: {
+                        min: 10,
+                        max: 100,
+                        step: 1,
+                    },
+                },
+                {
+                    key: 'jpegQuality',
+                    value: settings.jpegQuality ?? 92,
+                    type: 'slider',
+                    title: 'JPG/JPEG 压缩质量',
+                    description:
+                        '默认 92。用于控制 JPG/JPEG 图片重新编码的质量比例。',
                     slider: {
                         min: 10,
                         max: 100,
@@ -69,7 +94,7 @@
                     type: 'checkbox',
                     title: '粘贴图片自动压缩',
                     description:
-                        '开启后，在编辑器中粘贴 PNG、JPG/JPEG 图片时会先按上方默认压缩质量自动压缩，再写入 assets；默认关闭。',
+                        '开启后，在编辑器中粘贴或拖拽 PNG、JPG/JPEG 图片时会先按上述压缩规则自动压缩，再写入 assets；默认关闭。',
                 },
                 {
                     key: 'enableScreenshot',
