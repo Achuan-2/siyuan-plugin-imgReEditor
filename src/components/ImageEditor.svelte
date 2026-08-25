@@ -8,11 +8,18 @@
     import ToolSettings from './editor/ToolSettings.svelte';
     // TUI Image Editor removed; only Fabric (CanvasEditor) is used now
     import { getFileBlob, putFile, readDir, removeFile } from '../api';
-    import { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt, reencodeImageBlob } from '../utils';
+    import {
+        readPNGTextChunk,
+        insertPNGTextChunk,
+        locatePNGtEXt,
+        readWebPMetadata,
+        insertWebPMetadata,
+        reencodeImageBlob,
+    } from '../utils';
     import { pushMsg, pushErrMsg } from '../api';
 
     const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
-    type OutputImageFormat = 'png' | 'jpeg';
+    type OutputImageFormat = 'png' | 'jpeg' | 'webp';
 
     export let imagePath: string;
     export let blockId: string | null = null;
@@ -147,16 +154,36 @@
             const timestamp = Date.now();
             filename = `screenshot-${timestamp}.png`;
         }
+        if (!['png', 'webp'].includes(getFileExtension(filename))) {
+            filename = replaceFileExtension(filename, 'png');
+        }
+        if (shouldConvertToWebP(filename)) {
+            filename = replaceFileExtension(filename, 'webp');
+        }
         const path = `${SCREENSHOT_HISTORY_DIR}/${filename}`;
 
         // Convert dataURL to blob and insert metadata depending on mode
         const rawBlob = dataURLToBlob(dataURL);
+        const outputFormat = getOutputFormatByFileName(filename);
+        const outputMime = getOutputMime(outputFormat);
         let compressedBlob = rawBlob;
-        if (settings?.enableImageCompression !== false) {
-            const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
-            const quality = getExportQuality('png');
+        if (outputFormat === 'webp') {
             try {
-                compressedBlob = await reencodeImageBlob(rawBlob, 'png', { pngMode, quality });
+                compressedBlob = await reencodeImageBlob(rawBlob, 'webp', {
+                    quality: getExportQuality('webp'),
+                });
+            } catch (e) {
+                console.warn('Failed to encode history screenshot as WebP:', e);
+                pushErrMsg('当前客户端无法编码 WebP');
+                return null;
+            }
+        } else if (settings?.enableImageCompression !== false) {
+            const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
+            try {
+                compressedBlob = await reencodeImageBlob(rawBlob, 'png', {
+                    pngMode,
+                    quality: getExportQuality('png'),
+                });
             } catch (e) {
                 console.warn('Failed to compress history screenshot:', e);
             }
@@ -186,11 +213,14 @@
         }
 
         const metaValue = JSON.stringify(metaObj);
-        const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
-        const newBlob = new Blob([newBuffer as any], { type: 'image/png' });
+        const newBuffer =
+            outputFormat === 'webp'
+                ? insertWebPMetadata(buffer, EDITOR_METADATA_KEY, metaValue)
+                : insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
+        const newBlob = new Blob([newBuffer as any], { type: outputMime });
 
         // Save image to history
-        const file = new File([newBlob], filename, { type: 'image/png' });
+        const file = new File([newBlob], filename, { type: outputMime });
         await putFile(path, false, file);
 
         // If backup mode, write separate JSON backup to backup dir
@@ -325,6 +355,8 @@
     async function handleSaveAs() {
         const history = await saveToHistory();
         if (!history) return;
+        const historyName = history.path.split('/').pop() || `screenshot-${Date.now()}.png`;
+        const historyExt = getFileExtension(historyName) || 'png';
 
         try {
             const { remote } = window.require('electron');
@@ -335,10 +367,10 @@
                 const defaultName =
                     screenshotAssetName ||
                     (screenshotHistoryPath ? screenshotHistoryPath.split('/').pop() : null) ||
-                    `screenshot-${Date.now()}.png`;
+                    historyName;
                 const { filePath } = await dialog.showSaveDialog({
                     defaultPath: defaultName,
-                    filters: [{ name: 'Images', extensions: ['png'] }],
+                    filters: [{ name: 'Images', extensions: [historyExt] }],
                 });
 
                 if (filePath) {
@@ -359,7 +391,7 @@
                 const a = document.createElement('a');
                 const blobUrl = URL.createObjectURL(history.blob);
                 a.href = blobUrl;
-                const name = screenshotAssetName || `screenshot-${Date.now()}.png`;
+                const name = screenshotAssetName || historyName;
                 a.download = name;
                 // persist name for this session
                 screenshotAssetName = name;
@@ -376,7 +408,7 @@
                 const a = document.createElement('a');
                 const blobUrl = URL.createObjectURL(history.blob);
                 a.href = blobUrl;
-                const name = screenshotAssetName || `screenshot-${Date.now()}.png`;
+                const name = screenshotAssetName || historyName;
                 a.download = name;
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
@@ -384,7 +416,7 @@
                 // As a last resort, fallback to dataURL (may lose metadata)
                 const a = document.createElement('a');
                 a.href = history.dataURL;
-                a.download = `screenshot-${Date.now()}.png`;
+                a.download = replaceFileExtension(historyName, 'png');
                 a.click();
             }
         }
@@ -487,16 +519,30 @@
     }
 
     function isSupportedOutputExtension(ext: string) {
-        return ['png', 'jpg', 'jpeg'].includes(ext.toLowerCase());
+        return ['png', 'jpg', 'jpeg', 'webp'].includes(ext.toLowerCase());
     }
 
     function getOutputFormatByFileName(fileName: string): OutputImageFormat {
         const ext = getFileExtension(fileName);
-        return ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : 'png';
+        if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
+        if (ext === 'webp') return 'webp';
+        return 'png';
     }
 
     function getOutputMime(format: OutputImageFormat) {
-        return format === 'jpeg' ? 'image/jpeg' : 'image/png';
+        if (format === 'jpeg') return 'image/jpeg';
+        if (format === 'webp') return 'image/webp';
+        return 'image/png';
+    }
+
+    function shouldConvertToWebP(fileName: string) {
+        if (
+            settings?.enableImageCompression === false ||
+            settings?.convertToWebP !== true
+        ) {
+            return false;
+        }
+        return ['png', 'jpg', 'jpeg'].includes(getFileExtension(fileName));
     }
 
     function getExportQuality(format: OutputImageFormat) {
@@ -504,6 +550,9 @@
         if (format === 'jpeg') {
             const rawQuality = Number(settings?.jpegQuality ?? settings?.imageCompressionQuality ?? 92);
             return Math.min(100, Math.max(1, Number.isFinite(rawQuality) ? rawQuality : 92)) / 100;
+        } else if (format === 'webp') {
+            const rawQuality = Number(settings?.webpQuality ?? 100);
+            return Math.min(100, Math.max(1, Number.isFinite(rawQuality) ? rawQuality : 100)) / 100;
         } else if (format === 'png') {
             const rawQuality = Number(settings?.pngQuality ?? settings?.imageCompressionQuality ?? 92);
             return Math.min(100, Math.max(1, Number.isFinite(rawQuality) ? rawQuality : 92)) / 100;
@@ -581,16 +630,16 @@
 
             const buffer = new Uint8Array(await blob.arrayBuffer());
             let editorData = null;
-            // use locatePNGtEXt to verify PNG and read with readPNGTextChunk
-            if (locatePNGtEXt(buffer)) {
-                const meta = readPNGTextChunk(buffer, EDITOR_METADATA_KEY);
-                if (meta) {
-                    try {
-                        editorData = JSON.parse(meta);
-                        hasExistingMetadata = true; // Image has been edited before
-                    } catch (e) {
-                        console.warn('invalid metadata');
-                    }
+            // PNG 使用 tEXt，WebP 使用标准 XMP 块保存编辑器工程数据。
+            const meta = locatePNGtEXt(buffer)
+                ? readPNGTextChunk(buffer, EDITOR_METADATA_KEY)
+                : readWebPMetadata(buffer, EDITOR_METADATA_KEY);
+            if (meta) {
+                try {
+                    editorData = JSON.parse(meta);
+                    hasExistingMetadata = true; // Image has been edited before
+                } catch (e) {
+                    console.warn('invalid metadata');
                 }
             }
 
@@ -601,7 +650,7 @@
                 settings.storageMode === 'backup' ||
                 !editorData ||
                 editorData.backupFileName ||
-                getOutputFormatByFileName(originalFileName) !== 'png'
+                getOutputFormatByFileName(originalFileName) === 'jpeg'
             ) {
                 try {
                     const expectedBackupName = `${originalFileName}.json`;
@@ -756,6 +805,17 @@
                     : originalFileName;
             }
 
+            if (shouldConvertToWebP(saveName)) {
+                saveName = replaceFileExtension(saveName, 'webp');
+            }
+            if (imagePath && saveName !== originalFileName) {
+                const existingTarget = await getFileBlob(`data/assets/${saveName}`);
+                if (existingTarget && existingTarget.size > 0) {
+                    const stem = saveName.replace(/\.[^.]+$/, '');
+                    saveName = `${stem}-${Date.now()}.${getFileExtension(saveName)}`;
+                }
+            }
+
             const outputFormat = getOutputFormatByFileName(saveName);
             const outputMime = getOutputMime(outputFormat);
             const outputQuality = getExportQuality(outputFormat);
@@ -784,8 +844,16 @@
                 } catch (e) {
                     console.warn('Failed to compress PNG during save:', e);
                 }
+            } else if (outputFormat === 'webp' && blob.type !== 'image/webp') {
+                try {
+                    blob = await reencodeImageBlob(blob, 'webp', { quality: outputQuality });
+                } catch (e) {
+                    console.warn('Failed to encode WebP during save:', e);
+                    pushErrMsg('当前客户端无法编码 WebP，已取消保存');
+                    return;
+                }
             }
-            const mustSaveBackupJson = settings.storageMode === 'backup' || outputFormat !== 'png';
+            const mustSaveBackupJson = settings.storageMode === 'backup' || outputFormat === 'jpeg';
             const metaObj: any = {
                 version: 1,
                 isCanvasMode,
@@ -799,19 +867,22 @@
                           : null,
             };
 
-            // Non-PNG images cannot carry the editor metadata, so they always get a backup JSON.
+            // JPEG 无法携带插件工程数据，因此始终使用备份 JSON。
             if (mustSaveBackupJson) {
                 metaObj.backupFileName = `${saveName}.json`;
             }
 
             let newBlob = blob;
-            if (outputFormat === 'png') {
+            if (outputFormat === 'png' || outputFormat === 'webp') {
                 if (settings.storageMode !== 'backup') {
                     metaObj.canvasJSON = canvasJSON;
                 }
                 const buffer = new Uint8Array(await blob.arrayBuffer());
                 const metaValue = JSON.stringify(metaObj);
-                const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
+                const newBuffer =
+                    outputFormat === 'webp'
+                        ? insertWebPMetadata(buffer, EDITOR_METADATA_KEY, metaValue)
+                        : insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
                 newBlob = new Blob([newBuffer as any], { type: outputMime });
             }
 

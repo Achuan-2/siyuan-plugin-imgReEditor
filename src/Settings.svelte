@@ -48,7 +48,28 @@
                     type: 'checkbox',
                     title: '编辑保存后压缩图片',
                     description:
-                        '开启后保存编辑结果时自动进行压缩，并保持原图片格式。',
+                        '开启后保存编辑结果时自动进行压缩；启用下方 WebP 转换后，PNG、JPG/JPEG 将改存为 WebP。',
+                },
+                {
+                    key: 'convertToWebP',
+                    value: settings.convertToWebP,
+                    type: 'checkbox',
+                    title: 'PNG/JPG 转换为 WebP',
+                    description:
+                        '开启后，编辑保存、手动压缩以及粘贴/拖拽自动压缩时，会将 PNG、JPG/JPEG 转为 WebP；编辑器工程数据会写入 WebP 的 XMP 元数据，仍可再次编辑。',
+                },
+                {
+                    key: 'webpQuality',
+                    value: settings.webpQuality ?? 100,
+                    type: 'slider',
+                    title: 'WebP 压缩质量',
+                    description:
+                        '默认 100（无损压缩）。低于 100 时会使用有损压缩，可能使橙色等高饱和颜色发暗、发灰；仅在转换为 WebP 或压缩 WebP 时生效。',
+                    slider: {
+                        min: 10,
+                        max: 100,
+                        step: 1,
+                    },
                 },
                 {
                     key: 'pngCompressionMode',
@@ -94,7 +115,7 @@
                     type: 'checkbox',
                     title: '粘贴图片自动压缩',
                     description:
-                        '开启后，在编辑器中粘贴或拖拽 PNG、JPG/JPEG 图片时会先按上述压缩规则自动压缩，再写入 assets；默认关闭。',
+                        '开启后，在编辑器中粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时会先按上述压缩规则自动压缩，再写入 assets；默认关闭。',
                 },
                 {
                     key: 'enableScreenshot',

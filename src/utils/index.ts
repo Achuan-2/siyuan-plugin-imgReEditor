@@ -1,7 +1,7 @@
 import UPNG from 'upng-js';
 import { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions } from './oxipng';
 
-export type CompressibleImageFormat = 'png' | 'jpeg';
+export type CompressibleImageFormat = 'png' | 'jpeg' | 'webp';
 
 export { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions };
 
@@ -11,7 +11,9 @@ export interface ReencodeOptions {
 }
 
 export function getMimeByFormat(format: CompressibleImageFormat): string {
-    return format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    if (format === 'jpeg') return 'image/jpeg';
+    if (format === 'webp') return 'image/webp';
+    return 'image/png';
 }
 
 export async function reencodeImageBlob(
@@ -128,6 +130,20 @@ export async function reencodeImageBlob(
                         },
                         'image/png'
                     );
+                } else if (format === 'webp') {
+                    ctx.drawImage(image, 0, 0);
+                    canvas.toBlob(
+                        outputBlob => {
+                            URL.revokeObjectURL(objectURL);
+                            if (outputBlob?.type === 'image/webp') {
+                                resolve(outputBlob);
+                            } else {
+                                reject(new Error('WebP encoding is not supported by this client'));
+                            }
+                        },
+                        'image/webp',
+                        quality
+                    );
                 }
             } catch (error) {
                 URL.revokeObjectURL(objectURL);
@@ -140,6 +156,225 @@ export async function reencodeImageBlob(
         };
         image.src = objectURL;
     });
+}
+
+interface WebPChunk {
+    fourCC: string;
+    data: Uint8Array;
+}
+
+const WEBP_XMP_NAMESPACE =
+    'https://github.com/Achuan-2/siyuan-plugin-imgReEditor/ns/editor-metadata/1.0/';
+const WEBP_XMP_PREFIX = 'siyuanImgReEditor';
+const WEBP_XMP_FLAG = 0x04;
+
+function readUint32LE(data: Uint8Array, offset: number): number {
+    return (
+        data[offset] |
+        (data[offset + 1] << 8) |
+        (data[offset + 2] << 16) |
+        (data[offset + 3] << 24)
+    ) >>> 0;
+}
+
+function writeUint32LE(data: Uint8Array, offset: number, value: number) {
+    data[offset] = value & 0xff;
+    data[offset + 1] = (value >>> 8) & 0xff;
+    data[offset + 2] = (value >>> 16) & 0xff;
+    data[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function readUint24LE(data: Uint8Array, offset: number): number {
+    return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16);
+}
+
+function writeUint24LE(data: Uint8Array, offset: number, value: number) {
+    data[offset] = value & 0xff;
+    data[offset + 1] = (value >>> 8) & 0xff;
+    data[offset + 2] = (value >>> 16) & 0xff;
+}
+
+function isWebPData(data: Uint8Array): boolean {
+    if (data.length < 12) return false;
+    return (
+        String.fromCharCode(...data.subarray(0, 4)) === 'RIFF' &&
+        String.fromCharCode(...data.subarray(8, 12)) === 'WEBP'
+    );
+}
+
+function parseWebPChunks(data: Uint8Array): WebPChunk[] | null {
+    if (!isWebPData(data)) return null;
+
+    const riffEnd = readUint32LE(data, 4) + 8;
+    if (riffEnd > data.length || riffEnd < 12) return null;
+
+    const chunks: WebPChunk[] = [];
+    let offset = 12;
+    while (offset + 8 <= riffEnd) {
+        const fourCC = String.fromCharCode(...data.subarray(offset, offset + 4));
+        const size = readUint32LE(data, offset + 4);
+        const dataStart = offset + 8;
+        const dataEnd = dataStart + size;
+        if (dataEnd > riffEnd) return null;
+
+        chunks.push({ fourCC, data: data.slice(dataStart, dataEnd) });
+        offset = dataEnd + (size & 1);
+    }
+
+    return offset === riffEnd ? chunks : null;
+}
+
+function buildWebP(chunks: WebPChunk[]): Uint8Array {
+    const chunksLength = chunks.reduce(
+        (total, chunk) => total + 8 + chunk.data.length + (chunk.data.length & 1),
+        0
+    );
+    const result = new Uint8Array(12 + chunksLength);
+    result.set(new TextEncoder().encode('RIFF'), 0);
+    writeUint32LE(result, 4, result.length - 8);
+    result.set(new TextEncoder().encode('WEBP'), 8);
+
+    let offset = 12;
+    for (const chunk of chunks) {
+        if (chunk.fourCC.length !== 4) throw new Error('Invalid WebP FourCC');
+        result.set(new TextEncoder().encode(chunk.fourCC), offset);
+        writeUint32LE(result, offset + 4, chunk.data.length);
+        result.set(chunk.data, offset + 8);
+        offset += 8 + chunk.data.length + (chunk.data.length & 1);
+    }
+    return result;
+}
+
+function getWebPDimensions(chunks: WebPChunk[]): { width: number; height: number } | null {
+    const vp8x = chunks.find(chunk => chunk.fourCC === 'VP8X');
+    if (vp8x && vp8x.data.length >= 10) {
+        return {
+            width: readUint24LE(vp8x.data, 4) + 1,
+            height: readUint24LE(vp8x.data, 7) + 1,
+        };
+    }
+
+    const vp8 = chunks.find(chunk => chunk.fourCC === 'VP8 ');
+    if (
+        vp8 &&
+        vp8.data.length >= 10 &&
+        vp8.data[3] === 0x9d &&
+        vp8.data[4] === 0x01 &&
+        vp8.data[5] === 0x2a
+    ) {
+        return {
+            width: (vp8.data[6] | (vp8.data[7] << 8)) & 0x3fff,
+            height: (vp8.data[8] | (vp8.data[9] << 8)) & 0x3fff,
+        };
+    }
+
+    const vp8l = chunks.find(chunk => chunk.fourCC === 'VP8L');
+    if (vp8l && vp8l.data.length >= 5 && vp8l.data[0] === 0x2f) {
+        const bits = readUint32LE(vp8l.data, 1);
+        return {
+            width: (bits & 0x3fff) + 1,
+            height: ((bits >>> 14) & 0x3fff) + 1,
+        };
+    }
+
+    return null;
+}
+
+function createEditorXMPDescription(keyword: string, text: string): string {
+    return `<rdf:Description rdf:about="" xmlns:${WEBP_XMP_PREFIX}="${WEBP_XMP_NAMESPACE}" ${WEBP_XMP_PREFIX}:keyword="${unicodeToBase64(keyword)}" ${WEBP_XMP_PREFIX}:value="${unicodeToBase64(text)}"/>`;
+}
+
+function mergeEditorMetadataIntoXMP(existingXMP: string | null, keyword: string, text: string): string {
+    const description = createEditorXMPDescription(keyword, text);
+    if (existingXMP) {
+        const escapedNamespace = WEBP_XMP_NAMESPACE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const oldDescription = new RegExp(
+            `<rdf:Description\\b(?=[^>]*\\bxmlns:${WEBP_XMP_PREFIX}="${escapedNamespace}")[^>]*\\/>`,
+            'gi'
+        );
+        const cleanedXMP = existingXMP.replace(oldDescription, '');
+        if (/<\/rdf:RDF\s*>/i.test(cleanedXMP)) {
+            return cleanedXMP.replace(/<\/rdf:RDF\s*>/i, `${description}</rdf:RDF>`);
+        }
+    }
+
+    return `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">${description}</rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
+}
+
+/**
+ * 将插件工程数据写入 WebP 的标准 XMP 块，并正确设置 VP8X 的 XMP 标志。
+ */
+export function insertWebPMetadata(data: Uint8Array, keyword: string, text: string): Uint8Array {
+    const chunks = parseWebPChunks(data);
+    if (!chunks) throw new Error('Not a valid WebP file');
+
+    const existingXMPChunk = chunks.find(chunk => chunk.fourCC === 'XMP ');
+    const existingXMP = existingXMPChunk
+        ? new TextDecoder('utf-8').decode(existingXMPChunk.data)
+        : null;
+    const xmpData = new TextEncoder().encode(mergeEditorMetadataIntoXMP(existingXMP, keyword, text));
+
+    const existingVP8X = chunks.find(chunk => chunk.fourCC === 'VP8X');
+    let vp8xData: Uint8Array;
+    if (existingVP8X) {
+        if (existingVP8X.data.length < 10) throw new Error('Invalid WebP VP8X chunk');
+        vp8xData = existingVP8X.data.slice();
+        vp8xData[0] |= WEBP_XMP_FLAG;
+    } else {
+        const dimensions = getWebPDimensions(chunks);
+        if (!dimensions || dimensions.width < 1 || dimensions.height < 1) {
+            throw new Error('Unable to determine WebP dimensions');
+        }
+
+        vp8xData = new Uint8Array(10);
+        if (chunks.some(chunk => chunk.fourCC === 'ICCP')) vp8xData[0] |= 0x20;
+        if (chunks.some(chunk => chunk.fourCC === 'ALPH')) vp8xData[0] |= 0x10;
+        if (chunks.some(chunk => chunk.fourCC === 'EXIF')) vp8xData[0] |= 0x08;
+        if (chunks.some(chunk => chunk.fourCC === 'ANIM' || chunk.fourCC === 'ANMF')) {
+            vp8xData[0] |= 0x02;
+        }
+        const vp8l = chunks.find(chunk => chunk.fourCC === 'VP8L');
+        if (vp8l && vp8l.data.length >= 5 && (vp8l.data[4] & 0x10) !== 0) {
+            vp8xData[0] |= 0x10;
+        }
+        vp8xData[0] |= WEBP_XMP_FLAG;
+        writeUint24LE(vp8xData, 4, dimensions.width - 1);
+        writeUint24LE(vp8xData, 7, dimensions.height - 1);
+    }
+
+    const remainingChunks = chunks.filter(
+        chunk => chunk.fourCC !== 'VP8X' && chunk.fourCC !== 'XMP '
+    );
+    return buildWebP([
+        { fourCC: 'VP8X', data: vp8xData },
+        ...remainingChunks,
+        { fourCC: 'XMP ', data: xmpData },
+    ]);
+}
+
+/** 从 WebP XMP 块读取由插件写入的工程数据。 */
+export function readWebPMetadata(data: Uint8Array, keyword: string): string | null {
+    const chunks = parseWebPChunks(data);
+    if (!chunks) return null;
+
+    const xmpChunk = chunks.find(chunk => chunk.fourCC === 'XMP ');
+    if (!xmpChunk) return null;
+
+    const xmp = new TextDecoder('utf-8').decode(xmpChunk.data);
+    const descriptionPattern = new RegExp(
+        `<rdf:Description\\b[^>]*\\b${WEBP_XMP_PREFIX}:keyword="([^"]*)"[^>]*\\b${WEBP_XMP_PREFIX}:value="([^"]*)"[^>]*/?>`,
+        'gi'
+    );
+    for (const match of xmp.matchAll(descriptionPattern)) {
+        try {
+            if (base64ToUnicode(match[1]) === keyword) {
+                return base64ToUnicode(match[2]);
+            }
+        } catch {
+            // Ignore malformed plugin metadata and continue searching.
+        }
+    }
+    return null;
 }
 
 export function HTMLToElement(html: string): HTMLElement {

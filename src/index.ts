@@ -12,10 +12,21 @@ import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
-import { reencodeImageBlob, getMimeByFormat, type CompressibleImageFormat, type ReencodeOptions } from "./utils";
+import {
+    reencodeImageBlob,
+    getMimeByFormat,
+    readPNGTextChunk,
+    insertPNGTextChunk,
+    locatePNGtEXt,
+    readWebPMetadata,
+    insertWebPMetadata,
+    type CompressibleImageFormat,
+    type ReencodeOptions,
+} from "./utils";
 
 export const SETTINGS_FILE = "settings.json";
 const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
+const EDITOR_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-imgReEditor/backup';
 
 function getFileExtension(fileName: string) {
     const lastDot = fileName.lastIndexOf('.');
@@ -26,7 +37,22 @@ function getCompressibleImageFormat(fileName: string): CompressibleImageFormat |
     const ext = getFileExtension(fileName);
     if (ext === 'png') return 'png';
     if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
+    if (ext === 'webp') return 'webp';
     return null;
+}
+
+function replaceFileExtension(fileName: string, extension: string) {
+    return fileName.includes('.')
+        ? fileName.replace(/\.[^.]+$/, `.${extension}`)
+        : `${fileName}.${extension}`;
+}
+
+function getCompressionOutputFormat(
+    settings: any,
+    sourceFormat: CompressibleImageFormat
+): CompressibleImageFormat {
+    if (settings?.convertToWebP === true && sourceFormat !== 'webp') return 'webp';
+    return sourceFormat;
 }
 
 function getFormatCompressionOptions(settings: any, format: CompressibleImageFormat): ReencodeOptions {
@@ -37,8 +63,14 @@ function getFormatCompressionOptions(settings: any, format: CompressibleImageFor
     const rawJpegQuality = Number(settings?.jpegQuality ?? settings?.imageCompressionQuality ?? 92);
     const jpegQuality = Math.min(100, Math.max(1, Number.isFinite(rawJpegQuality) ? rawJpegQuality : 92)) / 100;
 
+    const rawWebPQuality = Number(settings?.webpQuality ?? 100);
+    const webpQuality = Math.min(100, Math.max(1, Number.isFinite(rawWebPQuality) ? rawWebPQuality : 100)) / 100;
+
     if (format === 'png') {
         return { pngMode, quality: pngQuality };
+    }
+    if (format === 'webp') {
+        return { quality: webpQuality };
     }
     return { quality: jpegQuality };
 }
@@ -50,7 +82,13 @@ function formatBytes(bytes: number) {
 }
 
 type CompressionResult =
-    | { status: 'compressed'; originalSize: number; savedSize: number }
+    | {
+        status: 'compressed';
+        originalSize: number;
+        savedSize: number;
+        originalPath: string;
+        savedPath: string;
+    }
     | {
         status: 'skipped';
         reason: 'unsupported' | 'empty' | 'not-smaller' | 'write-failed';
@@ -372,18 +410,99 @@ export default class PluginSample extends Plugin {
         return Array.from(paths);
     }
 
+    private updateImageElementsWithPathMap(root: ParentNode, pathMap: Map<string, string>) {
+        const changedBlocks = new Map<string, HTMLElement>();
+        root.querySelectorAll('img').forEach((element: Element) => {
+            const image = element as HTMLImageElement;
+            const currentPath = normalizeAssetPath(
+                image.dataset?.src || image.getAttribute('data-src') || image.getAttribute('src')
+            );
+            const newPath = currentPath ? pathMap.get(currentPath) : null;
+            if (!newPath) return;
+
+            image.setAttribute('data-src', newPath);
+            image.setAttribute('src', newPath);
+            const block = image.closest('[data-node-id]') as HTMLElement | null;
+            const blockID = block?.getAttribute('data-node-id');
+            if (block && blockID) changedBlocks.set(blockID, block);
+        });
+        return changedBlocks;
+    }
+
+    private async replaceImageAssetReferencesInDocument(
+        docID: string,
+        pathMap: Map<string, string>
+    ) {
+        if (pathMap.size === 0) return;
+        const { getBlockDOM, updateBlock } = await import('./api');
+        const blockDOM = await getBlockDOM(docID) as any;
+        const html =
+            typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || blockDOM?.content || '';
+        if (!html) throw new Error('Unable to load document DOM for WebP reference update');
+
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        const changedBlocks = this.updateImageElementsWithPathMap(parsed, pathMap);
+        for (const [blockID, block] of changedBlocks) {
+            await updateBlock('dom', block.outerHTML, blockID);
+        }
+    }
+
+    private async replaceImageAssetReferenceInBlock(
+        blockID: string,
+        originalPath: string,
+        savedPath: string
+    ) {
+        if (!blockID || originalPath === savedPath) return;
+        // The live DOM may already have been refreshed to savedPath; mapping it to itself
+        // also removes the temporary cache-busting query before persisting the block.
+        const pathMap = new Map([
+            [originalPath, savedPath],
+            [savedPath, savedPath],
+        ]);
+        const liveBlock = Array.from(document.querySelectorAll('[data-node-id]')).find(
+            element => element.getAttribute('data-node-id') === blockID
+        ) as HTMLElement | undefined;
+        const { getBlockDOM, updateBlock } = await import('./api');
+
+        if (liveBlock) {
+            this.updateImageElementsWithPathMap(liveBlock, pathMap);
+            await updateBlock('dom', liveBlock.outerHTML, blockID);
+            return;
+        }
+
+        const blockDOM = await getBlockDOM(blockID) as any;
+        const html =
+            typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || blockDOM?.content || '';
+        if (!html) throw new Error('Unable to load image block for WebP reference update');
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        const changedBlocks = this.updateImageElementsWithPathMap(parsed, pathMap);
+        const changedBlock = changedBlocks.get(blockID) || Array.from(changedBlocks.values())[0];
+        if (!changedBlock) throw new Error('Image reference was not found in its block');
+        await updateBlock('dom', changedBlock.outerHTML, blockID);
+    }
+
+    private async removeConvertedSourceIfUnused(originalPath: string) {
+        try {
+            const { request } = await import('./api');
+            return !!(await request('/api/asset/removeUnusedAsset', { path: originalPath }));
+        } catch (error) {
+            console.warn('Converted source image is still referenced or could not be removed:', error);
+            return false;
+        }
+    }
+
     private getDocIDFromEditorTitleDetail(detail: any) {
         return detail?.data?.rootID || detail?.data?.id || detail?.protyle?.block?.rootID || detail?.protyle?.block?.id || '';
     }
 
-    private async compressDocumentImageAssets(imageURLs: string[]) {
+    private async compressDocumentImageAssets(docID: string, imageURLs: string[]) {
         const { pushMsg, pushErrMsg } = await import('./api');
         const uniqueURLs = Array.from(new Set(imageURLs
             .map((imageURL) => normalizeAssetPath(imageURL))
             .filter((imageURL): imageURL is string => !!imageURL && !!getCompressibleImageFormat(imageURL))));
 
         if (uniqueURLs.length === 0) {
-            await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG 图片');
+            await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG/WebP 图片');
             return;
         }
 
@@ -397,6 +516,7 @@ export default class PluginSample extends Plugin {
             originalSize: 0,
             savedSize: 0,
         };
+        const convertedPaths = new Map<string, string>();
 
         for (const imageURL of uniqueURLs) {
             const result = await this.compressImageAsset(imageURL, undefined, { silent: true });
@@ -404,12 +524,28 @@ export default class PluginSample extends Plugin {
                 stats.compressed += 1;
                 stats.originalSize += result.originalSize;
                 stats.savedSize += result.savedSize;
+                if (result.originalPath !== result.savedPath) {
+                    convertedPaths.set(result.originalPath, result.savedPath);
+                }
             } else if (result.status === 'failed') {
                 stats.failed += 1;
             } else if (result.reason === 'write-failed') {
                 stats.writeFailed += 1;
             } else {
                 stats.skipped += 1;
+            }
+        }
+
+        if (convertedPaths.size > 0) {
+            try {
+                await this.replaceImageAssetReferencesInDocument(docID, convertedPaths);
+                for (const originalPath of convertedPaths.keys()) {
+                    await this.removeConvertedSourceIfUnused(originalPath);
+                }
+            } catch (error) {
+                console.error('Failed to update converted WebP references in document:', error);
+                await pushErrMsg('图片已转换为 WebP，但更新文档图片引用失败；原图片未删除');
+                return;
             }
         }
 
@@ -446,7 +582,7 @@ export default class PluginSample extends Plugin {
         };
 
         if (!format || !imagePath) {
-            await notifyErr('暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG');
+            await notifyErr('暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG、WebP');
             return { status: 'skipped', reason: 'unsupported' };
         }
 
@@ -457,8 +593,58 @@ export default class PluginSample extends Plugin {
                 return { status: 'skipped', reason: 'empty' };
             }
 
-            const compressionOptions = getFormatCompressionOptions(this.settings, format);
-            const compressedBlob = await this.compressImageBlob(blob, format, compressionOptions);
+            const outputFormat = getCompressionOutputFormat(this.settings, format);
+            let savedFileName =
+                outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
+            let savedPath = imagePath.replace(/[^/]+$/, savedFileName);
+            if (savedPath !== imagePath) {
+                const existingTarget = await getFileBlob(`data/${savedPath}`);
+                if (existingTarget && existingTarget.size > 0) {
+                    const stem = savedFileName.replace(/\.[^.]+$/, '');
+                    savedFileName = `${stem}-${Date.now()}.${outputFormat}`;
+                    savedPath = imagePath.replace(/[^/]+$/, savedFileName);
+                }
+            }
+            const compressionOptions = getFormatCompressionOptions(this.settings, outputFormat);
+
+            let sidecarText: string | null = null;
+            if (savedPath !== imagePath) {
+                try {
+                    const sidecar = await getFileBlob(`${EDITOR_BACKUP_DIR}/${fileName}.json`);
+                    if (sidecar && sidecar.size > 0) sidecarText = await sidecar.text();
+                } catch {
+                    // Most images do not have editor sidecar data.
+                }
+            }
+
+            let metadataOverride: string | null = null;
+            if (sidecarText && outputFormat === 'webp') {
+                try {
+                    const sidecarData = JSON.parse(sidecarText);
+                    if (this.settings?.storageMode === 'backup') {
+                        const { canvasJSON: _canvasJSON, ...embeddedPointer } = sidecarData;
+                        metadataOverride = JSON.stringify({
+                            ...embeddedPointer,
+                            backupFileName: `${savedFileName}.json`,
+                        });
+                    } else {
+                        metadataOverride = JSON.stringify({
+                            ...sidecarData,
+                            backupFileName: undefined,
+                        });
+                    }
+                } catch {
+                    metadataOverride = sidecarText;
+                }
+            }
+
+            const compressedBlob = await this.compressImageBlob(
+                blob,
+                format,
+                outputFormat,
+                compressionOptions,
+                metadataOverride
+            );
 
             if (compressedBlob.size >= blob.size) {
                 await notifyMsg(
@@ -472,30 +658,65 @@ export default class PluginSample extends Plugin {
                 };
             }
 
-            const file = new File([compressedBlob], fileName, { type: getMimeByFormat(format) });
-            await putFile(`data/${imagePath}`, false, file);
+            const file = new File([compressedBlob], savedFileName, {
+                type: getMimeByFormat(outputFormat),
+            });
+            await putFile(`data/${savedPath}`, false, file);
 
-            const saved = await getFileBlob(`data/${imagePath}`);
+            if (sidecarText && this.settings?.storageMode === 'backup' && savedPath !== imagePath) {
+                try {
+                    const sidecarData = JSON.parse(sidecarText);
+                    const updatedSidecar = new Blob(
+                        [
+                            JSON.stringify({
+                                ...sidecarData,
+                                backupFileName: `${savedFileName}.json`,
+                            }),
+                        ],
+                        { type: 'application/json' }
+                    );
+                    await putFile(
+                        `${EDITOR_BACKUP_DIR}/${savedFileName}.json`,
+                        false,
+                        updatedSidecar
+                    );
+                } catch (error) {
+                    console.warn('Failed to copy editor backup metadata for converted WebP', error);
+                }
+            }
+
+            const saved = await getFileBlob(`data/${savedPath}`);
             if (!saved || saved.size === 0) {
                 await notifyErr('压缩后写入图片失败');
                 return { status: 'skipped', reason: 'write-failed' };
             }
 
-            const cacheBustURL = `${imagePath}?t=${Date.now()}`;
+            const cacheBustURL = `${savedPath}?t=${Date.now()}`;
             const refreshImage = (img: HTMLImageElement) => {
                 if (normalizeAssetPath(img.dataset?.src || img.getAttribute('src')) === imagePath) {
-                    img.setAttribute('data-src', imagePath);
+                    img.setAttribute('data-src', savedPath);
                     img.src = cacheBustURL;
                 }
             };
 
             if (imageElement) refreshImage(imageElement);
-            document.querySelectorAll('img[data-src]').forEach((img: Element) => {
-                refreshImage(img as HTMLImageElement);
-            });
+            if (savedPath === imagePath) {
+                document.querySelectorAll('img[data-src]').forEach((img: Element) => {
+                    refreshImage(img as HTMLImageElement);
+                });
+            }
 
-            await notifyMsg(`压缩完成：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}`);
-            return { status: 'compressed', originalSize: blob.size, savedSize: saved.size };
+            const convertedText = savedPath !== imagePath ? `，已转换为 ${savedFileName}` : '';
+            await notifyMsg(
+                `压缩完成：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}${convertedText}`
+            );
+            return {
+                status: 'compressed',
+                originalSize: blob.size,
+                savedSize: saved.size,
+                originalPath: imagePath,
+                savedPath,
+            };
         } catch (error) {
             console.error('Compress image failed:', error);
             await notifyErr('压缩图片失败');
@@ -503,39 +724,39 @@ export default class PluginSample extends Plugin {
         }
     }
 
-    /**
-     * 压缩图片 Blob；PNG 会保留编辑器元数据。返回压缩后的 Blob。
-     */
+    /** 压缩或转换图片 Blob，并在 PNG/WebP 中保留编辑器工程数据。 */
     private async compressImageBlob(
         blob: Blob,
-        format: CompressibleImageFormat,
-        options?: ReencodeOptions
+        sourceFormat: CompressibleImageFormat,
+        outputFormat: CompressibleImageFormat = sourceFormat,
+        options?: ReencodeOptions,
+        metadataOverride?: string | null
     ): Promise<Blob> {
-        const effectiveOptions = options || getFormatCompressionOptions(this.settings, format);
-        let compressedBlob = await reencodeImageBlob(blob, format, effectiveOptions);
+        const effectiveOptions =
+            options || getFormatCompressionOptions(this.settings, outputFormat);
+        let compressedBlob = await reencodeImageBlob(blob, outputFormat, effectiveOptions);
 
-        if (format === 'png') {
-            try {
-                const { readPNGTextChunk, insertPNGTextChunk, locatePNGtEXt } = await import(
-                    './utils'
-                );
-                const originalBuffer = new Uint8Array(await blob.arrayBuffer());
-                const meta = locatePNGtEXt(originalBuffer)
-                    ? readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY)
-                    : null;
-
-                if (meta) {
-                    const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
-                    const newBuffer = insertPNGTextChunk(
-                        compressedBuffer,
-                        EDITOR_METADATA_KEY,
-                        meta
-                    );
-                    compressedBlob = new Blob([newBuffer as any], { type: 'image/png' });
-                }
-            } catch (error) {
-                console.warn('Failed to preserve PNG editor metadata during compression', error);
+        try {
+            const originalBuffer = new Uint8Array(await blob.arrayBuffer());
+            let metadata = metadataOverride || null;
+            if (!metadata && sourceFormat === 'png' && locatePNGtEXt(originalBuffer)) {
+                metadata = readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY);
+            } else if (!metadata && sourceFormat === 'webp') {
+                metadata = readWebPMetadata(originalBuffer, EDITOR_METADATA_KEY);
             }
+
+            if (metadata && (outputFormat === 'png' || outputFormat === 'webp')) {
+                const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
+                const newBuffer =
+                    outputFormat === 'webp'
+                        ? insertWebPMetadata(compressedBuffer, EDITOR_METADATA_KEY, metadata)
+                        : insertPNGTextChunk(compressedBuffer, EDITOR_METADATA_KEY, metadata);
+                compressedBlob = new Blob([newBuffer as any], {
+                    type: getMimeByFormat(outputFormat),
+                });
+            }
+        } catch (error) {
+            console.warn('Failed to preserve editor metadata during image compression', error);
         }
 
         return compressedBlob;
@@ -564,15 +785,17 @@ export default class PluginSample extends Plugin {
                     }
 
                     if (compressibleImageURLs.length === 0) {
-                        await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG 图片');
+                        await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG/WebP 图片');
                         return;
                     }
 
                     confirm(
                         '批量压缩文档图片',
-                        `将使用当前压缩设置覆盖当前文档中的 ${compressibleImageURLs.length} 张 PNG/JPG/JPEG 图片，并跳过压缩后不变小的图片。继续吗？`,
+                        this.settings?.convertToWebP === true
+                            ? `将使用当前压缩设置把文档中的 ${compressibleImageURLs.length} 张图片压缩为 WebP，并更新当前文档内的引用；仍被其他位置引用的原资源会保留。继续吗？`
+                            : `将使用当前压缩设置覆盖当前文档中的 ${compressibleImageURLs.length} 张图片，并跳过压缩后不变小的图片。继续吗？`,
                         async () => {
-                            await this.compressDocumentImageAssets(compressibleImageURLs);
+                            await this.compressDocumentImageAssets(docID, compressibleImageURLs);
                         }
                     );
                 } catch (error) {
@@ -606,20 +829,22 @@ export default class PluginSample extends Plugin {
                 let isCanvasMode = false;
                 try {
                     const { getFileBlob } = await import('./api');
-                    const { readPNGTextChunk, locatePNGtEXt } = await import('./utils');
+                    const { readPNGTextChunk, locatePNGtEXt, readWebPMetadata } = await import(
+                        './utils'
+                    );
 
                     const blob = await getFileBlob(`data/${imageURL}`);
                     if (blob) {
                         const buffer = new Uint8Array(await blob.arrayBuffer());
-                        if (locatePNGtEXt(buffer)) {
-                            const meta = readPNGTextChunk(buffer, EDITOR_METADATA_KEY);
-                            if (meta) {
-                                try {
-                                    const editorData = JSON.parse(meta);
-                                    isCanvasMode = editorData.isCanvasMode === true;
-                                } catch (e) {
-                                    // 元数据解析失败，使用默认模式
-                                }
+                        const meta = locatePNGtEXt(buffer)
+                            ? readPNGTextChunk(buffer, EDITOR_METADATA_KEY)
+                            : readWebPMetadata(buffer, EDITOR_METADATA_KEY);
+                        if (meta) {
+                            try {
+                                const editorData = JSON.parse(meta);
+                                isCanvasMode = editorData.isCanvasMode === true;
+                            } catch (e) {
+                                // 元数据解析失败，使用默认模式
                             }
                         }
                     }
@@ -628,7 +853,22 @@ export default class PluginSample extends Plugin {
                 }
 
                 // 打开编辑器对话框
-                this.openImageEditorDialog(imageURL, blockID, isCanvasMode);
+                this.openImageEditorDialog(
+                    imageURL,
+                    blockID,
+                    isCanvasMode,
+                    false,
+                    async newPath => {
+                        if (blockID && newPath !== imageURL) {
+                            await this.replaceImageAssetReferenceInBlock(
+                                blockID,
+                                imageURL,
+                                newPath
+                            );
+                            await this.removeConvertedSourceIfUnused(imageURL);
+                        }
+                    }
+                );
             }
         });
         menu.addItem({
@@ -639,9 +879,25 @@ export default class PluginSample extends Plugin {
             click: async () => {
                 confirm(
                     '压缩图片',
-                    '将使用当前压缩设置覆盖原图片，并保留原图片格式。继续吗？',
+                    this.settings?.convertToWebP === true && getCompressibleImageFormat(imageURL) !== 'webp'
+                        ? '将使用当前压缩设置转为 WebP，并更新当前图片块的引用；仍被其他位置引用的原资源会保留。继续吗？'
+                        : '将使用当前压缩设置覆盖原图片。继续吗？',
                     async () => {
-                        await this.compressImageAsset(imageURL, imageElement);
+                        const result = await this.compressImageAsset(imageURL, imageElement);
+                        if (result.status === 'compressed' && result.originalPath !== result.savedPath) {
+                            try {
+                                await this.replaceImageAssetReferenceInBlock(
+                                    blockID || '',
+                                    result.originalPath,
+                                    result.savedPath
+                                );
+                                await this.removeConvertedSourceIfUnused(result.originalPath);
+                            } catch (error) {
+                                console.error('Failed to update converted WebP block reference:', error);
+                                const { pushErrMsg } = await import('./api');
+                                await pushErrMsg('图片已转换为 WebP，但更新图片块引用失败；原图片未删除');
+                            }
+                        }
                     }
                 );
             }
@@ -697,7 +953,7 @@ export default class PluginSample extends Plugin {
         });
     }
 
-    async openImageEditorDialog(imagePath: string, blockID?: string | null, isCanvasMode: boolean = false, isScreenshotMode: boolean = false, onSaveCallback?: (path: string) => void, initialRect?: { x: number, y: number, width: number, height: number } | null) {
+    async openImageEditorDialog(imagePath: string, blockID?: string | null, isCanvasMode: boolean = false, isScreenshotMode: boolean = false, onSaveCallback?: (path: string) => void | Promise<void>, initialRect?: { x: number, y: number, width: number, height: number } | null) {
         // derive filename from path/URL and include it in the dialog title
         const fileName = (typeof imagePath === 'string' && imagePath.length && !imagePath.startsWith('data:'))
             ? imagePath.split('/').pop() || ''
@@ -742,7 +998,9 @@ export default class PluginSample extends Plugin {
                     (dialog as any)._skipDirtyCheck = true;
                     dialog.destroy();
                     if (saved && newPath && onSaveCallback) {
-                        onSaveCallback(newPath);
+                        void Promise.resolve(onSaveCallback(newPath)).catch(error => {
+                            console.error('Failed to update saved image reference:', error);
+                        });
                     }
                 }
             }
@@ -838,7 +1096,15 @@ export default class PluginSample extends Plugin {
                         isCanvasMode,
                         isScreenshotMode,
                         initialRect: null,
-                        onClose: (_saved: boolean, _newPath?: string) => {
+                        onClose: (saved: boolean, newPath?: string) => {
+                            if (saved && newPath && blockID && newPath !== imagePath) {
+                                void plugin
+                                    .replaceImageAssetReferenceInBlock(blockID, imagePath, newPath)
+                                    .then(() => plugin.removeConvertedSourceIfUnused(imagePath))
+                                    .catch(error => {
+                                        console.error('Failed to update saved image reference:', error);
+                                    });
+                            }
                             // Close the tab when editor closes
                             const tab = document.querySelector(`[data-id="${plugin.name}${id}"]`);
                             if (tab) {
@@ -1066,27 +1332,53 @@ export default class PluginSample extends Plugin {
                 if (
                     key === 'file[]' &&
                     value instanceof File &&
-                    (value.type === 'image/png' || value.type === 'image/jpeg')
+                    (value.type === 'image/png' ||
+                        value.type === 'image/jpeg' ||
+                        value.type === 'image/webp')
                 ) {
-                    const format: CompressibleImageFormat = value.type === 'image/png' ? 'png' : 'jpeg';
-                    const compressionOptions = getFormatCompressionOptions(this.settings, format);
+                    const sourceFormat: CompressibleImageFormat =
+                        value.type === 'image/png'
+                            ? 'png'
+                            : value.type === 'image/webp'
+                              ? 'webp'
+                              : 'jpeg';
+                    const outputFormat = getCompressionOutputFormat(this.settings, sourceFormat);
+                    const compressionOptions = getFormatCompressionOptions(
+                        this.settings,
+                        outputFormat
+                    );
                     try {
-                        const compressedBlob = await this.compressImageBlob(value, format, compressionOptions);
+                        const compressedBlob = await this.compressImageBlob(
+                            value,
+                            sourceFormat,
+                            outputFormat,
+                            compressionOptions
+                        );
                         if (compressedBlob.size > 0 && compressedBlob.size < value.size) {
-                            const fileName = value.name || (format === 'png' ? 'image.png' : 'image.jpg');
+                            const originalName =
+                                value.name ||
+                                (sourceFormat === 'png'
+                                    ? 'image.png'
+                                    : sourceFormat === 'webp'
+                                      ? 'image.webp'
+                                      : 'image.jpg');
+                            const fileName =
+                                outputFormat === sourceFormat
+                                    ? originalName
+                                    : replaceFileExtension(originalName, outputFormat);
                             const compressedFile = new File([compressedBlob], fileName, {
-                                type: getMimeByFormat(format)
+                                type: getMimeByFormat(outputFormat)
                             });
                             compressedCount += 1;
                             originalTotalSize += value.size;
                             compressedTotalSize += compressedBlob.size;
-                            return [key, compressedFile];
+                            return [key, compressedFile] as [string, FormDataEntryValue];
                         }
                     } catch (error) {
                         console.warn('Failed to compress file in XHR interceptor:', value.name, error);
                     }
                 }
-                return [key, value];
+                return [key, value] as [string, FormDataEntryValue];
             })
         );
 
@@ -1129,17 +1421,39 @@ export default class PluginSample extends Plugin {
             const newAssetPaths = [];
             for (const assetPath of data.assetPaths) {
                 const ext = assetPath.split('.').pop()?.toLowerCase();
-                if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
-                    const format: CompressibleImageFormat = ext === 'png' ? 'png' : 'jpeg';
-                    const compressionOptions = getFormatCompressionOptions(this.settings, format);
+                if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp') {
+                    const sourceFormat: CompressibleImageFormat =
+                        ext === 'png' ? 'png' : ext === 'webp' ? 'webp' : 'jpeg';
+                    const outputFormat = getCompressionOutputFormat(this.settings, sourceFormat);
+                    const compressionOptions = getFormatCompressionOptions(
+                        this.settings,
+                        outputFormat
+                    );
                     try {
                         const fileBuffer = fs.readFileSync(assetPath);
                         const originalSize = fileBuffer.length;
-                        const blob = new Blob([fileBuffer], { type: getMimeByFormat(format) });
-                        const compressedBlob = await this.compressImageBlob(blob, format, compressionOptions);
+                        const blob = new Blob([fileBuffer], {
+                            type: getMimeByFormat(sourceFormat),
+                        });
+                        const compressedBlob = await this.compressImageBlob(
+                            blob,
+                            sourceFormat,
+                            outputFormat,
+                            compressionOptions
+                        );
 
                         if (compressedBlob.size > 0 && compressedBlob.size < originalSize) {
-                            const fileName = assetPath.split(/[\\/]/).pop() || (format === 'png' ? 'image.png' : 'image.jpg');
+                            const originalName =
+                                assetPath.split(/[\\/]/).pop() ||
+                                (sourceFormat === 'png'
+                                    ? 'image.png'
+                                    : sourceFormat === 'webp'
+                                      ? 'image.webp'
+                                      : 'image.jpg');
+                            const fileName =
+                                outputFormat === sourceFormat
+                                    ? originalName
+                                    : replaceFileExtension(originalName, outputFormat);
                             const tempPath = path.join(os.tmpdir(), fileName);
                             const compressedBuffer = Buffer.from(await compressedBlob.arrayBuffer());
                             fs.writeFileSync(tempPath, compressedBuffer);

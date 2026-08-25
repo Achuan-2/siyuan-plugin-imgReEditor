@@ -9,6 +9,8 @@ export const getDefaultSettings = () => ({
     pngCompressionMode: 'lossless' as 'lossless' | 'lossy',
     pngQuality: 92,
     jpegQuality: 92,
+    convertToWebP: false,
+    webpQuality: 100,
     imageCompressionQuality: 92,
     enablePasteImageCompression: false,
     enableScreenshot: false,

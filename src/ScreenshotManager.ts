@@ -1041,7 +1041,7 @@ export class ScreenshotManager {
                     if (ts > 0 && ts < 10000000000) ts *= 1000;
                     return ts;
                 }
-                const match = file.name.match(/screenshot-(\d+)\.png/);
+                const match = file.name.match(/screenshot-(\d+)\.(?:png|webp)/i);
                 return match ? parseInt(match[1]) : ((file.updated || 0) * 1000);
             };
 
