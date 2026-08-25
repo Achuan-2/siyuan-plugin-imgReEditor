@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@erase2d/fabric": "^1.1.8",
+    "@jsquash/webp": "^1.5.0",
     "fabric": "^6.9.1",
     "svelte-awesome-color-picker": "^3.1.4",
     "tui-code-snippet": "^2.3.3",

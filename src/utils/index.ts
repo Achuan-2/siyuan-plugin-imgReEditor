@@ -1,4 +1,8 @@
 import UPNG from 'upng-js';
+import createWebPEncoder, {
+    type WebPModule,
+} from '@jsquash/webp/codec/enc/webp_enc.js';
+import { defaultOptions as defaultWebPOptions } from '@jsquash/webp/meta.js';
 import { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions } from './oxipng';
 
 export type CompressibleImageFormat = 'png' | 'jpeg' | 'webp';
@@ -16,6 +20,27 @@ export function getMimeByFormat(format: CompressibleImageFormat): string {
     return 'image/png';
 }
 
+let webpEncoderModule: Promise<WebPModule> | null = null;
+
+async function encodeWebP(imageData: ImageData, quality: number): Promise<Blob> {
+    if (!webpEncoderModule) {
+        webpEncoderModule = createWebPEncoder({ noInitialRun: true });
+    }
+    const encoder = await webpEncoderModule;
+    const isLossless = quality >= 1;
+    const encoded = encoder.encode(imageData.data, imageData.width, imageData.height, {
+        ...defaultWebPOptions,
+        lossless: isLossless ? 1 : 0,
+        quality: isLossless ? 100 : Math.min(100, Math.max(0, quality * 100)),
+        method: 6,
+        exact: isLossless ? 1 : 0,
+        near_lossless: 100,
+        alpha_quality: 100,
+    });
+    if (!encoded) throw new Error('WebP lossless encoding failed');
+    return new Blob([encoded.slice() as any], { type: 'image/webp' });
+}
+
 export async function reencodeImageBlob(
     blob: Blob,
     format: CompressibleImageFormat,
@@ -30,6 +55,12 @@ export async function reencodeImageBlob(
 
     const quality = options.quality ?? 0.92;
     const pngMode = options.pngMode ?? (quality >= 1 ? 'lossless' : 'lossy');
+
+    // The encoders below only emit a single image. Never pass animated WebP
+    // through them, otherwise automatic compression would silently discard frames.
+    if (format === 'webp' && (await isAnimatedWebPBlob(blob))) {
+        return blob;
+    }
 
     if (format === 'png') {
         if (pngMode === 'lossless') {
@@ -132,18 +163,9 @@ export async function reencodeImageBlob(
                     );
                 } else if (format === 'webp') {
                     ctx.drawImage(image, 0, 0);
-                    canvas.toBlob(
-                        outputBlob => {
-                            URL.revokeObjectURL(objectURL);
-                            if (outputBlob?.type === 'image/webp') {
-                                resolve(outputBlob);
-                            } else {
-                                reject(new Error('WebP encoding is not supported by this client'));
-                            }
-                        },
-                        'image/webp',
-                        quality
-                    );
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    URL.revokeObjectURL(objectURL);
+                    void encodeWebP(imageData, quality).then(resolve, reject);
                 }
             } catch (error) {
                 URL.revokeObjectURL(objectURL);
@@ -161,6 +183,17 @@ export async function reencodeImageBlob(
 interface WebPChunk {
     fourCC: string;
     data: Uint8Array;
+}
+
+export async function isAnimatedWebPBlob(blob: Blob): Promise<boolean> {
+    const chunks = parseWebPChunks(new Uint8Array(await blob.arrayBuffer()));
+    if (!chunks) return false;
+
+    const vp8x = chunks.find(chunk => chunk.fourCC === 'VP8X');
+    return (
+        (vp8x?.data.length >= 1 && (vp8x.data[0] & 0x02) !== 0) ||
+        chunks.some(chunk => chunk.fourCC === 'ANIM' || chunk.fourCC === 'ANMF')
+    );
 }
 
 const WEBP_XMP_NAMESPACE =

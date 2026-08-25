@@ -27,6 +27,7 @@ export default defineConfig({
     },
 
     plugins: [
+        fixJsquashWebpCommonJsBuild(),
         svelte(),
 
         viteStaticCopy({
@@ -123,6 +124,29 @@ export default defineConfig({
         },
     }
 });
+
+/**
+ * @jsquash/webp assigns to import.meta.url only in its Node/worker fallback.
+ * That assignment becomes invalid when Vite converts this plugin to CommonJS,
+ * while it is unreachable in SiYuan's browser runtime. Remove only the fallback
+ * assignment and keep the normal import.meta.url-based WASM resolution intact.
+ */
+function fixJsquashWebpCommonJsBuild() {
+    const importMetaFallback =
+        /if\s*\(\s*import\.meta\.url\s*===\s*undefined\s*\)\s*\{\s*import\.meta\.url\s*=\s*["']https:\/\/localhost["'];?\s*\}/g;
+
+    return {
+        name: 'fix-jsquash-webp-commonjs-build',
+        enforce: 'pre' as const,
+        transform(code: string, id: string) {
+            const normalizedID = id.replace(/\\/g, '/');
+            if (!normalizedID.includes('/@jsquash/webp/codec/enc/webp_enc')) return null;
+
+            const fixedCode = code.replace(importMetaFallback, '');
+            return fixedCode === code ? null : { code: fixedCode, map: null };
+        },
+    };
+}
 
 
 /**

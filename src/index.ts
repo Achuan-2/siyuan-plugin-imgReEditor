@@ -30,6 +30,7 @@ const EDITOR_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-imgReEditor/backup';
 const ASSET_COMPRESSION_HISTORY_FILE = 'asset-compression-history.json';
 const ASSET_COMPRESSION_HISTORY_VERSION = 1;
 const ASSET_COMPRESSION_PROFILE_VERSION = 1;
+const ASSET_COMPRESSION_WEBP_PROFILE_VERSION = 3;
 
 interface AssetImageEntry {
     path: string;
@@ -103,7 +104,10 @@ function formatBytes(bytes: number) {
 function getAssetCompressionProfile(settings: any, format: CompressibleImageFormat) {
     const options = getFormatCompressionOptions(settings, format);
     return JSON.stringify({
-        version: ASSET_COMPRESSION_PROFILE_VERSION,
+        version:
+            format === 'webp'
+                ? ASSET_COMPRESSION_WEBP_PROFILE_VERSION
+                : ASSET_COMPRESSION_PROFILE_VERSION,
         format,
         pngMode: format === 'png' ? options.pngMode : undefined,
         quality:
