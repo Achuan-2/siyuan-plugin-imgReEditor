@@ -18,6 +18,13 @@
             await pushErrMsg('当前客户端不支持打开插件数据文件夹');
         }
     };
+
+    function formatBytes(bytes: number) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    }
+
     // 使用动态默认设置
     let settings = { ...getDefaultSettings() };
 
@@ -116,6 +123,93 @@
                     title: '粘贴图片自动压缩',
                     description:
                         '开启后，在编辑器中粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时会先按上述压缩规则自动压缩，再写入 assets；默认关闭。',
+                },
+                {
+                    key: 'compressAllAssets',
+                    value: '',
+                    type: 'button',
+                    title: '压缩 assets 全部图片',
+                    description:
+                        '递归压缩 data/assets 中的 PNG、JPG/JPEG、WebP 图片。插件会记忆图片内容和压缩参数，未修改且已按相同参数处理的图片会自动跳过。',
+                    button: {
+                        label: '压缩全部图片',
+                        callback: async () => {
+                            confirm(
+                                '压缩 assets 全部图片',
+                                '将按当前 PNG、JPG/JPEG、WebP 压缩参数覆盖 data/assets 中可压缩的原文件。为避免文档引用失效，批量压缩会保留原格式和文件名。确认继续吗？',
+                                async () => {
+                                    let loadingDialog: any = null;
+                                    let loadingComponent: any = null;
+                                    try {
+                                        loadingDialog = new Dialog({
+                                            title: '压缩 assets 图片',
+                                            content: `<div id="loadingDialogContent"></div>`,
+                                            width: '360px',
+                                            height: '170px',
+                                            disableClose: true,
+                                        });
+                                        loadingComponent = new LoadingDialog({
+                                            target: loadingDialog.element.querySelector(
+                                                '#loadingDialogContent'
+                                            ),
+                                            props: { message: '正在扫描 assets 图片...' },
+                                        });
+
+                                        if (
+                                            typeof plugin.compressAllAssetImages !== 'function'
+                                        ) {
+                                            throw new Error('当前插件实例不支持批量压缩');
+                                        }
+
+                                        const result = await plugin.compressAllAssetImages(
+                                            ({ current, total, fileName }) => {
+                                                loadingComponent?.$set({
+                                                    message: `正在处理 ${current}/${total}：${fileName}`,
+                                                });
+                                            }
+                                        );
+
+                                        if (result.total === 0) {
+                                            await pushMsg(
+                                                'assets 中没有可压缩的 PNG、JPG/JPEG、WebP 图片'
+                                            );
+                                            return;
+                                        }
+
+                                        const savedBytes = Math.max(
+                                            0,
+                                            result.originalSize - result.savedSize
+                                        );
+                                        const savedText =
+                                            result.compressed > 0
+                                                ? `，节省 ${formatBytes(savedBytes)}`
+                                                : '';
+                                        const summary =
+                                            `assets 图片压缩完成：压缩 ${result.compressed} 张，` +
+                                            `记忆跳过 ${result.remembered} 张，无需覆盖 ${result.notSmaller} 张，` +
+                                            `失败 ${result.failed} 张${savedText}`;
+
+                                        if (result.failed > 0) {
+                                            await pushErrMsg(summary, 10000);
+                                        } else {
+                                            await pushMsg(summary, 10000);
+                                        }
+                                    } catch (err) {
+                                        console.error('Compress all assets failed:', err);
+                                        await pushErrMsg(
+                                            '压缩 assets 图片失败: ' +
+                                                (err && err.message ? err.message : err),
+                                            10000
+                                        );
+                                    } finally {
+                                        loadingComponent?.$destroy();
+                                        loadingDialog?.destroy();
+                                    }
+                                },
+                                () => {}
+                            );
+                        },
+                    },
                 },
                 {
                     key: 'enableScreenshot',

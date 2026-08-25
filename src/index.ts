@@ -27,6 +27,25 @@ import {
 export const SETTINGS_FILE = "settings.json";
 const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
 const EDITOR_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-imgReEditor/backup';
+const ASSET_COMPRESSION_HISTORY_FILE = 'asset-compression-history.json';
+const ASSET_COMPRESSION_HISTORY_VERSION = 1;
+const ASSET_COMPRESSION_PROFILE_VERSION = 1;
+
+interface AssetImageEntry {
+    path: string;
+    format: CompressibleImageFormat;
+}
+
+interface AssetCompressionHistoryEntry {
+    fingerprint: string;
+    profile: string;
+    processedAt: number;
+}
+
+interface AssetCompressionHistory {
+    version: number;
+    entries: Record<string, AssetCompressionHistoryEntry>;
+}
 
 function getFileExtension(fileName: string) {
     const lastDot = fileName.lastIndexOf('.');
@@ -79,6 +98,36 @@ function formatBytes(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function getAssetCompressionProfile(settings: any, format: CompressibleImageFormat) {
+    const options = getFormatCompressionOptions(settings, format);
+    return JSON.stringify({
+        version: ASSET_COMPRESSION_PROFILE_VERSION,
+        format,
+        pngMode: format === 'png' ? options.pngMode : undefined,
+        quality:
+            format === 'png' && options.pngMode === 'lossless' ? undefined : options.quality,
+    });
+}
+
+async function getBlobFingerprint(blob: Blob) {
+    const buffer = await blob.arrayBuffer();
+    if (globalThis.crypto?.subtle) {
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+
+    // Electron environments normally expose Web Crypto. Keep a deterministic fallback
+    // so older clients can still remember processed files.
+    const bytes = new Uint8Array(buffer);
+    let hashA = 0x811c9dc5;
+    let hashB = 0x9e3779b9;
+    for (const byte of bytes) {
+        hashA = Math.imul(hashA ^ byte, 0x01000193) >>> 0;
+        hashB = Math.imul(hashB ^ byte, 0x85ebca6b) >>> 0;
+    }
+    return `fallback-${blob.size}-${hashA.toString(16)}-${hashB.toString(16)}`;
 }
 
 type CompressionResult =
@@ -493,6 +542,185 @@ export default class PluginSample extends Plugin {
 
     private getDocIDFromEditorTitleDetail(detail: any) {
         return detail?.data?.rootID || detail?.data?.id || detail?.protyle?.block?.rootID || detail?.protyle?.block?.id || '';
+    }
+
+    private async listCompressibleAssetImages(): Promise<AssetImageEntry[]> {
+        const { readDir } = await import('./api');
+        const directories = ['data/assets'];
+        const images: AssetImageEntry[] = [];
+
+        while (directories.length > 0) {
+            const directory = directories.shift()!;
+            const entries = await readDir(directory);
+            if (!Array.isArray(entries)) {
+                throw new Error(`Unable to read assets directory: ${directory}`);
+            }
+
+            for (const entry of entries) {
+                if (!entry?.name || entry.name === '.' || entry.name === '..') continue;
+                const path = `${directory}/${entry.name}`;
+                if (entry.isDir) {
+                    if (!entry.isSymlink) directories.push(path);
+                    continue;
+                }
+                if (entry.isSymlink) continue;
+
+                const format = getCompressibleImageFormat(entry.name);
+                if (format) images.push({ path, format });
+            }
+        }
+
+        return images.sort((left, right) => left.path.localeCompare(right.path));
+    }
+
+    private async loadAssetCompressionHistory(): Promise<AssetCompressionHistory> {
+        try {
+            const stored = await this.loadData(ASSET_COMPRESSION_HISTORY_FILE);
+            if (
+                stored?.version === ASSET_COMPRESSION_HISTORY_VERSION &&
+                stored.entries &&
+                typeof stored.entries === 'object'
+            ) {
+                return stored as AssetCompressionHistory;
+            }
+        } catch (error) {
+            console.warn('Failed to load asset compression history:', error);
+        }
+
+        return {
+            version: ASSET_COMPRESSION_HISTORY_VERSION,
+            entries: {},
+        };
+    }
+
+    /**
+     * Recursively compress PNG/JPG/WebP files in data/assets in place.
+     * Files keep their extensions so document references never need to be rewritten.
+     */
+    async compressAllAssetImages(
+        onProgress?: (progress: { current: number; total: number; fileName: string }) => void
+    ) {
+        const { getFileBlob, putFile } = await import('./api');
+        const images = await this.listCompressibleAssetImages();
+        const history = await this.loadAssetCompressionHistory();
+        const currentPaths = new Set(images.map(image => image.path));
+        const historyEntries = Object.fromEntries(
+            Object.entries(history.entries || {}).filter(([path]) => currentPaths.has(path))
+        ) as Record<string, AssetCompressionHistoryEntry>;
+        const changedAssetPaths = new Set<string>();
+        const stats = {
+            total: images.length,
+            compressed: 0,
+            remembered: 0,
+            notSmaller: 0,
+            failed: 0,
+            originalSize: 0,
+            savedSize: 0,
+        };
+        let historyUpdatesSinceSave = 0;
+
+        const saveHistory = async () => {
+            await this.saveData(ASSET_COMPRESSION_HISTORY_FILE, {
+                version: ASSET_COMPRESSION_HISTORY_VERSION,
+                entries: historyEntries,
+            } satisfies AssetCompressionHistory);
+            historyUpdatesSinceSave = 0;
+        };
+
+        for (let index = 0; index < images.length; index++) {
+            const image = images[index];
+            const fileName = image.path.split('/').pop() || image.path;
+            onProgress?.({ current: index + 1, total: images.length, fileName });
+
+            try {
+                const sourceBlob = await getFileBlob(image.path);
+                if (!sourceBlob || sourceBlob.size === 0) {
+                    stats.failed += 1;
+                    continue;
+                }
+
+                const profile = getAssetCompressionProfile(this.settings, image.format);
+                const sourceFingerprint = await getBlobFingerprint(sourceBlob);
+                const previous = historyEntries[image.path];
+                if (
+                    previous?.fingerprint === sourceFingerprint &&
+                    previous.profile === profile
+                ) {
+                    stats.remembered += 1;
+                    continue;
+                }
+
+                const compressedBlob = await this.compressImageBlob(
+                    sourceBlob,
+                    image.format,
+                    image.format,
+                    getFormatCompressionOptions(this.settings, image.format)
+                );
+
+                if (!compressedBlob || compressedBlob.size === 0) {
+                    stats.failed += 1;
+                    continue;
+                }
+
+                if (compressedBlob.size < sourceBlob.size) {
+                    const file = new File([compressedBlob], fileName, {
+                        type: getMimeByFormat(image.format),
+                    });
+                    const compressedFingerprint = await getBlobFingerprint(compressedBlob);
+                    await putFile(image.path, false, file);
+
+                    const savedBlob = await getFileBlob(image.path);
+                    if (
+                        !savedBlob ||
+                        savedBlob.size === 0 ||
+                        (await getBlobFingerprint(savedBlob)) !== compressedFingerprint
+                    ) {
+                        stats.failed += 1;
+                        continue;
+                    }
+
+                    historyEntries[image.path] = {
+                        fingerprint: compressedFingerprint,
+                        profile,
+                        processedAt: Date.now(),
+                    };
+                    stats.compressed += 1;
+                    stats.originalSize += sourceBlob.size;
+                    stats.savedSize += savedBlob.size;
+                    changedAssetPaths.add(image.path.replace(/^data\//, ''));
+                } else {
+                    historyEntries[image.path] = {
+                        fingerprint: sourceFingerprint,
+                        profile,
+                        processedAt: Date.now(),
+                    };
+                    stats.notSmaller += 1;
+                }
+
+                historyUpdatesSinceSave += 1;
+                if (historyUpdatesSinceSave >= 20) await saveHistory();
+            } catch (error) {
+                stats.failed += 1;
+                console.warn(`Failed to compress asset image ${image.path}:`, error);
+            }
+        }
+
+        await saveHistory();
+
+        if (changedAssetPaths.size > 0) {
+            const cacheBust = Date.now();
+            document.querySelectorAll('img').forEach((element: Element) => {
+                const image = element as HTMLImageElement;
+                const assetPath = normalizeAssetPath(
+                    image.dataset?.src || image.getAttribute('src')
+                );
+                if (assetPath && changedAssetPaths.has(assetPath)) {
+                    image.src = `${assetPath}?t=${cacheBust}`;
+                }
+            });
+        }
+
+        return stats;
     }
 
     private async compressDocumentImageAssets(docID: string, imageURLs: string[]) {
