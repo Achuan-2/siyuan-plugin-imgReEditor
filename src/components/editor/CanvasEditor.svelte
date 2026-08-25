@@ -5622,6 +5622,13 @@
             json.backgroundImage._borderShadowBlur = bg._borderShadowBlur;
             json.backgroundImage._borderShadowColor = bg._borderShadowColor;
             json.backgroundImage._borderShadowOpacity = bg._borderShadowOpacity;
+
+            // Fabric needs `src` to restore the background image. `_originalSrc`
+            // is only additional data when cropping or border operations changed
+            // the rendered source, so avoid storing the same base64 image twice.
+            if (json.backgroundImage._originalSrc === json.backgroundImage.src) {
+                delete json.backgroundImage._originalSrc;
+            }
         }
 
         // Filter out canvas boundary and background objects from history to prevent them from being undone
@@ -5717,8 +5724,10 @@
             if (canvas.backgroundImage && json.backgroundImage) {
                 const bg = canvas.backgroundImage as any;
                 const actual = getActualImage(bg);
+                const originalSrc =
+                    json.backgroundImage._originalSrc || json.backgroundImage.src;
                 if (actual) {
-                    actual._originalSrc = json.backgroundImage._originalSrc;
+                    actual._originalSrc = originalSrc;
                     actual._cropOffset = json.backgroundImage._cropOffset;
                     actual._appliedMargin = json.backgroundImage._appliedMargin;
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
@@ -5730,7 +5739,7 @@
                     actual._borderShadowColor = json.backgroundImage._borderShadowColor;
                     actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
                 }
-                bg._originalSrc = json.backgroundImage._originalSrc;
+                bg._originalSrc = originalSrc;
                 bg._cropOffset = json.backgroundImage._cropOffset;
                 bg._appliedMargin = json.backgroundImage._appliedMargin;
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;

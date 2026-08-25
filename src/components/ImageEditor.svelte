@@ -820,12 +820,15 @@
             const outputMime = getOutputMime(outputFormat);
             const outputQuality = getExportQuality(outputFormat);
 
-            // Export image data using the same format as the saved filename.
+            // Export the canvas raster; WebP uses a lossless intermediate below.
             let dataURL: string | null = null;
             if (canvasEditorRef && typeof canvasEditorRef.toDataURL === 'function') {
+                // WebP must be encoded by libwebp below. Export a lossless PNG
+                // intermediate so Chromium/Fabric never performs a first WebP pass.
+                const canvasExportFormat = outputFormat === 'webp' ? 'png' : outputFormat;
                 dataURL = await canvasEditorRef.toDataURL({
-                    format: outputFormat,
-                    quality: outputQuality,
+                    format: canvasExportFormat,
+                    quality: canvasExportFormat === 'png' ? 1 : outputQuality,
                 });
             } else {
                 // No legacy TUI exporter available
@@ -844,7 +847,7 @@
                 } catch (e) {
                     console.warn('Failed to compress PNG during save:', e);
                 }
-            } else if (outputFormat === 'webp' && blob.type !== 'image/webp') {
+            } else if (outputFormat === 'webp') {
                 try {
                     blob = await reencodeImageBlob(blob, 'webp', { quality: outputQuality });
                 } catch (e) {
