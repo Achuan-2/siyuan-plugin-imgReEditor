@@ -101,6 +101,26 @@ function formatBytes(bytes: number) {
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function shouldUseReencodedImage(sourceSize: number, outputSize: number) {
+    // 无论是原格式压缩还是转换为 WebP，都只采用确实更小的结果。
+    return outputSize > 0 && outputSize < sourceSize;
+}
+
+function getAutomaticImageProcessingMessage(
+    processedCount: number,
+    convertedCount: number,
+    originalTotalSize: number,
+    outputTotalSize: number
+) {
+    const action =
+        convertedCount === 0
+            ? `已自动压缩 ${processedCount} 张上传图片`
+            : convertedCount === processedCount
+              ? `已自动将 ${convertedCount} 张上传图片转换为 WebP`
+              : `已自动处理 ${processedCount} 张上传图片，其中 ${convertedCount} 张转换为 WebP`;
+    return `${action}：${formatBytes(originalTotalSize)} -> ${formatBytes(outputTotalSize)}`;
+}
+
 function getAssetCompressionProfile(settings: any, format: CompressibleImageFormat) {
     const options = getFormatCompressionOptions(settings, format);
     return JSON.stringify({
@@ -878,7 +898,10 @@ export default class PluginSample extends Plugin {
                 metadataOverride
             );
 
-            if (compressedBlob.size >= blob.size) {
+            const isFormatConversion = outputFormat !== format;
+            if (
+                !shouldUseReencodedImage(blob.size, compressedBlob.size)
+            ) {
                 await notifyMsg(
                     `压缩后不会更小，已保留原图（原 ${formatBytes(blob.size)}，压缩后 ${formatBytes(compressedBlob.size)}）`
                 );
@@ -938,9 +961,10 @@ export default class PluginSample extends Plugin {
                 });
             }
 
-            const convertedText = savedPath !== imagePath ? `，已转换为 ${savedFileName}` : '';
+            const actionText = isFormatConversion ? '转换完成' : '压缩完成';
+            const convertedText = isFormatConversion ? `，已保存为 ${savedFileName}` : '';
             await notifyMsg(
-                `压缩完成：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}${convertedText}`
+                `${actionText}：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}${convertedText}`
             );
             return {
                 status: 'compressed',
@@ -1024,7 +1048,7 @@ export default class PluginSample extends Plugin {
                     confirm(
                         '批量压缩文档图片',
                         this.settings?.convertToWebP === true
-                            ? `将使用当前压缩设置把文档中的 ${compressibleImageURLs.length} 张图片压缩为 WebP，并更新当前文档内的引用；仍被其他位置引用的原资源会保留。继续吗？`
+                            ? `将尝试把文档中的 ${compressibleImageURLs.length} 张图片转换为 WebP；仅采用体积更小的结果，并更新当前文档内的引用；仍被其他位置引用的原资源会保留。继续吗？`
                             : `将使用当前压缩设置覆盖当前文档中的 ${compressibleImageURLs.length} 张图片，并跳过压缩后不变小的图片。继续吗？`,
                         async () => {
                             await this.compressDocumentImageAssets(docID, compressibleImageURLs);
@@ -1112,7 +1136,7 @@ export default class PluginSample extends Plugin {
                 confirm(
                     '压缩图片',
                     this.settings?.convertToWebP === true && getCompressibleImageFormat(imageURL) !== 'webp'
-                        ? '将使用当前压缩设置转为 WebP，并更新当前图片块的引用；仍被其他位置引用的原资源会保留。继续吗？'
+                        ? '将尝试转为 WebP；仅采用体积更小的结果，并更新当前图片块的引用；仍被其他位置引用的原资源会保留。继续吗？'
                         : '将使用当前压缩设置覆盖原图片。继续吗？',
                     async () => {
                         const result = await this.compressImageAsset(imageURL, imageElement);
@@ -1555,6 +1579,7 @@ export default class PluginSample extends Plugin {
 
     private async compressFormData(formData: FormData): Promise<FormData> {
         let compressedCount = 0;
+        let convertedCount = 0;
         let originalTotalSize = 0;
         let compressedTotalSize = 0;
 
@@ -1586,7 +1611,9 @@ export default class PluginSample extends Plugin {
                             outputFormat,
                             compressionOptions
                         );
-                        if (compressedBlob.size > 0 && compressedBlob.size < value.size) {
+                        if (
+                            shouldUseReencodedImage(value.size, compressedBlob.size)
+                        ) {
                             const originalName =
                                 value.name ||
                                 (sourceFormat === 'png'
@@ -1602,6 +1629,7 @@ export default class PluginSample extends Plugin {
                                 type: getMimeByFormat(outputFormat)
                             });
                             compressedCount += 1;
+                            if (outputFormat !== sourceFormat) convertedCount += 1;
                             originalTotalSize += value.size;
                             compressedTotalSize += compressedBlob.size;
                             return [key, compressedFile] as [string, FormDataEntryValue];
@@ -1621,9 +1649,12 @@ export default class PluginSample extends Plugin {
 
         if (compressedCount > 0) {
             const { pushMsg } = await import('./api');
-            await pushMsg(
-                `已自动压缩 ${compressedCount} 张上传图片：${formatBytes(originalTotalSize)} -> ${formatBytes(compressedTotalSize)}`
-            );
+            await pushMsg(getAutomaticImageProcessingMessage(
+                compressedCount,
+                convertedCount,
+                originalTotalSize,
+                compressedTotalSize
+            ));
         }
 
         return newFormData;
@@ -1636,6 +1667,7 @@ export default class PluginSample extends Plugin {
             if (!data || !Array.isArray(data.assetPaths)) return init;
 
             let compressedCount = 0;
+            let convertedCount = 0;
             let originalTotalSize = 0;
             let compressedTotalSize = 0;
 
@@ -1674,7 +1706,9 @@ export default class PluginSample extends Plugin {
                             compressionOptions
                         );
 
-                        if (compressedBlob.size > 0 && compressedBlob.size < originalSize) {
+                        if (
+                            shouldUseReencodedImage(originalSize, compressedBlob.size)
+                        ) {
                             const originalName =
                                 assetPath.split(/[\\/]/).pop() ||
                                 (sourceFormat === 'png'
@@ -1692,6 +1726,7 @@ export default class PluginSample extends Plugin {
 
                             newAssetPaths.push(tempPath);
                             compressedCount += 1;
+                            if (outputFormat !== sourceFormat) convertedCount += 1;
                             originalTotalSize += originalSize;
                             compressedTotalSize += compressedBlob.size;
                             continue;
@@ -1708,9 +1743,12 @@ export default class PluginSample extends Plugin {
                 init.body = JSON.stringify(data);
 
                 const { pushMsg } = await import('./api');
-                await pushMsg(
-                    `已自动压缩 ${compressedCount} 张上传图片：${formatBytes(originalTotalSize)} -> ${formatBytes(compressedTotalSize)}`
-                );
+                await pushMsg(getAutomaticImageProcessingMessage(
+                    compressedCount,
+                    convertedCount,
+                    originalTotalSize,
+                    compressedTotalSize
+                ));
             }
         } catch (error) {
             console.error('Failed to intercept local assets insertion:', error);

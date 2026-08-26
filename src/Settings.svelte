@@ -63,7 +63,7 @@
                     type: 'checkbox',
                     title: 'PNG/JPG 转换为 WebP',
                     description:
-                        '开启后，编辑保存、手动压缩以及粘贴/拖拽自动压缩时，会将 PNG、JPG/JPEG 转为 WebP；编辑器工程数据会写入 WebP 的 XMP 元数据，仍可再次编辑。',
+                        '开启后会尝试将 PNG、JPG/JPEG 转为 WebP；手动压缩及粘贴/拖拽自动压缩仅在 WebP 更小时采用，否则保留原文件。编辑保存仍会按此选项改存为 WebP，工程数据会写入 XMP 元数据。',
                 },
                 {
                     key: 'webpQuality',
@@ -130,13 +130,13 @@
                     type: 'button',
                     title: '压缩 assets 全部图片',
                     description:
-                        '递归压缩 data/assets 中的 PNG、JPG/JPEG、WebP 图片。插件会记忆图片内容和压缩参数，未修改且已按相同参数处理的图片会自动跳过。',
+                        '递归压缩 data/assets 中的 PNG、JPG/JPEG、WebP 图片。即使开启 WebP 转换，也会保留原格式、文件名和笔记引用；未修改且已按相同参数处理的图片会自动跳过。',
                     button: {
                         label: '压缩全部图片',
                         callback: async () => {
                             confirm(
                                 '压缩 assets 全部图片',
-                                '将按当前 PNG、JPG/JPEG、WebP 压缩参数覆盖 data/assets 中可压缩的原文件。为避免文档引用失效，批量压缩会保留原格式和文件名。确认继续吗？',
+                                '将按当前 PNG、JPG/JPEG、WebP 压缩参数覆盖 data/assets 中可压缩的原文件。为避免笔记引用失效，此入口不会转换格式，并会保留原文件名。确认继续吗？',
                                 async () => {
                                     let loadingDialog: any = null;
                                     let loadingComponent: any = null;

@@ -1,8 +1,5 @@
 import UPNG from 'upng-js';
-import createWebPEncoder, {
-    type WebPModule,
-} from '@jsquash/webp/codec/enc/webp_enc.js';
-import { defaultOptions as defaultWebPOptions } from '@jsquash/webp/meta.js';
+import WebPEncoderWorker from './webpEncoder.worker?worker&inline';
 import { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions } from './oxipng';
 
 export type CompressibleImageFormat = 'png' | 'jpeg' | 'webp';
@@ -20,25 +17,89 @@ export function getMimeByFormat(format: CompressibleImageFormat): string {
     return 'image/png';
 }
 
-let webpEncoderModule: Promise<WebPModule> | null = null;
+interface PendingWebPEncode {
+    resolve: (blob: Blob) => void;
+    reject: (error: Error) => void;
+    timeoutID: ReturnType<typeof setTimeout>;
+}
+
+interface WebPWorkerResponse {
+    id: number;
+    buffer?: ArrayBuffer;
+    error?: string;
+}
+
+const WEBP_ENCODE_TIMEOUT_MS = 120_000;
+let webpEncoderWorker: Worker | null = null;
+let nextWebPEncodeID = 1;
+const pendingWebPEncodes = new Map<number, PendingWebPEncode>();
+
+function rejectPendingWebPEncodes(error: Error) {
+    for (const pending of pendingWebPEncodes.values()) {
+        clearTimeout(pending.timeoutID);
+        pending.reject(error);
+    }
+    pendingWebPEncodes.clear();
+}
+
+function resetWebPEncoderWorker(error?: Error) {
+    webpEncoderWorker?.terminate();
+    webpEncoderWorker = null;
+    if (error) rejectPendingWebPEncodes(error);
+}
+
+function getWebPEncoderWorker(): Worker {
+    if (webpEncoderWorker) return webpEncoderWorker;
+
+    const worker = new WebPEncoderWorker();
+    worker.onmessage = (event: MessageEvent<WebPWorkerResponse>) => {
+        const { id, buffer, error } = event.data;
+        const pending = pendingWebPEncodes.get(id);
+        if (!pending) return;
+
+        clearTimeout(pending.timeoutID);
+        pendingWebPEncodes.delete(id);
+        if (error || !buffer) {
+            pending.reject(new Error(error || 'WebP worker returned no data'));
+            return;
+        }
+        pending.resolve(new Blob([buffer], { type: 'image/webp' }));
+    };
+    worker.onerror = event => {
+        resetWebPEncoderWorker(new Error(event.message || 'WebP worker failed'));
+    };
+    webpEncoderWorker = worker;
+    return worker;
+}
 
 async function encodeWebP(imageData: ImageData, quality: number): Promise<Blob> {
-    if (!webpEncoderModule) {
-        webpEncoderModule = createWebPEncoder({ noInitialRun: true });
-    }
-    const encoder = await webpEncoderModule;
-    const isLossless = quality >= 1;
-    const encoded = encoder.encode(imageData.data, imageData.width, imageData.height, {
-        ...defaultWebPOptions,
-        lossless: isLossless ? 1 : 0,
-        quality: isLossless ? 100 : Math.min(100, Math.max(0, quality * 100)),
-        method: 6,
-        exact: isLossless ? 1 : 0,
-        near_lossless: 100,
-        alpha_quality: 100,
+    const worker = getWebPEncoderWorker();
+    const id = nextWebPEncodeID++;
+    const pixels = imageData.data.buffer as ArrayBuffer;
+
+    return new Promise<Blob>((resolve, reject) => {
+        const timeoutID = setTimeout(() => {
+            resetWebPEncoderWorker(new Error('WebP encoding timed out'));
+        }, WEBP_ENCODE_TIMEOUT_MS);
+        pendingWebPEncodes.set(id, { resolve, reject, timeoutID });
+
+        try {
+            worker.postMessage(
+                {
+                    id,
+                    pixels,
+                    width: imageData.width,
+                    height: imageData.height,
+                    quality,
+                },
+                [pixels]
+            );
+        } catch (error) {
+            clearTimeout(timeoutID);
+            pendingWebPEncodes.delete(id);
+            reject(error instanceof Error ? error : new Error(String(error)));
+        }
     });
-    if (!encoded) throw new Error('WebP lossless encoding failed');
-    return new Blob([encoded.slice() as any], { type: 'image/webp' });
 }
 
 export async function reencodeImageBlob(
@@ -165,7 +226,30 @@ export async function reencodeImageBlob(
                     ctx.drawImage(image, 0, 0);
                     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                     URL.revokeObjectURL(objectURL);
-                    void encodeWebP(imageData, quality).then(resolve, reject);
+                    void encodeWebP(imageData, quality).then(resolve, error => {
+                        // Some older Electron builds or strict CSP configurations may
+                        // reject inline workers. Keep the fallback asynchronous and
+                        // never run libwebp synchronously on SiYuan's UI thread.
+                        console.warn(
+                            'WebP worker encoding failed, falling back to canvas encoding:',
+                            error
+                        );
+                        canvas.toBlob(
+                            outputBlob => {
+                                if (outputBlob?.type === 'image/webp') {
+                                    resolve(outputBlob);
+                                } else {
+                                    reject(
+                                        new Error(
+                                            'WebP encoding is not supported by this client'
+                                        )
+                                    );
+                                }
+                            },
+                            'image/webp',
+                            quality
+                        );
+                    });
                 }
             } catch (error) {
                 URL.revokeObjectURL(objectURL);
