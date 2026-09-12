@@ -78,6 +78,16 @@
 
     // Sidebar visibility state
     let sidebarVisible: boolean = true;
+    let toolSidebarEl: HTMLElement | null = null;
+    let sidebarWidth: number | null = null;
+    let isResizingSidebar = false;
+    let sidebarResizeStartX = 0;
+    let sidebarResizeStartWidth = 0;
+    let previousBodyCursor = '';
+    let previousBodyUserSelect = '';
+    const SIDEBAR_MIN_WIDTH = 220;
+    const SIDEBAR_MAX_WIDTH = 600;
+    const CANVAS_MIN_WIDTH = 180;
 
     export function isDirty() {
         if (!canvasEditorRef || typeof canvasEditorRef.getHistoryIndex !== 'function') return false;
@@ -999,9 +1009,18 @@
         if (editorEl) {
             /* editorEl bound to container div */
         }
+
+        const savedSidebarWidth = Number(settings?.toolSidebarWidth);
+        if (Number.isFinite(savedSidebarWidth) && savedSidebarWidth > 0) {
+            sidebarWidth = clampSidebarWidth(savedSidebarWidth);
+        }
+
+        window.addEventListener('resize', handleEditorResize);
     });
 
     onDestroy(() => {
+        window.removeEventListener('resize', handleEditorResize);
+        stopSidebarResize(false);
         try {
             if (lastBlobURL && lastBlobURL.startsWith('blob:')) URL.revokeObjectURL(lastBlobURL);
         } catch (e) {}
@@ -1012,6 +1031,79 @@
             }
         } catch (e) {}
     });
+
+    function getSidebarWidthBounds() {
+        const editorWidth = editorContainerEl?.getBoundingClientRect().width || window.innerWidth;
+        const min = Math.min(SIDEBAR_MIN_WIDTH, Math.max(120, editorWidth - CANVAS_MIN_WIDTH));
+        const max = Math.max(min, Math.min(SIDEBAR_MAX_WIDTH, editorWidth - CANVAS_MIN_WIDTH));
+        return { min, max };
+    }
+
+    function clampSidebarWidth(width: number) {
+        const { min, max } = getSidebarWidthBounds();
+        return Math.min(max, Math.max(min, width));
+    }
+
+    function handleEditorResize() {
+        if (sidebarWidth !== null) sidebarWidth = clampSidebarWidth(sidebarWidth);
+    }
+
+    function startSidebarResize(e: PointerEvent) {
+        if (e.button !== 0 || !toolSidebarEl) return;
+
+        isResizingSidebar = true;
+        sidebarResizeStartX = e.clientX;
+        sidebarResizeStartWidth = toolSidebarEl.getBoundingClientRect().width;
+        previousBodyCursor = document.body.style.cursor;
+        previousBodyUserSelect = document.body.style.userSelect;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        window.addEventListener('pointermove', resizeSidebar);
+        window.addEventListener('pointerup', finishSidebarResize);
+        window.addEventListener('pointercancel', finishSidebarResize);
+        e.preventDefault();
+    }
+
+    function resizeSidebar(e: PointerEvent) {
+        if (!isResizingSidebar) return;
+        // The resize handle is on the left edge, so dragging left increases the width.
+        sidebarWidth = clampSidebarWidth(
+            sidebarResizeStartWidth + sidebarResizeStartX - e.clientX
+        );
+    }
+
+    function finishSidebarResize() {
+        stopSidebarResize(true);
+    }
+
+    function stopSidebarResize(saveWidth: boolean) {
+        if (!isResizingSidebar) return;
+
+        isResizingSidebar = false;
+        window.removeEventListener('pointermove', resizeSidebar);
+        window.removeEventListener('pointerup', finishSidebarResize);
+        window.removeEventListener('pointercancel', finishSidebarResize);
+        document.body.style.cursor = previousBodyCursor;
+        document.body.style.userSelect = previousBodyUserSelect;
+
+        if (saveWidth && sidebarWidth !== null) {
+            if (!settings) settings = {};
+            settings.toolSidebarWidth = Math.round(sidebarWidth);
+            dispatch('saveSettings', settings);
+        }
+    }
+
+    function resizeSidebarByKeyboard(e: KeyboardEvent) {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+        const currentWidth =
+            sidebarWidth ?? toolSidebarEl?.getBoundingClientRect().width ?? SIDEBAR_MIN_WIDTH;
+        sidebarWidth = clampSidebarWidth(currentWidth + (e.key === 'ArrowLeft' ? 16 : -16));
+        if (!settings) settings = {};
+        settings.toolSidebarWidth = Math.round(sidebarWidth);
+        dispatch('saveSettings', settings);
+        e.preventDefault();
+    }
 
     // Drag handlers for tool-popup
     function onPopupDragStart(e: MouseEvent) {
@@ -1528,7 +1620,22 @@
         </div>
 
         {#if sidebarVisible}
-            <div class="tool-sidebar" role="dialog" aria-label="Tool sidebar">
+            <div
+                class:resizing={isResizingSidebar}
+                class="tool-sidebar"
+                role="dialog"
+                aria-label="Tool sidebar"
+                bind:this={toolSidebarEl}
+                style={sidebarWidth === null ? undefined : `--sidebar-w: ${sidebarWidth}px`}
+            >
+                <button
+                    type="button"
+                    class="tool-sidebar-resizer"
+                    aria-label="调整工具栏宽度"
+                    title="拖动调整宽度，或使用左右方向键"
+                    on:pointerdown={startSidebarResize}
+                    on:keydown={resizeSidebarByKeyboard}
+                ></button>
                 <div class="tool-sidebar-header">
                     <div class="title">
                         {#if activeTool}
@@ -1786,8 +1893,9 @@
     }
     /* New right-side tool sidebar (integrated with canvas) */
     .tool-sidebar {
-        /* 使用视口宽度并限制最大值；不设最小值 */
+        /* Keep the existing responsive default until the user resizes it. */
         --sidebar-w: min(24vw, 300px);
+        position: relative;
         width: var(--sidebar-w);
         flex: 0 0 var(--sidebar-w);
         height: 100%;
@@ -1799,6 +1907,36 @@
         flex-direction: column;
         z-index: 900;
         overflow: hidden;
+    }
+    .tool-sidebar-resizer {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 9px;
+        z-index: 2;
+        cursor: col-resize;
+        touch-action: none;
+        outline: none;
+        padding: 0;
+        border: 0;
+        background: transparent;
+    }
+    .tool-sidebar-resizer::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 2px;
+        background: var(--b3-theme-primary, #4285f4);
+        opacity: 0;
+        transition: opacity 0.15s ease;
+    }
+    .tool-sidebar-resizer:hover::after,
+    .tool-sidebar-resizer:focus-visible::after,
+    .tool-sidebar.resizing .tool-sidebar-resizer::after {
+        opacity: 0.75;
     }
     .tool-sidebar-header {
         display: flex;
