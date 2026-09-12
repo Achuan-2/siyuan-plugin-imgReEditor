@@ -8,6 +8,7 @@
     export let activeShape: string | null = null;
     export let isCanvasMode: boolean = false;
     export let isScreenshotMode: boolean = false;
+    export let isFullscreen: boolean = false;
     const dispatch = createEventDispatcher();
 
     function emit(name: string, detail: any = {}) {
@@ -308,6 +309,31 @@
                 </svg>
             </button>
         {/if}
+
+        <button
+            class="b3-button"
+            class:active={isFullscreen}
+            class:b3-button--outline={!isFullscreen}
+            on:click={() => emit('fullscreen')}
+            title={isFullscreen ? '退出全屏' : '全屏编辑'}
+            aria-label={isFullscreen ? '退出全屏' : '全屏编辑'}
+        >
+            {#if isFullscreen}
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M8 3v5H3" />
+                    <path d="M16 3v5h5" />
+                    <path d="M8 21v-5H3" />
+                    <path d="M16 21v-5h5" />
+                </svg>
+            {:else}
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path d="M3 8V3h5" />
+                    <path d="M16 3h5v5" />
+                    <path d="M3 16v5h5" />
+                    <path d="M21 16v5h-5" />
+                </svg>
+            {/if}
+        </button>
 
         <button
             class="b3-button b3-button--outline"
