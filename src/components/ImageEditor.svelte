@@ -64,6 +64,7 @@
     let popupPositioned = false; // track if popup has been positioned (dragged or first open)
     let editorContainerEl: HTMLElement | null = null;
     let canvasLoadError: string | null = null;
+    let isFullscreen = false;
     // pending crop request if canvas not ready yet
     let pendingCropRequested: boolean = false;
     const STORAGE_BACKUP_DIR = 'data/storage/petal/siyuan-plugin-imgReEditor/backup';
@@ -1016,10 +1017,12 @@
         }
 
         window.addEventListener('resize', handleEditorResize);
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
     });
 
     onDestroy(() => {
         window.removeEventListener('resize', handleEditorResize);
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
         stopSidebarResize(false);
         try {
             if (lastBlobURL && lastBlobURL.startsWith('blob:')) URL.revokeObjectURL(lastBlobURL);
@@ -1103,6 +1106,25 @@
         settings.toolSidebarWidth = Math.round(sidebarWidth);
         dispatch('saveSettings', settings);
         e.preventDefault();
+    }
+
+    function handleFullscreenChange() {
+        isFullscreen = document.fullscreenElement === editorContainerEl;
+    }
+
+    async function toggleFullscreen() {
+        if (!editorContainerEl) return;
+
+        try {
+            if (document.fullscreenElement === editorContainerEl) {
+                await document.exitFullscreen();
+            } else {
+                await editorContainerEl.requestFullscreen();
+            }
+        } catch (error) {
+            console.warn('Failed to toggle image editor fullscreen mode', error);
+            pushErrMsg('无法切换全屏模式');
+        }
     }
 
     // Drag handlers for tool-popup
@@ -1251,6 +1273,7 @@
         canRedo={redoAvailable}
         {undoCount}
         {redoCount}
+        {isFullscreen}
         on:tool={handleToolChange}
         on:undo={async () => {
             if (canvasEditorRef && typeof canvasEditorRef.undo === 'function') {
@@ -1296,6 +1319,7 @@
         on:open-in-tab={() => handleOpenInTab()}
         on:pin={() => handlePin()}
         on:history={() => handleHistory()}
+        on:fullscreen={() => toggleFullscreen()}
         on:save={() => handleSave()}
         on:cancel={() => handleCancel()}
     />
@@ -1865,6 +1889,12 @@
         overflow: hidden; /* prevent scrollbars when toolbar is overlaid */
         display: flex;
         flex-direction: column;
+        background: var(--b3-theme-background, #ffffff);
+    }
+
+    .editor-container:fullscreen {
+        width: 100vw;
+        height: 100vh;
     }
 
     .editor-main {
