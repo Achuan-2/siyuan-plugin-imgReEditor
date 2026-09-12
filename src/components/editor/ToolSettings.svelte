@@ -1054,7 +1054,7 @@
             </div>
             <div
                 class="row"
-                style="border-top: 1px solid rgba(0,0,0,0.06); padding-top: 12px; margin-top: 4px;"
+                style="border-top: 1px solid var(--b3-border-color, rgba(0,0,0,0.12)); padding-top: 12px; margin-top: 4px;"
             ></div>
         {/if}
         <div class="row">
@@ -1599,12 +1599,13 @@
         /* 宽度由外层侧栏控制，内部使用 100% 并限制最大值以自适应 */
         width: 100%;
         max-width: var(--sidebar-w, 420px);
-        background: rgba(255, 255, 255, 0.98);
-        border-left: 1px solid #eee;
+        background: transparent;
+        color: var(--b3-theme-on-background, #202124);
+        border-left: 1px solid var(--b3-border-color, #e0e0e0);
         box-sizing: border-box;
     }
     .empty {
-        color: #888;
+        color: var(--b3-theme-on-surface-light, #888);
     }
     .row {
         display: flex;
@@ -1633,17 +1634,33 @@
         width: 30px;
         text-align: center;
     }
+    input:not([type='checkbox']):not([type='range']):not([type='color']),
+    select {
+        box-sizing: border-box;
+        border: 1px solid var(--b3-border-color, #ddd);
+        background: var(--b3-theme-surface, #fff);
+        color: var(--b3-theme-on-surface, #333);
+    }
+    input:focus,
+    select:focus {
+        border-color: var(--b3-theme-primary, #1976d2);
+        outline: none;
+    }
+    input[type='checkbox'],
+    input[type='range'] {
+        accent-color: var(--b3-theme-primary, #1976d2);
+    }
     button {
         padding: 4px 8px;
-        border: 1px solid #ddd;
-        background: #fff;
+        border: 1px solid var(--b3-border-color, #ddd);
+        background: var(--b3-theme-surface, #fff);
         cursor: pointer;
         border-radius: 4px;
         font-size: 12px;
-        color: #333;
+        color: var(--b3-theme-on-surface, #333);
     }
     button:hover {
-        background: #f5f5f5;
+        background: var(--b3-theme-surface-lighter, #f5f5f5);
     }
     .align-grid {
         padding: 8px;
@@ -1687,8 +1704,9 @@
         right: 0;
         max-height: 220px;
         overflow: auto;
-        background: #fff;
-        border: 1px solid #e6e6e6;
+        background: var(--b3-theme-background, #fff);
+        color: var(--b3-theme-on-background, #202124);
+        border: 1px solid var(--b3-border-color, #e6e6e6);
         border-radius: 6px;
         padding: 6px 0;
         z-index: 40;
@@ -1702,11 +1720,11 @@
         white-space: nowrap;
     }
     .font-dropdown li.disabled {
-        color: #888;
+        color: var(--b3-theme-on-surface-light, #888);
         cursor: default;
     }
     .font-dropdown li.highlight {
-        background: #f3f7ff;
+        background: var(--b3-theme-surface-lighter, #f3f7ff);
     }
     .font-dropdown li.selected {
         background: var(--b3-theme-primary-lightest, #e8f0ff);
@@ -1719,9 +1737,9 @@
         flex-wrap: wrap;
         gap: 6px;
         padding: 6px;
-        background: #fbfbfb;
+        background: var(--b3-theme-surface, #fbfbfb);
         border-radius: 8px;
-        border: 1px solid #f0f0f0;
+        border: 1px solid var(--b3-border-color, #f0f0f0);
         /* 不再使用固定 margin/width，改为占满控件区域 */
         margin-left: 0;
         width: 100%;
@@ -1733,8 +1751,8 @@
         height: 20px;
         border-radius: 50%;
         padding: 0;
-        border: 2px solid #fff;
-        box-shadow: 0 0 0 1px #eee;
+        border: 2px solid var(--b3-theme-background, #fff);
+        box-shadow: 0 0 0 1px var(--b3-border-color, #eee);
         transition:
             transform 0.2s,
             box-shadow 0.2s;
@@ -1748,7 +1766,8 @@
         box-shadow: 0 0 0 2px var(--b3-theme-primary, #1976d2);
     }
     .preset-btn.custom-btn {
-        background: #fff;
+        background: var(--b3-theme-background, #fff);
+        color: var(--b3-theme-on-background, #202124);
         display: flex;
         align-items: center;
         justify-content: center;

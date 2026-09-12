@@ -103,9 +103,10 @@
 <style>
     .gradient-designer {
         padding: 12px;
-        background: #fcfcfc;
+        background: var(--b3-theme-surface, #fcfcfc);
+        color: var(--b3-theme-on-surface, #202124);
         border-radius: 10px;
-        border: 1px solid #eee;
+        border: 1px solid var(--b3-border-color, #eee);
         display: flex;
         flex-direction: column;
         gap: 12px;
@@ -114,7 +115,7 @@
         width: 100%;
         height: 60px;
         border-radius: 6px;
-        border: 1px solid #ddd;
+        border: 1px solid var(--b3-border-color, #ddd);
         box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
     }
     .controls {
@@ -131,17 +132,18 @@
     .control-row .label {
         width: 50px;
         font-size: 12px;
-        color: #666;
+        color: var(--b3-theme-on-surface, #666);
     }
     .val {
         font-size: 11px;
-        color: #888;
+        color: var(--b3-theme-on-surface-light, #888);
         width: 35px;
         text-align: right;
     }
     input[type='range'] {
         flex: 1;
         height: 4px;
+        accent-color: var(--b3-theme-primary, #1976d2);
     }
 
     .actions {

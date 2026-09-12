@@ -266,7 +266,7 @@
     .color-preview {
         width: 32px;
         height: 24px;
-        border: 1px solid #ccc;
+        border: 1px solid var(--b3-border-color, #ccc);
         border-radius: 4px;
         cursor: pointer;
         padding: 2px;
@@ -275,7 +275,7 @@
     }
 
     .color-preview:hover {
-        border-color: #888;
+        border-color: var(--b3-theme-on-surface-light, #888);
     }
 
     .color-indicator {
@@ -287,8 +287,9 @@
     .color-popup {
         position: fixed;
         z-index: 10001;
-        background: #fff;
-        border: 1px solid #ddd;
+        background: var(--b3-theme-background, #fff);
+        color: var(--b3-theme-on-background, #202124);
+        border: 1px solid var(--b3-border-color, #ddd);
         border-radius: 8px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         padding: 8px;
@@ -306,7 +307,7 @@
 
     .section-title {
         font-size: 11px;
-        color: #888;
+        color: var(--b3-theme-on-surface-light, #888);
         margin-bottom: 4px;
         font-weight: 500;
     }
@@ -324,7 +325,7 @@
     .color-swatch {
         width: 20px;
         height: 20px;
-        border: 1px solid #ddd;
+        border: 1px solid var(--b3-border-color, #ddd);
         border-radius: 3px;
         cursor: pointer;
         padding: 0;
@@ -347,12 +348,12 @@
     .more-colors-btn {
         width: 100%;
         padding: 6px 8px;
-        border: 1px dashed #ccc;
+        border: 1px dashed var(--b3-border-color, #ccc);
         border-radius: 4px;
-        background: #fafafa;
+        background: var(--b3-theme-surface, #fafafa);
         cursor: pointer;
         font-size: 12px;
-        color: #555;
+        color: var(--b3-theme-on-surface, #555);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -363,8 +364,8 @@
     }
 
     .more-colors-btn:hover {
-        background: #f0f0f0;
-        border-color: #999;
+        background: var(--b3-theme-surface-lighter, #f0f0f0);
+        border-color: var(--b3-theme-on-surface-light, #999);
     }
 
     .rainbow-icon {
@@ -377,8 +378,9 @@
         left: 50%;
         transform: translate(-50%, -50%);
         z-index: 10000;
-        background: white;
-        border: 1px solid #ddd;
+        background: var(--b3-theme-background, #fff);
+        color: var(--b3-theme-on-background, #202124);
+        border: 1px solid var(--b3-border-color, #ddd);
         border-radius: 8px;
         padding: 8px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -394,7 +396,7 @@
         background: transparent;
         cursor: pointer;
         font-size: 16px;
-        color: #666;
+        color: var(--b3-theme-on-surface, #666);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -403,6 +405,6 @@
     }
 
     .close-btn:hover {
-        background: #f0f0f0;
+        background: var(--b3-theme-surface-lighter, #f0f0f0);
     }
 </style>
