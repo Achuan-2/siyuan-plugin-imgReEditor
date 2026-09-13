@@ -20,6 +20,11 @@
 
     const EDITOR_METADATA_KEY = 'siyuan-plugin-imgReEditor';
     type OutputImageFormat = 'png' | 'jpeg' | 'webp';
+    type CanvasSaveResult = {
+        sourcePath: string;
+        newPath: string;
+        blockId: string | null;
+    };
 
     export let imagePath: string;
     export let blockId: string | null = null;
@@ -27,7 +32,13 @@
     export let isCanvasMode: boolean = false;
     export let isScreenshotMode: boolean = false;
     export let initialRect: { x: number; y: number; width: number; height: number } | null = null;
-    export let onClose: (saved: boolean, newPath?: string) => void;
+    export let onClose: (
+        saved: boolean,
+        newPath?: string,
+        context?: { sourcePath: string; blockId: string | null }
+    ) => void;
+    export let canvasItems: Array<{ path: string; blockId: string; label?: string }> = [];
+    let canvasPreviewVersions = new Map<string, number>();
 
     let imageBlob: Blob | null = null;
     let editorReady = false;
@@ -37,8 +48,12 @@
     let needConvertToPNG = false;
     let lastBlobURL = '';
     let hasExistingMetadata = false; // Track if image already has editor metadata
+    let isBlankCanvasScaffold = false;
     // Fabric mode (new editor)
     let canvasEditorRef: any = null;
+    let canvasInstanceKey = 0;
+    let canvasSwitching = false;
+    let canvasRevealTimer: ReturnType<typeof setTimeout> | null = null;
     let editorEl: HTMLElement | null = null;
     let activeTool: string | null = null;
     // mark blockId as intentionally present for external callers to pass
@@ -71,6 +86,7 @@
     const SCREENSHOT_HISTORY_DIR =
         'data/storage/petal/siyuan-plugin-imgReEditor/screenshot_history';
     let lastSavedHistoryIndex: number = -1;
+    let lastSavedCanvasHistoryIndex = 0;
 
     // Custom crop state (CanvasEditor handles crop lifecycle; ImageEditor stores metadata)
     let originalImageDimensions = { width: 0, height: 0 };
@@ -104,7 +120,14 @@
             return currentIndex > 0;
         }
 
-        return currentIndex > 0;
+        return currentIndex !== lastSavedCanvasHistoryIndex;
+    }
+
+    export async function saveForSwitch(): Promise<CanvasSaveResult | null> {
+        if (!isDirty()) {
+            return { sourcePath: imagePath, newPath: imagePath, blockId };
+        }
+        return handleSave(false);
     }
 
     async function handleCancel() {
@@ -533,6 +556,152 @@
         return ['png', 'jpg', 'jpeg', 'webp'].includes(ext.toLowerCase());
     }
 
+    function handleSwitchCanvas(item: { path: string; blockId: string }) {
+        if (!item || item.path === imagePath || saving) return;
+        dispatch('switchCanvas', { item });
+    }
+
+    export async function switchCanvas(item: { path: string; blockId: string }) {
+        if (!item?.path || !item.blockId || saving) return false;
+        if (item.path === imagePath && item.blockId === blockId) return true;
+
+        const previousPath = imagePath;
+        const previousBlockId = blockId;
+        const previousImageBlob = imageBlob;
+        const previousLastBlobURL = lastBlobURL;
+        const previousTmpBlobUrl = tmpBlobUrl;
+
+        editorReady = false;
+        canvasLoadError = null;
+        undoAvailable = false;
+        redoAvailable = false;
+        undoCount = 0;
+        redoCount = 0;
+        lastSavedCanvasHistoryIndex = 0;
+        activeTool = null;
+        activeShape = null;
+        toolSettings = {};
+        cropData = null;
+        isCropped = false;
+        originalImageDimensions = { width: 0, height: 0 };
+        imageBlob = null;
+        hasExistingMetadata = false;
+        isBlankCanvasScaffold = false;
+        savedEditorData = null;
+        initialRect = null;
+
+        tmpBlobUrl = null;
+
+        imagePath = item.path;
+        blockId = item.blockId;
+        await loadImage();
+        if (!imageBlob) {
+            imagePath = previousPath;
+            blockId = previousBlockId;
+            imageBlob = previousImageBlob;
+            lastBlobURL = previousLastBlobURL;
+            tmpBlobUrl = previousTmpBlobUrl;
+            editorReady = true;
+            return false;
+        }
+
+        try {
+            if (previousTmpBlobUrl?.startsWith('blob:')) URL.revokeObjectURL(previousTmpBlobUrl);
+        } catch (_error) {}
+
+        canvasSwitching = true;
+        canvasInstanceKey += 1;
+        const itemKey = `${item.blockId}:${item.path}`;
+        if (!canvasItems.some(canvas => `${canvas.blockId}:${canvas.path}` === itemKey)) {
+            const currentIndex = canvasItems.findIndex(
+                canvas => canvas.blockId === previousBlockId && canvas.path === previousPath
+            );
+            const nextItems = [...canvasItems];
+            nextItems.splice(currentIndex >= 0 ? currentIndex + 1 : nextItems.length, 0, item);
+            canvasItems = nextItems;
+        }
+        await tick();
+        return true;
+    }
+
+    function revealSwitchedCanvas() {
+        if (!canvasSwitching) return;
+        if (canvasRevealTimer) clearTimeout(canvasRevealTimer);
+        // CanvasEditor restores project JSON and performs a delayed viewport fit.
+        // Keep those intermediate frames hidden, then reveal the final centered state.
+        canvasRevealTimer = setTimeout(() => {
+            try {
+                canvasEditorRef?.fitImageToViewport?.();
+            } catch (_error) {}
+            requestAnimationFrame(() => {
+                canvasSwitching = false;
+                canvasRevealTimer = null;
+            });
+        }, 180);
+    }
+
+    export function reconcileCanvasItems(
+        items: Array<{ path: string; blockId: string; label?: string }>
+    ) {
+        if (!Array.isArray(items) || items.length === 0) return;
+
+        const incomingKeys = new Set(items.map(item => `${item.blockId}:${item.path}`));
+        const hasEveryKnownItem = canvasItems.every(item =>
+            incomingKeys.has(`${item.blockId}:${item.path}`)
+        );
+        if (hasEveryKnownItem) {
+            canvasItems = items;
+            return;
+        }
+
+        const merged = [...canvasItems];
+        const mergedKeys = new Set(merged.map(item => `${item.blockId}:${item.path}`));
+        for (const item of items) {
+            const key = `${item.blockId}:${item.path}`;
+            if (!mergedKeys.has(key)) {
+                merged.push(item);
+                mergedKeys.add(key);
+            }
+        }
+        canvasItems = merged;
+    }
+
+    function getCanvasPreviewPath(item: { path: string; blockId: string }) {
+        const version = canvasPreviewVersions.get(`${item.blockId}:${item.path}`);
+        return version ? `${item.path}?v=${version}` : item.path;
+    }
+
+    function handleCreateCanvas() {
+        if (saving) return;
+
+        let width = 0;
+        let height = 0;
+        try {
+            const canvas = canvasEditorRef?.getCanvas?.();
+            const boundary = canvas
+                ?.getObjects?.()
+                ?.find((object: any) => object?._isCanvasBackground);
+            if (boundary) {
+                width = Math.round(Number(boundary.width) || 0);
+                height = Math.round(Number(boundary.height) || 0);
+            }
+        } catch (error) {
+            console.warn('Failed to read current canvas dimensions:', error);
+        }
+
+        if (width <= 0 || height <= 0) {
+            width = Math.round(Number(originalImageDimensions.width) || 0);
+            height = Math.round(Number(originalImageDimensions.height) || 0);
+        }
+        if (width <= 0 || height <= 0) {
+            const savedCanvas = settings?.lastToolSettings?.canvas || {};
+            width = Math.round(Number(savedCanvas.width) || 800);
+            height = Math.round(Number(savedCanvas.height) || 600);
+        }
+
+        dispatch('createCanvas', { width, height, blockId });
+    }
+
     function getOutputFormatByFileName(fileName: string): OutputImageFormat {
         const ext = getFileExtension(fileName);
         if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
@@ -728,6 +897,10 @@
             } else {
                 // Store editorData for restoration after canvas is ready
                 savedEditorData = editorData;
+                isBlankCanvasScaffold =
+                    editorData?.isCanvasMode === true &&
+                    !editorData?.canvasJSON &&
+                    !editorData?.originalFileName;
 
                 // If metadata contains isCanvasMode flag, update the component's mode
                 if (editorData && editorData.isCanvasMode === true) {
@@ -763,14 +936,19 @@
         }
     }
 
-    async function handleSave() {
-        if (!isCanvasMode && !imageBlob && !isScreenshotMode) return;
+    async function handleSave(
+        closeAfterSave = true,
+        notifySaved = false
+    ): Promise<CanvasSaveResult | null> {
+        if (!isCanvasMode && !imageBlob && !isScreenshotMode) return null;
         if (!editorReady) {
             pushErrMsg('编辑器尚未准备好，请稍后重试');
-            return;
+            return null;
         }
-        if (saving) return;
+        if (saving) return null;
         saving = true;
+        const sourcePath = imagePath;
+        const sourceBlockId = blockId;
         try {
             if (isScreenshotMode) {
                 const result = await saveToHistory();
@@ -784,7 +962,7 @@
                         (canvasEditorRef as any).resetDirty();
                     }
                 }
-                return;
+                return null;
             }
             // ... original logic continues for standard mode
             // If there is an active or unconfirmed crop rectangle, apply it before saving
@@ -847,7 +1025,7 @@
             }
             if (!dataURL) {
                 pushErrMsg('无法导出图片');
-                return;
+                return null;
             }
             // Convert dataURL to blob
             let blob = dataURLToBlob(dataURL);
@@ -864,7 +1042,7 @@
                 } catch (e) {
                     console.warn('Failed to encode WebP during save:', e);
                     pushErrMsg('当前客户端无法编码 WebP，已取消保存');
-                    return;
+                    return null;
                 }
             }
             const mustSaveBackupJson = settings.storageMode === 'backup' || outputFormat === 'jpeg';
@@ -958,13 +1136,37 @@
                 console.warn('DOM update failed', e);
             }
 
-            // Close the editor after successful save
-            // If user wants to continue editing, they can reopen the editor
-            // which will properly load the saved image with all metadata
-            onClose?.(true, `assets/${saveName}`);
+            const newPath = `assets/${saveName}`;
+            const saveResult = {
+                sourcePath,
+                newPath,
+                blockId: sourceBlockId,
+            };
+            if (canvasEditorRef && typeof canvasEditorRef.getHistoryIndex === 'function') {
+                lastSavedCanvasHistoryIndex = canvasEditorRef.getHistoryIndex();
+            }
+            if (!closeAfterSave) {
+                canvasItems = canvasItems.map(item =>
+                    item.blockId === sourceBlockId && item.path === sourcePath
+                        ? { ...item, path: newPath, label: saveName }
+                        : item
+                );
+                canvasPreviewVersions = new Map(canvasPreviewVersions).set(
+                    `${sourceBlockId}:${newPath}`,
+                    Date.now()
+                );
+                if (notifySaved) dispatch('canvasSaved', saveResult);
+            } else {
+                onClose?.(true, newPath, {
+                    sourcePath,
+                    blockId: sourceBlockId,
+                });
+            }
+            return saveResult;
         } catch (e) {
             console.error(e);
             pushErrMsg('保存失败');
+            return null;
         } finally {
             saving = false;
         }
@@ -1023,6 +1225,7 @@
     onDestroy(() => {
         window.removeEventListener('resize', handleEditorResize);
         document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        if (canvasRevealTimer) clearTimeout(canvasRevealTimer);
         stopSidebarResize(false);
         try {
             if (lastBlobURL && lastBlobURL.startsWith('blob:')) URL.revokeObjectURL(lastBlobURL);
@@ -1320,20 +1523,26 @@
         on:pin={() => handlePin()}
         on:history={() => handleHistory()}
         on:fullscreen={() => toggleFullscreen()}
-        on:save={() => handleSave()}
+        on:save={() => handleSave(false, true)}
         on:cancel={() => handleCancel()}
     />
 
     <div class="editor-main">
-        <div class="canvas-wrap">
-            <CanvasEditor
+        <div class:switching={canvasSwitching} class="canvas-wrap">
+            {#key canvasInstanceKey}
+                <CanvasEditor
                 bind:this={canvasEditorRef}
                 dataURL={isCanvasMode && savedEditorData && savedEditorData.canvasJSON
                     ? ''
-                    : lastBlobURL}
+                    : isCanvasMode && isBlankCanvasScaffold
+                      ? ''
+                      : lastBlobURL}
                 blobURL={tmpBlobUrl}
                 fileName={originalFileName}
                 {isCanvasMode}
+                initialCanvasSize={isBlankCanvasScaffold
+                    ? savedEditorData?.originalImageDimensions || null
+                    : null}
                 {initialRect}
                 {settings}
                 on:ready={() => {
@@ -1371,6 +1580,7 @@
                             pendingCropRequested = false;
                         }
                     } catch (e) {}
+                    revealSwitchedCanvas();
                 }}
                 on:loaded={e => {
                     // Store original image dimensions from the loaded event
@@ -1423,6 +1633,7 @@
                             pendingCropRequested = false;
                         }
                     } catch (e) {}
+                    revealSwitchedCanvas();
                 }}
                 on:canvasResized={e => {
                     try {
@@ -1640,7 +1851,8 @@
                 on:selectCanvasSizeModeChanged={e => {
                     selectCanvasSizeMode = e.detail;
                 }}
-            />
+                />
+            {/key}
         </div>
 
         {#if sidebarVisible}
@@ -1879,6 +2091,43 @@
             </div>
         {/if}
     </div>
+    {#if isCanvasMode && blockId}
+        <nav class="canvas-navigation" aria-label="当前文档画布导航">
+            <div class="canvas-navigation__label">本文档画布</div>
+            <div class="canvas-navigation__items">
+                {#each canvasItems as item, index (`${item.blockId}:${item.path}`)}
+                    <button
+                        type="button"
+                        class:active={item.path === imagePath && item.blockId === blockId}
+                        class="canvas-navigation__item"
+                        title={item.label || item.path.split('/').pop() || `画布 ${index + 1}`}
+                        aria-current={item.path === imagePath && item.blockId === blockId
+                            ? 'page'
+                            : undefined}
+                        on:click={() => handleSwitchCanvas(item)}
+                    >
+                        <span class="canvas-navigation__preview">
+                            <img
+                                src={getCanvasPreviewPath(item)}
+                                alt={`画布 ${index + 1} 预览`}
+                                loading="lazy"
+                                draggable="false"
+                            />
+                        </span>
+                        <span class="canvas-navigation__name">画布 {index + 1}</span>
+                    </button>
+                {/each}
+            </div>
+            <button
+                type="button"
+                class="canvas-navigation__create"
+                title="在当前画布图片块后新建相同尺寸的画布"
+                on:click={handleCreateCanvas}
+            >
+                + 新建画布
+            </button>
+        </nav>
+    {/if}
 </div>
 
 <style>
@@ -1910,6 +2159,9 @@
         height: 100%;
         overflow: hidden; /* no internal scrollbars, use Fabric panning/zooming */
     }
+    .canvas-wrap.switching :global(.canvas-editor) {
+        visibility: hidden;
+    }
 
     .tool-popup {
         position: fixed;
@@ -1938,6 +2190,101 @@
         flex-direction: column;
         z-index: 900;
         overflow: hidden;
+    }
+
+    .canvas-navigation {
+        flex: 0 0 auto;
+        min-height: 86px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        box-sizing: border-box;
+        border-top: 1px solid var(--b3-border-color, rgba(0, 0, 0, 0.12));
+        background: var(--b3-theme-surface, #f7f7f7);
+    }
+    .canvas-navigation__label {
+        flex: 0 0 auto;
+        color: var(--b3-theme-on-surface-light, #666);
+        font-size: 12px;
+    }
+    .canvas-navigation__items {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+    .canvas-navigation__item,
+    .canvas-navigation__create {
+        border: 1px solid var(--b3-border-color, rgba(0, 0, 0, 0.12));
+        border-radius: 5px;
+        padding: 4px 10px;
+        color: var(--b3-theme-on-background, #202124);
+        background: var(--b3-theme-background, #fff);
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .canvas-navigation__item:hover,
+    .canvas-navigation__create:hover {
+        background: var(--b3-list-hover, rgba(127, 127, 127, 0.12));
+    }
+    .canvas-navigation__item.active {
+        border-color: var(--b3-theme-primary, #4285f4);
+        color: var(--b3-theme-primary, #4285f4);
+        background: var(--b3-theme-primary-lightest, rgba(66, 133, 244, 0.1));
+    }
+    .canvas-navigation__item {
+        width: 92px;
+        height: 72px;
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 3px;
+    }
+    .canvas-navigation__preview {
+        min-height: 0;
+        flex: 1 1 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-radius: 3px;
+        background-color: #fff;
+        background-image:
+            linear-gradient(45deg, #ececec 25%, transparent 25%),
+            linear-gradient(-45deg, #ececec 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #ececec 75%),
+            linear-gradient(-45deg, transparent 75%, #ececec 75%);
+        background-size: 10px 10px;
+        background-position:
+            0 0,
+            0 5px,
+            5px -5px,
+            -5px 0;
+    }
+    .canvas-navigation__preview img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        pointer-events: none;
+    }
+    .canvas-navigation__name {
+        flex: 0 0 auto;
+        overflow: hidden;
+        color: inherit;
+        font-size: 11px;
+        line-height: 14px;
+        text-align: center;
+        text-overflow: ellipsis;
+    }
+    .canvas-navigation__create {
+        flex: 0 0 auto;
+        min-height: 34px;
+        color: var(--b3-theme-primary, #4285f4);
     }
     .tool-sidebar-resizer {
         position: absolute;

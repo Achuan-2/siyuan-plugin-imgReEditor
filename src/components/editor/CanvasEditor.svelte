@@ -58,6 +58,7 @@
         '_borderShadowBlur',
         '_borderShadowColor',
         '_borderShadowOpacity',
+        '_cornerRadius',
         '_isCanvasBackground',
         'lockMovementX',
         'lockMovementY',
@@ -86,6 +87,7 @@
     export let fileName: string | undefined;
     export let blobURL: string | null = null;
     export let isCanvasMode = false;
+    export let initialCanvasSize: { width: number; height: number } | null = null;
     export let initialRect: { x: number; y: number; width: number; height: number } | null = null;
     export let settings: any = {};
 
@@ -150,6 +152,7 @@
         '_borderShadowBlur',
         '_borderShadowColor',
         '_borderShadowOpacity',
+        '_cornerRadius',
         '_isCanvasBackground',
         'lockMovementX',
         'lockMovementY',
@@ -2132,6 +2135,7 @@
                             width: Math.round(representativeObject.getScaledWidth()),
                             height: Math.round(representativeObject.getScaledHeight()),
                             lockAspectRatio: (representativeObject as any).lockUniScaling !== false,
+                            cornerRadius: (representativeObject as any)._cornerRadius || 0,
                             isSelection: true,
                             selectionType: 'image',
                         },
@@ -2158,7 +2162,9 @@
         // Real-time font size calculation during scaling
         canvas.on('object:scaling', (opt: any) => {
             const target = opt.target;
-            if (target && ['i-text', 'textbox', 'text'].includes(target.type)) {
+            if (target && target.type === 'image') {
+                applyImageCornerRadius(target, (target as any)._cornerRadius || 0);
+            } else if (target && ['i-text', 'textbox', 'text'].includes(target.type)) {
                 // Update size in the tool options for real-time UI feel
                 if (activeTool === 'text') {
                     const effectiveSize = Math.round(target.fontSize * target.scaleX);
@@ -3445,6 +3451,7 @@
             originY: active.originY,
             element: active._element,
             cropOffset: { ...cropOffset },
+            cornerRadius: active._cornerRadius || 0,
         };
 
         // Load the original full image
@@ -3490,6 +3497,7 @@
                 scaleY: currentScaleY,
             });
             targetImageToCrop.setElement(imgEl);
+            targetImageToCrop.set('clipPath', null);
             targetImageToCrop.setCoords();
 
             // Create CropRect at the current visible area
@@ -3670,6 +3678,7 @@
                 scaleX: currentScaleX, // Restore the scale!
                 scaleY: currentScaleY,
             });
+            applyImageCornerRadius(newImg, imageCropBackup.cornerRadius || 0);
             newImg.setCoords();
 
             canvas.add(newImg);
@@ -3693,6 +3702,13 @@
             schedulePushWithType('modified');
         } catch (e) {
             console.warn('applyImageCrop failed', e);
+            if (targetImageToCrop && imageCropBackup) {
+                applyImageCornerRadius(
+                    targetImageToCrop,
+                    imageCropBackup.cornerRadius || 0
+                );
+                canvas?.requestRenderAll();
+            }
         }
     }
 
@@ -3713,6 +3729,7 @@
                 originY: imageCropBackup.originY,
             });
             targetImageToCrop.setElement(imageCropBackup.element);
+            applyImageCornerRadius(targetImageToCrop, imageCropBackup.cornerRadius || 0);
             targetImageToCrop.setCoords();
         }
 
@@ -3932,8 +3949,8 @@
             // Use saved settings or defaults
             const savedCanvas =
                 (settings && settings.lastToolSettings && settings.lastToolSettings.canvas) || {};
-            const imgW = savedCanvas.width || 800;
-            const imgH = savedCanvas.height || 600;
+            const imgW = initialCanvasSize?.width || savedCanvas.width || 800;
+            const imgH = initialCanvasSize?.height || savedCanvas.height || 600;
             const bgFill = savedCanvas.fill || '#ffffff';
 
             // Get the workspace container size
@@ -4870,6 +4887,7 @@
                     opts.width = Math.round(activeObject.getScaledWidth());
                     opts.height = Math.round(activeObject.getScaledHeight());
                     opts.lockAspectRatio = (activeObject as any).lockUniScaling;
+                    opts.cornerRadius = (activeObject as any)._cornerRadius || 0;
                 }
             }
             return opts;
@@ -5414,6 +5432,7 @@
                                     scaleY: newH / (o.height || 1),
                                     lockUniScaling: lock,
                                 });
+                                applyImageCornerRadius(o, (o as any)._cornerRadius || 0);
                                 o.setCoords();
 
                                 // Update tool options to reflect new state
@@ -5429,6 +5448,10 @@
                             if (typeof options.lockAspectRatio !== 'undefined') {
                                 o.set('lockAspectRatio', options.lockAspectRatio);
                                 o.set('lockUniScaling', options.lockAspectRatio);
+                            }
+                            if (typeof options.cornerRadius !== 'undefined') {
+                                applyImageCornerRadius(o, options.cornerRadius);
+                                activeToolOptions.cornerRadius = (o as any)._cornerRadius;
                             }
                         }
                     }
@@ -6355,6 +6378,37 @@
         canvas.requestRenderAll();
     }
 
+    function applyImageCornerRadius(image: any, radius: number) {
+        if (!image || image.type !== 'image') return;
+
+        const scaledWidth = Math.max(0, image.getScaledWidth?.() || 0);
+        const scaledHeight = Math.max(0, image.getScaledHeight?.() || 0);
+        const maxRadius = Math.min(scaledWidth, scaledHeight) / 2;
+        const normalizedRadius = Math.min(maxRadius, Math.max(0, Number(radius) || 0));
+        image._cornerRadius = normalizedRadius;
+
+        if (normalizedRadius === 0) {
+            image.set('clipPath', null);
+        } else {
+            const scaleX = Math.abs(image.scaleX || 1);
+            const scaleY = Math.abs(image.scaleY || 1);
+            image.set(
+                'clipPath',
+                new Rect({
+                    width: image.width || scaledWidth / scaleX,
+                    height: image.height || scaledHeight / scaleY,
+                    rx: normalizedRadius / scaleX,
+                    ry: normalizedRadius / scaleY,
+                    originX: 'center',
+                    originY: 'center',
+                    left: 0,
+                    top: 0,
+                })
+            );
+        }
+        image.dirty = true;
+    }
+
     // Help to add a fabric image from a URL/File
     function addFabricImageFromURL(url: string) {
         if (!canvas) return;
@@ -6377,6 +6431,7 @@
                 const scale = Math.min(maxW / fImg.width!, maxH / fImg.height!);
                 fImg.scale(scale);
             }
+            applyImageCornerRadius(fImg, activeToolOptions.cornerRadius || 0);
 
             canvas!.add(fImg);
             canvas!.setActiveObject(fImg);

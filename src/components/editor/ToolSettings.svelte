@@ -1044,6 +1044,23 @@
                 />
             </div>
             <div class="row">
+                <label for="img-corner-radius">圆角</label>
+                <input
+                    id="img-corner-radius"
+                    type="range"
+                    min="0"
+                    max={Math.max(
+                        0,
+                        Math.floor(
+                            Math.min(settings.width || 200, settings.height || 200) / 2
+                        )
+                    )}
+                    value={settings.cornerRadius || 0}
+                    on:input={e => emitChange({ cornerRadius: +getValue(e) })}
+                />
+                <span class="val">{Math.round(settings.cornerRadius || 0)}</span>
+            </div>
+            <div class="row">
                 <button
                     class="b3-button b3-button--outline"
                     on:click={() => dispatch('action', { action: 'enterImageCropMode' })}

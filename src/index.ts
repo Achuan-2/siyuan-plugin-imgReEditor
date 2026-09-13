@@ -48,6 +48,12 @@ interface AssetCompressionHistory {
     entries: Record<string, AssetCompressionHistoryEntry>;
 }
 
+interface DocumentCanvasItem {
+    path: string;
+    blockId: string;
+    label: string;
+}
+
 function getFileExtension(fileName: string) {
     const lastDot = fileName.lastIndexOf('.');
     return lastDot >= 0 ? fileName.slice(lastDot + 1).toLowerCase() : '';
@@ -225,6 +231,103 @@ export default class PluginSample extends Plugin {
     private originalXhrOpen: any = null;
     private originalXhrSend: any = null;
     private originalFetch: any = null;
+
+    private async resolveDocumentID(blockID?: string | null) {
+        if (!blockID) return '';
+        try {
+            const { getBlockByID } = await import('./api');
+            const block = await getBlockByID(blockID) as any;
+            return block?.root_id || (block?.type === 'd' ? block.id : '') || '';
+        } catch (error) {
+            console.warn('Failed to resolve document ID for canvas navigation:', error);
+            return '';
+        }
+    }
+
+    private async isCanvasAsset(path: string) {
+        try {
+            const { getFileBlob } = await import('./api');
+            const blob = await getFileBlob(`data/${path}`);
+            if (!blob || blob.size === 0) return false;
+
+            const buffer = new Uint8Array(await blob.arrayBuffer());
+            const embedded = locatePNGtEXt(buffer)
+                ? readPNGTextChunk(buffer, EDITOR_METADATA_KEY)
+                : readWebPMetadata(buffer, EDITOR_METADATA_KEY);
+            if (embedded) {
+                try {
+                    if (JSON.parse(embedded)?.isCanvasMode === true) return true;
+                } catch (_error) {
+                    // Continue with the backup metadata fallback.
+                }
+            }
+
+            const fileName = path.split('/').pop();
+            if (!fileName) return false;
+            try {
+                const backup = await getFileBlob(`${EDITOR_BACKUP_DIR}/${fileName}.json`);
+                return !!backup && backup.size > 0 && JSON.parse(await backup.text())?.isCanvasMode === true;
+            } catch (_error) {
+                return false;
+            }
+        } catch (error) {
+            console.warn(`Failed to inspect canvas asset: ${path}`, error);
+            return false;
+        }
+    }
+
+    private async getDocumentCanvasItems(blockID?: string | null): Promise<DocumentCanvasItem[]> {
+        const docID = await this.resolveDocumentID(blockID);
+        if (!docID) return [];
+
+        try {
+            const { getBlockDOM } = await import('./api');
+            const blockDOM = await getBlockDOM(docID) as any;
+            const html = typeof blockDOM === 'string'
+                ? blockDOM
+                : blockDOM?.dom || blockDOM?.content || '';
+            if (!html) return [];
+
+            const root = document.createElement('div');
+            root.innerHTML = html;
+            const candidates: DocumentCanvasItem[] = [];
+            const seen = new Set<string>();
+            root.querySelectorAll('img').forEach((element: Element) => {
+                const image = element as HTMLImageElement;
+                const path = normalizeAssetPath(
+                    image.dataset?.src || image.getAttribute('data-src') || image.getAttribute('src')
+                );
+                const owner = image.closest('[data-node-id]') as HTMLElement | null;
+                const ownerID = owner?.getAttribute('data-node-id') || '';
+                const key = `${ownerID}:${path || ''}`;
+                if (!path || !ownerID || seen.has(key)) return;
+                seen.add(key);
+                candidates.push({
+                    path,
+                    blockId: ownerID,
+                    label: path.split('/').pop() || path,
+                });
+            });
+
+            // Avoid loading every document image into memory at once in image-heavy notes.
+            const canvasFlags = new Array<boolean>(candidates.length).fill(false);
+            let nextIndex = 0;
+            const workers = Array.from(
+                { length: Math.min(4, candidates.length) },
+                async () => {
+                    while (nextIndex < candidates.length) {
+                        const index = nextIndex++;
+                        canvasFlags[index] = await this.isCanvasAsset(candidates[index].path);
+                    }
+                }
+            );
+            await Promise.all(workers);
+            return candidates.filter((_candidate, index) => canvasFlags[index]);
+        } catch (error) {
+            console.warn('Failed to collect document canvases:', error);
+            return [];
+        }
+    }
 
 
     async onload() {
@@ -1249,17 +1352,125 @@ export default class PluginSample extends Plugin {
                 isCanvasMode,
                 isScreenshotMode,
                 initialRect,
-                onClose: (saved: boolean, newPath?: string) => {
+                canvasItems: isCanvasMode && blockID
+                    ? [{ path: imagePath, blockId: blockID, label: fileName || imagePath }]
+                    : [],
+                onClose: (
+                    saved: boolean,
+                    newPath?: string,
+                    context?: { sourcePath: string; blockId: string | null }
+                ) => {
                     // Bypass dirty check on explicit save/cancel
                     (dialog as any)._skipDirtyCheck = true;
                     dialog.destroy();
-                    if (saved && newPath && onSaveCallback) {
-                        void Promise.resolve(onSaveCallback(newPath)).catch(error => {
+                    const sourcePath = context?.sourcePath || imagePath;
+                    const sourceBlockID = context?.blockId || blockID;
+                    if (saved && newPath && sourceBlockID && newPath !== sourcePath) {
+                        const updateReference =
+                            onSaveCallback &&
+                            sourcePath === imagePath &&
+                            sourceBlockID === blockID
+                            ? () => onSaveCallback(newPath)
+                            : async () => {
+                                  await this.replaceImageAssetReferenceInBlock(
+                                      sourceBlockID,
+                                      sourcePath,
+                                      newPath
+                                  );
+                                  await this.removeConvertedSourceIfUnused(sourcePath);
+                              };
+                        void Promise.resolve(updateReference()).catch(error => {
                             console.error('Failed to update saved image reference:', error);
                         });
                     }
                 }
             }
+        });
+
+        if (isCanvasMode && blockID) {
+            void this.getDocumentCanvasItems(blockID).then(items => {
+                const hasCurrent = items.some(
+                    item => item.blockId === blockID && item.path === imagePath
+                );
+                comp.$set({
+                    canvasItems: hasCurrent
+                        ? items
+                        : [
+                              ...items,
+                              { path: imagePath, blockId: blockID, label: fileName || imagePath },
+                          ],
+                });
+            });
+        }
+
+        let canvasNavigationBusy = false;
+        const saveCurrentCanvas = async () => {
+            const result = await (comp as any).saveForSwitch();
+            if (!result) return false;
+            if (result.blockId && result.newPath !== result.sourcePath) {
+                await this.replaceImageAssetReferenceInBlock(
+                    result.blockId,
+                    result.sourcePath,
+                    result.newPath
+                );
+                await this.removeConvertedSourceIfUnused(result.sourcePath);
+            }
+            return true;
+        };
+        const runCanvasNavigation = (action: () => void | Promise<void>) => {
+            if (canvasNavigationBusy) return;
+            const run = async () => {
+                canvasNavigationBusy = true;
+                try {
+                    if (await saveCurrentCanvas()) await action();
+                } finally {
+                    canvasNavigationBusy = false;
+                }
+            };
+            void run();
+        };
+
+        comp.$on('switchCanvas', (e) => {
+            const item = e.detail?.item as DocumentCanvasItem | undefined;
+            if (!item?.path || !item.blockId) return;
+            runCanvasNavigation(() => (comp as any).switchCanvas(item));
+        });
+
+        comp.$on('createCanvas', (e) => {
+            const anchorBlockID = e.detail?.blockId || blockID;
+            if (!anchorBlockID) return;
+            runCanvasNavigation(async () => {
+                try {
+                    const item = await this.createBlankCanvasAfter(
+                        anchorBlockID,
+                        e.detail?.width,
+                        e.detail?.height
+                    );
+                    await (comp as any).switchCanvas(item);
+                    const items = await this.getDocumentCanvasItems(item.blockId);
+                    (comp as any).reconcileCanvasItems(items);
+                } catch (error) {
+                    console.error('Failed to create canvas from navigation:', error);
+                    const { pushErrMsg } = await import('./api');
+                    await pushErrMsg('新建画布失败');
+                }
+            });
+        });
+
+        comp.$on('canvasSaved', (e) => {
+            const result = e.detail;
+            if (!result?.blockId || !result?.newPath || result.newPath === result.sourcePath) return;
+            void this.replaceImageAssetReferenceInBlock(
+                result.blockId,
+                result.sourcePath,
+                result.newPath
+            )
+                .then(() => this.removeConvertedSourceIfUnused(result.sourcePath))
+                .catch(async error => {
+                    console.error('Failed to update saved canvas reference:', error);
+                    const { pushErrMsg } = await import('./api');
+                    await pushErrMsg('画布已保存，但更新图片块引用失败');
+                });
         });
 
         comp.$on('saveSettings', (e) => {
@@ -1352,11 +1563,29 @@ export default class PluginSample extends Plugin {
                         isCanvasMode,
                         isScreenshotMode,
                         initialRect: null,
-                        onClose: (saved: boolean, newPath?: string) => {
-                            if (saved && newPath && blockID && newPath !== imagePath) {
+                        canvasItems: isCanvasMode && blockID
+                            ? [{ path: imagePath, blockId: blockID, label: fileName || imagePath }]
+                            : [],
+                        onClose: (
+                            saved: boolean,
+                            newPath?: string,
+                            context?: { sourcePath: string; blockId: string | null }
+                        ) => {
+                            const sourcePath = context?.sourcePath || imagePath;
+                            const sourceBlockID = context?.blockId || blockID;
+                            if (
+                                saved &&
+                                newPath &&
+                                sourceBlockID &&
+                                newPath !== sourcePath
+                            ) {
                                 void plugin
-                                    .replaceImageAssetReferenceInBlock(blockID, imagePath, newPath)
-                                    .then(() => plugin.removeConvertedSourceIfUnused(imagePath))
+                                    .replaceImageAssetReferenceInBlock(
+                                        sourceBlockID,
+                                        sourcePath,
+                                        newPath
+                                    )
+                                    .then(() => plugin.removeConvertedSourceIfUnused(sourcePath))
                                     .catch(error => {
                                         console.error('Failed to update saved image reference:', error);
                                     });
@@ -1369,6 +1598,101 @@ export default class PluginSample extends Plugin {
                             }
                         }
                     }
+                });
+
+                if (isCanvasMode && blockID) {
+                    void plugin.getDocumentCanvasItems(blockID).then(items => {
+                        const hasCurrent = items.some(
+                            item => item.blockId === blockID && item.path === imagePath
+                        );
+                        comp.$set({
+                            canvasItems: hasCurrent
+                                ? items
+                                : [
+                                      ...items,
+                                      {
+                                          path: imagePath,
+                                          blockId: blockID,
+                                          label: fileName || imagePath,
+                                      },
+                                  ],
+                        });
+                    });
+                }
+
+                let canvasNavigationBusy = false;
+                const saveCurrentCanvas = async () => {
+                    const result = await (comp as any).saveForSwitch();
+                    if (!result) return false;
+                    if (result.blockId && result.newPath !== result.sourcePath) {
+                        await plugin.replaceImageAssetReferenceInBlock(
+                            result.blockId,
+                            result.sourcePath,
+                            result.newPath
+                        );
+                        await plugin.removeConvertedSourceIfUnused(result.sourcePath);
+                    }
+                    return true;
+                };
+                const runCanvasNavigation = (action: () => void | Promise<void>) => {
+                    if (canvasNavigationBusy) return;
+                    const run = async () => {
+                        canvasNavigationBusy = true;
+                        try {
+                            if (await saveCurrentCanvas()) await action();
+                        } finally {
+                            canvasNavigationBusy = false;
+                        }
+                    };
+                    void run();
+                };
+
+                comp.$on('switchCanvas', (e) => {
+                    const item = e.detail?.item as DocumentCanvasItem | undefined;
+                    if (!item?.path || !item.blockId) return;
+                    runCanvasNavigation(() => (comp as any).switchCanvas(item));
+                });
+
+                comp.$on('createCanvas', (e) => {
+                    const anchorBlockID = e.detail?.blockId || blockID;
+                    if (!anchorBlockID) return;
+                    runCanvasNavigation(async () => {
+                        try {
+                            const item = await plugin.createBlankCanvasAfter(
+                                anchorBlockID,
+                                e.detail?.width,
+                                e.detail?.height
+                            );
+                            await (comp as any).switchCanvas(item);
+                            const items = await plugin.getDocumentCanvasItems(item.blockId);
+                            (comp as any).reconcileCanvasItems(items);
+                        } catch (error) {
+                            console.error('Failed to create canvas from navigation:', error);
+                            const { pushErrMsg } = await import('./api');
+                            await pushErrMsg('新建画布失败');
+                        }
+                    });
+                });
+
+                comp.$on('canvasSaved', (e) => {
+                    const result = e.detail;
+                    if (
+                        !result?.blockId ||
+                        !result?.newPath ||
+                        result.newPath === result.sourcePath
+                    ) return;
+                    void plugin
+                        .replaceImageAssetReferenceInBlock(
+                            result.blockId,
+                            result.sourcePath,
+                            result.newPath
+                        )
+                        .then(() => plugin.removeConvertedSourceIfUnused(result.sourcePath))
+                        .catch(async error => {
+                            console.error('Failed to update saved canvas reference:', error);
+                            const { pushErrMsg } = await import('./api');
+                            await pushErrMsg('画布已保存，但更新图片块引用失败');
+                        });
                 });
 
                 comp.$on('saveSettings', (e) => {
@@ -1411,86 +1735,100 @@ export default class PluginSample extends Plugin {
     /**
      * 创建空白图片并打开编辑器
      */
-    async createBlankImageAndEdit(protyle: any, blockID: string) {
+    private async createBlankCanvasAfter(
+        blockID: string,
+        requestedWidth?: number,
+        requestedHeight?: number,
+        replaceAnchorBlock = false
+    ): Promise<DocumentCanvasItem> {
+        if (!blockID) throw new Error('Missing anchor block ID');
+
+        // Use the selected canvas size when provided; slash creation falls back to saved defaults.
+        const savedCanvas = (this.settings && this.settings.lastToolSettings && this.settings.lastToolSettings.canvas) || {};
+        const canvasW = Math.max(1, Math.round(Number(requestedWidth) || Number(savedCanvas.width) || 800));
+        const canvasH = Math.max(1, Math.round(Number(requestedHeight) || Number(savedCanvas.height) || 600));
+        const bgFill = savedCanvas.fill || '#ffffff';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasW;
+        canvas.height = canvasH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to get canvas context');
+
+        if (bgFill.startsWith('linear-gradient')) {
+            const match = bgFill.match(/#(?:[0-9a-fA-F]{3}){1,2}/);
+            ctx.fillStyle = match ? match[0] : '#ffffff';
+        } else {
+            ctx.fillStyle = bgFill;
+        }
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const blob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob(result => {
+                if (result) resolve(result);
+                else reject(new Error('Failed to create canvas image'));
+            }, 'image/png');
+        });
+        const buffer = new Uint8Array(await blob.arrayBuffer());
+        const metaValue = JSON.stringify({
+            version: 1,
+            isCanvasMode: true,
+            originalFileName: '',
+            cropData: null,
+            originalImageDimensions: { width: canvasW, height: canvasH },
+        });
+        const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
+        const imageName = `canvas-${window.Lute.NewNodeID()}.png`;
+        const imagePath = `assets/${imageName}`;
+        const file = new File(
+            [new Blob([newBuffer as any], { type: 'image/png' })],
+            imageName,
+            { type: 'image/png' }
+        );
+
+        const { putFile, insertBlock, updateBlock } = await import('./api');
+        await putFile(`data/${imagePath}`, false, file);
+        if (replaceAnchorBlock) {
+            await updateBlock('markdown', `![](${imagePath})`, blockID);
+            return { path: imagePath, blockId: blockID, label: imageName };
+        }
+
+        const transactions = await insertBlock(
+            'markdown',
+            `![](${imagePath})`,
+            undefined,
+            blockID
+        ) as any;
+        const insertedOperation = (Array.isArray(transactions) ? transactions : [])
+            .flatMap((transaction: any) => transaction?.doOperations || [])
+            .find((operation: any) => operation?.action === 'insert' && operation?.id);
+        let insertedBlockID = insertedOperation?.id || '';
+
+        if (!insertedBlockID) {
+            const items = await this.getDocumentCanvasItems(blockID);
+            insertedBlockID = items.find(item => item.path === imagePath)?.blockId || '';
+        }
+        if (!insertedBlockID) {
+            throw new Error('Canvas image was saved, but the inserted block could not be resolved');
+        }
+
+        return { path: imagePath, blockId: insertedBlockID, label: imageName };
+    }
+
+    async createBlankImageAndEdit(_protyle: any, blockID: string) {
         try {
-            // 动态导入 PNG 元数据工具
-            const { insertPNGTextChunk } = await import('./utils');
-
-            // Use saved settings or defaults
-            const savedCanvas = (this.settings && this.settings.lastToolSettings && this.settings.lastToolSettings.canvas) || {};
-            const canvasW = savedCanvas.width || 800;
-            const canvasH = savedCanvas.height || 600;
-            const bgFill = savedCanvas.fill || '#ffffff';
-
-            // 创建一个带有背景的PNG图片
-            const canvas = document.createElement('canvas');
-            canvas.width = canvasW;
-            canvas.height = canvasH;
-            const ctx = canvas.getContext('2d');
-
-            if (!ctx) {
-                console.error('Failed to get canvas context');
-                return;
-            }
-
-            // 背景
-            if (bgFill.startsWith('linear-gradient')) {
-                // For simplicity, use first color of gradient for the initial blank image background
-                const match = bgFill.match(/#(?:[0-9a-fA-F]{3}){1,2}/);
-                ctx.fillStyle = match ? match[0] : '#ffffff';
-            } else {
-                ctx.fillStyle = bgFill;
-            }
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // 黑色文字
-            ctx.fillStyle = '#666666';
-            ctx.font = '24px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('ImgReEditor Canvas', canvas.width / 2, canvas.height / 2);
-
-            // 转换为Blob
-            const blob = await new Promise<Blob>((resolve) => {
-                canvas.toBlob((blob) => {
-                    resolve(blob!);
-                }, 'image/png');
-            });
-
-            // 写入画布模式元数据
-            const buffer = new Uint8Array(await blob.arrayBuffer());
-            const metaObj = {
-                version: 1,
-                isCanvasMode: true,
-                originalFileName: '',
-                cropData: null,
-                originalImageDimensions: null,
-            };
-            const metaValue = JSON.stringify(metaObj);
-            const newBuffer = insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
-
-            // 生成唯一文件名
-            const imageName = `canvas-${window.Lute.NewNodeID()}.png`;
-
-            // 创建新的 Blob 和 File
-            const newBlob = new Blob([newBuffer as any], { type: 'image/png' });
-            const file = new File([newBlob], imageName, { type: 'image/png' });
-
-            // 使用SiYuan API上传
-            const { putFile } = await import('./api');
-            await putFile(`data/assets/${imageName}`, false, file);
-
-            // 图片URL
-            const imageURL = `assets/${imageName}`;
-
-            // 插入图片到文档
-            protyle.insert(`![](${imageURL})`);
-
-            // 打开编辑器对话框（画布模式）
-            this.openImageEditorDialog(imageURL, blockID, true);
-
+            // Slash commands should replace their own paragraph instead of leaving `/画布` behind.
+            const item = await this.createBlankCanvasAfter(
+                blockID,
+                undefined,
+                undefined,
+                true
+            );
+            this.openImageEditorDialog(item.path, item.blockId, true);
         } catch (error) {
             console.error('Failed to create blank image:', error);
+            const { pushErrMsg } = await import('./api');
+            await pushErrMsg('创建画布失败');
         }
     }
     /**
