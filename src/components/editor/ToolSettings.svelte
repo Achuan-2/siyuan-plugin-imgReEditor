@@ -494,6 +494,19 @@
             />
         </div>
         <div class="row">
+            <label for="text-resize-mode">缩放行为</label>
+            <select
+                id="text-resize-mode"
+                value={settings.textResizeMode || 'layout'}
+                on:change={e =>
+                    emitChange({ textResizeMode: getValue(e), textResizeModeVersion: 2 })}
+            >
+                <option value="layout">调整文字布局</option>
+                <option value="font-size">调整字体大小</option>
+            </select>
+        </div>
+        <div class="hint">默认调整文字布局；按住 Shift 可临时调整字体大小</div>
+        <div class="row">
             <span class="label">样式</span>
             <div style="display:flex;gap:4px;">
                 <button
@@ -1623,6 +1636,12 @@
     }
     .empty {
         color: var(--b3-theme-on-surface-light, #888);
+    }
+    .hint {
+        margin: -2px 0 10px 88px;
+        color: var(--b3-theme-on-surface-light, #888);
+        font-size: 12px;
+        line-height: 1.4;
     }
     .row {
         display: flex;

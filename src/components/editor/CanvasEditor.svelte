@@ -12,6 +12,7 @@
         IText,
         Textbox,
         FabricText as Text,
+        controlsUtils,
         Point,
         PencilBrush,
         FabricObject,
@@ -60,6 +61,7 @@
         '_borderShadowOpacity',
         '_cornerRadius',
         '_isCanvasBackground',
+        '_textAutoWidth',
         'lockMovementX',
         'lockMovementY',
         'lockRotation',
@@ -154,6 +156,7 @@
         '_borderShadowOpacity',
         '_cornerRadius',
         '_isCanvasBackground',
+        '_textAutoWidth',
         'lockMovementX',
         'lockMovementY',
         'lockRotation',
@@ -249,17 +252,29 @@
                     obj.selectable = true;
                     obj.evented = true;
                     // Ensure text objects only scale proportionally and have correct effective font size
-                    if (['i-text', 'textbox', 'text'].includes(obj.type)) {
+                    if (isTextObject(obj)) {
                         obj.set('lockUniScaling', true);
+                        if (obj.type === 'textbox') {
+                            if (obj._textAutoWidth !== false) obj._textAutoWidth = true;
+                            // Allow Chinese/Japanese text to wrap by character instead
+                            // of treating a continuous sentence as one unbreakable word.
+                            if (obj.splitByGrapheme !== true) {
+                                obj.set('splitByGrapheme', true);
+                                obj.initDimensions?.();
+                            }
+                        }
                         if (obj.scaleX !== 1 || obj.scaleY !== 1) {
-                            const newFontSize = Math.round(obj.fontSize * obj.scaleX);
+                            const previousScaleX = Number(obj.scaleX) || 1;
+                            const previousWidth = Number(obj.width) || 1;
+                            const newFontSize = Math.round(obj.fontSize * previousScaleX);
                             obj.set({
                                 fontSize: newFontSize,
                                 scaleX: 1,
                                 scaleY: 1,
                             });
                             if (obj.type === 'textbox') {
-                                obj.set('width', obj.width * obj.scaleX);
+                                obj.set('width', previousWidth);
+                                obj.initDimensions?.();
                             }
                         }
                         applyTextRenderingOptions(obj);
@@ -272,6 +287,35 @@
             }
         } catch (e) {
             console.warn('CanvasEditor: restoreObjectSelectionStates failed', e);
+        }
+    }
+
+    async function upgradeLegacyTextObjectsToTextboxes() {
+        if (!canvas) return;
+
+        const legacyTextObjects = canvas
+            .getObjects()
+            .filter((obj: any) => obj.type === 'i-text' || obj.type === 'text');
+
+        for (const legacyText of legacyTextObjects) {
+            try {
+                const index = canvas.getObjects().indexOf(legacyText);
+                const textbox = await Textbox.fromObject(legacyText.toObject());
+                textbox.set({
+                    lockUniScaling: legacyText.lockUniScaling !== false,
+                    splitByGrapheme: true,
+                    _textAutoWidth: legacyText._textAutoWidth !== false,
+                });
+                textbox.initDimensions?.();
+                applyTextRenderingOptions(textbox);
+
+                canvas.remove(legacyText);
+                canvas.insertAt(Math.max(index, 0), textbox);
+                textbox.setCoords();
+            } catch (e) {
+                // Keep the original object if a legacy text object cannot be upgraded.
+                console.warn('CanvasEditor: failed to upgrade legacy text object', e);
+            }
         }
     }
 
@@ -330,6 +374,177 @@
     }
 
     const MAX_TEXT_STROKE_WIDTH = 20;
+    const DEFAULT_TEXT_RESIZE_MODE = 'layout';
+    const TEXT_RESIZE_MODE_VERSION = 2;
+    const TEXT_RESIZE_MODES = ['font-size', 'layout'] as const;
+    type TextResizeMode = (typeof TEXT_RESIZE_MODES)[number];
+
+    function isTextObject(obj: any) {
+        return !!obj && ['i-text', 'textbox', 'text'].includes(obj.type);
+    }
+
+    function normalizeTextResizeMode(value: any): TextResizeMode {
+        return value === 'font-size' || value === 'layout'
+            ? value
+            : DEFAULT_TEXT_RESIZE_MODE;
+    }
+
+    function getTextResizeMode(value: any = activeToolOptions?.textResizeMode): TextResizeMode {
+        return normalizeTextResizeMode(value);
+    }
+
+    function getTextResizeModeForEvent(
+        eventData: any,
+        transform?: any,
+        baseMode: any = activeToolOptions?.textResizeMode
+    ): TextResizeMode {
+        const mode = normalizeTextResizeMode(baseMode);
+        const shiftKey =
+            typeof eventData?.shiftKey === 'boolean'
+                ? eventData.shiftKey
+                : Boolean(transform?.shiftKey);
+        return shiftKey ? (mode === 'layout' ? 'font-size' : 'layout') : mode;
+    }
+
+    function getTextDisplayFontSize(textObj: any) {
+        const resizeState = textObj?.__imgReEditorTextResizeState;
+        if (resizeState?.mode === 'layout') {
+            return Math.round(Number(resizeState.fontSize) || Number(textObj.fontSize) || 1);
+        }
+        return Math.round(
+            (Number(textObj?.fontSize) || 1) * (Number(textObj?.scaleX) || 1)
+        );
+    }
+
+    function autoResizeTextObject(textObj: any) {
+        if (!textObj || textObj.type !== 'textbox' || textObj._textAutoWidth === false) return;
+
+        const currentWidth = Math.max(1, Number(textObj.width) || 1);
+        const measureWidth = Math.max(currentWidth, 1_000_000);
+
+        // Textbox wraps against its current width. Temporarily give it enough
+        // room to measure the longest explicit line, then commit that natural
+        // width. This keeps new text single-line until the user resizes it.
+        textObj.set('width', measureWidth);
+        textObj.initDimensions?.();
+
+        const naturalWidth = Math.max(
+            Number(textObj.calcTextWidth?.()) || 0,
+            Number(textObj.minWidth) || 1
+        );
+        textObj.set('width', naturalWidth);
+        textObj.initDimensions?.();
+        textObj.setCoords?.();
+    }
+
+    function getTextResizeActionHandler(originalActionHandler: any, mode: TextResizeMode) {
+        return (eventData: any, transform: any, x: number, y: number) => {
+            const target = transform?.target as any;
+            if (!target) return false;
+
+            // Keep the mode captured at the start of this drag. This makes Shift
+            // predictable even if the key is released before the mouse is released.
+            const resizeState = target.__imgReEditorTextResizeState;
+            const activeMode = getTextResizeModeForEvent(
+                eventData,
+                transform,
+                resizeState?.baseMode || mode
+            );
+            if (resizeState) resizeState.mode = activeMode;
+            const corner = transform.corner;
+
+            if (activeMode === 'layout') {
+                // Textbox's default side controls already use changeWidth. Using it
+                // for corner controls as well keeps the font size unchanged while
+                // still allowing the text box to reflow.
+                if (typeof controlsUtils.changeWidth === 'function') {
+                    return controlsUtils.changeWidth(eventData, transform, x, y);
+                }
+            }
+
+            // Textbox normally reserves ml/mr for layout resizing. In font-size
+            // mode, make those handles behave like ordinary horizontal scaling.
+            if (activeMode === 'font-size' && target.type === 'textbox') {
+                if (corner === 'tl' || corner === 'tr' || corner === 'bl' || corner === 'br') {
+                    // Shift is also Fabric's default proportional-scaling key. The
+                    // font-size action must stay proportional even when Shift is
+                    // what activated this temporary mode.
+                    if (typeof controlsUtils.scalingEqually === 'function') {
+                        const uniformEventData = {
+                            ...eventData,
+                            [target.canvas?.uniScaleKey || 'shiftKey']: false,
+                        };
+                        return controlsUtils.scalingEqually(uniformEventData, transform, x, y);
+                    }
+                }
+                if (corner === 'ml' || corner === 'mr') {
+                    return controlsUtils.scalingX(eventData, transform, x, y);
+                }
+                if (corner === 'mt' || corner === 'mb') {
+                    return controlsUtils.scalingY(eventData, transform, x, y);
+                }
+            }
+
+            return originalActionHandler
+                ? originalActionHandler(eventData, transform, x, y)
+                : false;
+        };
+    }
+
+    function finishTextResize(target: any) {
+        if (!isTextObject(target)) return null;
+
+        const resizeState = target.__imgReEditorTextResizeState;
+        if (!resizeState) return null;
+
+        const mode = normalizeTextResizeMode(resizeState.mode);
+        const initialFontSize = Math.max(1, Number(resizeState.fontSize) || 1);
+        const initialWidth = Math.max(1, Number(resizeState.width) || 1);
+        const corner = resizeState.corner;
+        const scaleX = Math.abs(Number(target.scaleX) || 1);
+        const scaleY = Math.abs(Number(target.scaleY) || 1);
+        const currentWidth = Math.abs(
+            (Number(target.width) || initialWidth) * scaleX
+        );
+        const fontScale =
+            corner === 'mt' || corner === 'mb' ? scaleY : scaleX;
+        let nextFontSize = Math.round(initialFontSize * Math.max(fontScale, 0.01));
+
+        if (mode === 'layout') {
+            if (target.type === 'textbox') {
+                const nextWidth = Math.max(
+                    Number(target.minWidth) || 1,
+                    currentWidth || initialWidth
+                );
+                target.set({ width: nextWidth, scaleX: 1, scaleY: 1 });
+                target.initDimensions?.();
+            } else {
+                target.set({ scaleX: 1, scaleY: 1 });
+            }
+            nextFontSize = Math.round(Number(target.fontSize) || initialFontSize);
+        } else {
+            nextFontSize = Math.max(1, nextFontSize);
+            if (target.type === 'textbox') {
+                // Font-size mode is an equivalent zoom: keep each line at the
+                // same break point by scaling the internal layout width along
+                // with the font size. Restoring the old width would reflow the
+                // text and make the box change shape unexpectedly.
+                target.set({
+                    fontSize: nextFontSize,
+                    width: Math.max(Number(target.minWidth) || 1, initialWidth * fontScale),
+                    scaleX: 1,
+                    scaleY: 1,
+                });
+                target.initDimensions?.();
+            } else {
+                target.set({ fontSize: nextFontSize, scaleX: 1, scaleY: 1 });
+            }
+        }
+
+        delete target.__imgReEditorTextResizeState;
+        target.setCoords?.();
+        return { mode, fontSize: nextFontSize };
+    }
 
     function normalizeTextStrokeWidth(value: any, _fontSize?: any) {
         const n = Number(value);
@@ -1041,6 +1256,40 @@
             }
         });
 
+        // Capture the resize mode and the unscaled text metrics before Fabric
+        // applies a control transform. Shift temporarily reverses the default
+        // mode for this drag only.
+        canvas.on('before:transform', (opt: any) => {
+            const transform = opt?.transform;
+            const target = transform?.target;
+            if (!isTextObject(target) || !transform?.corner || transform.corner === 'mtr') return;
+
+            const baseMode = getTextResizeMode();
+            const mode = getTextResizeModeForEvent(opt?.e, transform, baseMode);
+            target._textAutoWidth = false;
+            target.__imgReEditorTextResizeState = {
+                mode,
+                baseMode,
+                corner: transform.corner,
+                fontSize: Number(target.fontSize) || 1,
+                width: Number(target.width) || 1,
+                height: Number(target.height) || 1,
+            };
+
+            const originalActionHandler = transform.actionHandler;
+            transform.actionHandler = getTextResizeActionHandler(originalActionHandler, mode);
+        });
+
+        // A newly created textbox should grow with its content. Once the user
+        // resizes it, _textAutoWidth becomes false and normal Textbox wrapping
+        // takes over.
+        canvas.on('text:changed', (opt: any) => {
+            const target = opt?.target;
+            if (!target || target.type !== 'textbox') return;
+            autoResizeTextObject(target);
+            canvas?.requestRenderAll();
+        });
+
         // Attach basic history listeners (use typed scheduling for merging)
         canvas.on('object:added', (opt: any) => {
             if (opt.target && (opt.target as any)._isCanvasBackground) return;
@@ -1049,26 +1298,32 @@
         canvas.on('object:modified', (opt: any) => {
             const target = opt.target;
             if (target && (target as any)._isCanvasBackground) return;
-            if (target && ['i-text', 'textbox', 'text'].includes(target.type)) {
-                if (target.scaleX !== 1 || target.scaleY !== 1) {
-                    const newFontSize = Math.round(target.fontSize * target.scaleX);
-                    // Use set to update properties and reset scale
-                    target.set({
-                        fontSize: newFontSize,
-                        scaleX: 1,
-                        scaleY: 1,
-                    });
-                    // For Textbox, we might need to adjust width as well to maintain the visual layout
+            if (isTextObject(target)) {
+                const resizeResult = finishTextResize(target);
+                if (resizeResult) {
+                    applyTextRenderingOptions(target);
+
+                    // Update tool options so UI stays in sync. Layout mode keeps
+                    // the original font size, while font-size mode reports the
+                    // newly committed size.
+                    if (activeTool === 'text') {
+                        activeToolOptions.size = resizeResult.fontSize;
+                    }
+                    handleSelectionChangeWithType();
+                } else if (target.scaleX !== 1 || target.scaleY !== 1) {
+                    // Keep compatibility with programmatic or legacy transforms
+                    // that did not go through before:transform.
+                    const previousScaleX = Number(target.scaleX) || 1;
+                    const previousWidth = Number(target.width) || 1;
+                    const newFontSize = Math.round(target.fontSize * previousScaleX);
+                    target.set({ fontSize: newFontSize, scaleX: 1, scaleY: 1 });
                     if (target.type === 'textbox') {
-                        target.set('width', target.width * target.scaleX);
+                        target.set('width', previousWidth);
+                        target.initDimensions?.();
                     }
                     target.setCoords();
                     applyTextRenderingOptions(target);
-
-                    // Update tool options so UI stays in sync
-                    if (activeTool === 'text') {
-                        activeToolOptions.size = newFontSize;
-                    }
+                    if (activeTool === 'text') activeToolOptions.size = newFontSize;
                     handleSelectionChangeWithType();
                 }
             } else if (target && target.type === 'arrow') {
@@ -1662,9 +1917,10 @@
                     const fontStyle = activeToolOptions.italic ? 'italic' : 'normal';
 
                     let itext: any = null;
-                    // Try common fabric text classes in order of preference
+                    // Textbox supports both font-size scaling and width-based
+                    // reflow, so prefer it for newly created text objects.
                     try {
-                        itext = new IText('文字', {
+                        itext = new Textbox('文字', {
                             left: pointer.x,
                             top: pointer.y,
                             fontFamily,
@@ -1678,14 +1934,16 @@
                             evented: true,
                             erasable: true,
                             lockUniScaling: true,
+                            splitByGrapheme: true,
+                            _textAutoWidth: true,
                         });
                     } catch (e) {
-                        console.warn('CanvasEditor: IText creation failed', e);
+                        console.warn('CanvasEditor: Textbox creation failed', e);
                         itext = null;
                     }
                     if (!itext) {
                         try {
-                            itext = new Textbox('文字', {
+                            itext = new IText('文字', {
                                 left: pointer.x,
                                 top: pointer.y,
                                 fontFamily,
@@ -1701,7 +1959,7 @@
                                 lockUniScaling: true,
                             });
                         } catch (e) {
-                            console.warn('CanvasEditor: Textbox creation failed', e);
+                            console.warn('CanvasEditor: IText creation failed', e);
                             itext = null;
                         }
                     }
@@ -1827,6 +2085,8 @@
                                 (active as any).fontSize
                             ),
                             ...getTextBackgroundOptions(active),
+                            textResizeMode: getTextResizeMode(),
+                            textResizeModeVersion: activeToolOptions.textResizeModeVersion,
                         },
                         type: active.type,
                     });
@@ -1999,10 +2259,7 @@
                     dispatch('selection', {
                         options: {
                             family: (representativeObject as any).fontFamily,
-                            size: Math.round(
-                                (representativeObject as any).fontSize *
-                                    (representativeObject.scaleX || 1)
-                            ),
+                            size: getTextDisplayFontSize(representativeObject),
                             fill: fillVal,
                             stroke: representativeObject.stroke || activeToolOptions.stroke || '#ffffff',
                             strokeWidth: normalizeTextStrokeWidth(
@@ -2012,6 +2269,8 @@
                             ...getTextBackgroundOptions(representativeObject),
                             bold: (representativeObject as any).fontWeight === 'bold',
                             italic: (representativeObject as any).fontStyle === 'italic',
+                            textResizeMode: getTextResizeMode(),
+                            textResizeModeVersion: activeToolOptions.textResizeModeVersion,
                             isSelection: true,
                             selectionType: 'text',
                         },
@@ -2164,10 +2423,10 @@
             const target = opt.target;
             if (target && target.type === 'image') {
                 applyImageCornerRadius(target, (target as any)._cornerRadius || 0);
-            } else if (target && ['i-text', 'textbox', 'text'].includes(target.type)) {
+            } else if (isTextObject(target)) {
                 // Update size in the tool options for real-time UI feel
                 if (activeTool === 'text') {
-                    const effectiveSize = Math.round(target.fontSize * target.scaleX);
+                    const effectiveSize = getTextDisplayFontSize(target);
                     activeToolOptions.size = effectiveSize;
                     // Only dispatch if necessary to avoid flooding
                     dispatch('selection', {
@@ -2217,6 +2476,18 @@
                     }
                 }
             }
+        });
+        // Textbox side handles emit object:resizing instead of object:scaling.
+        // Keep the settings panel in sync while the layout width is changing.
+        canvas.on('object:resizing', (opt: any) => {
+            const target = opt?.target;
+            if (activeTool !== 'text' || !isTextObject(target)) return;
+            const effectiveSize = getTextDisplayFontSize(target);
+            activeToolOptions.size = effectiveSize;
+            dispatch('selection', {
+                options: { ...activeToolOptions, size: effectiveSize },
+                type: target.type,
+            });
         });
         // Enforce fixed crop ratio when resizing crop rect via controls
         canvas.on('object:scaling', (opt: any) => {
@@ -2768,6 +3039,12 @@
 
         // provide sensible defaults for text tool
         if (tool === 'text') {
+            if (Number(activeToolOptions.textResizeModeVersion) < TEXT_RESIZE_MODE_VERSION) {
+                // The previous default was font-size. Migrate unmarked saved
+                // settings to the new layout-first default.
+                activeToolOptions.textResizeMode = DEFAULT_TEXT_RESIZE_MODE;
+                activeToolOptions.textResizeModeVersion = TEXT_RESIZE_MODE_VERSION;
+            }
             activeToolOptions.family =
                 activeToolOptions.family || activeToolOptions.fontFamily || 'Microsoft Yahei';
             activeToolOptions.size = activeToolOptions.size || activeToolOptions.fontSize || 24;
@@ -2776,6 +3053,9 @@
             activeToolOptions.strokeWidth = normalizeTextStrokeWidth(
                 activeToolOptions.strokeWidth ?? 0,
                 activeToolOptions.size
+            );
+            activeToolOptions.textResizeMode = normalizeTextResizeMode(
+                activeToolOptions.textResizeMode
             );
             Object.assign(activeToolOptions, getTextBackgroundOptions(activeToolOptions));
             activeToolOptions.bold = !!activeToolOptions.bold;
@@ -5303,6 +5583,7 @@
                             }
                         }
                         applyTextBackgroundRenderer(o);
+                        autoResizeTextObject(o);
                         o.dirty = true;
                         o.setCoords && o.setCoords();
                     } else {
@@ -5675,6 +5956,7 @@
             const currentHeight = canvas.getHeight();
 
             await canvas.loadFromJSON(json);
+            await upgradeLegacyTextObjectsToTextboxes();
 
             // Handle legacy canvas background objects (for backward compatibility)
             let legacyFill = null;
