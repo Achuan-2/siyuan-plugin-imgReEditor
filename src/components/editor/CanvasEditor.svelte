@@ -1915,6 +1915,7 @@
                     const textBackgroundOptions = getTextBackgroundOptions(activeToolOptions);
                     const fontWeight = activeToolOptions.bold ? 'bold' : 'normal';
                     const fontStyle = activeToolOptions.italic ? 'italic' : 'normal';
+                    const underline = !!activeToolOptions.underline;
 
                     let itext: any = null;
                     // Textbox supports both font-size scaling and width-based
@@ -1930,6 +1931,7 @@
                             ...textBackgroundOptions,
                             fontWeight,
                             fontStyle,
+                            underline,
                             selectable: true,
                             evented: true,
                             erasable: true,
@@ -1953,6 +1955,7 @@
                                 ...textBackgroundOptions,
                                 fontWeight,
                                 fontStyle,
+                                underline,
                                 selectable: true,
                                 evented: true,
                                 erasable: true,
@@ -1975,6 +1978,7 @@
                                 ...textBackgroundOptions,
                                 fontWeight,
                                 fontStyle,
+                                underline,
                                 selectable: true,
                                 evented: true,
                                 erasable: true,
@@ -2269,6 +2273,7 @@
                             ...getTextBackgroundOptions(representativeObject),
                             bold: (representativeObject as any).fontWeight === 'bold',
                             italic: (representativeObject as any).fontStyle === 'italic',
+                            underline: !!(representativeObject as any).underline,
                             textResizeMode: getTextResizeMode(),
                             textResizeModeVersion: activeToolOptions.textResizeModeVersion,
                             isSelection: true,
@@ -3060,6 +3065,7 @@
             Object.assign(activeToolOptions, getTextBackgroundOptions(activeToolOptions));
             activeToolOptions.bold = !!activeToolOptions.bold;
             activeToolOptions.italic = !!activeToolOptions.italic;
+            activeToolOptions.underline = !!activeToolOptions.underline;
         }
         // provide sensible defaults for magnifier tool
         if (tool === 'magnifier') {
@@ -5538,6 +5544,8 @@
                                 styles.fontWeight = options.bold ? 'bold' : 'normal';
                             if (typeof options.italic !== 'undefined')
                                 styles.fontStyle = options.italic ? 'italic' : 'normal';
+                            if (typeof options.underline !== 'undefined')
+                                styles.underline = !!options.underline;
 
                             if (Object.keys(styles).length > 0) {
                                 (o as any).setSelectionStyles(styles);
@@ -5580,6 +5588,10 @@
                             if (typeof options.italic !== 'undefined') {
                                 o.set('fontStyle', options.italic ? 'italic' : 'normal');
                                 cleanStyle('fontStyle');
+                            }
+                            if (typeof options.underline !== 'undefined') {
+                                o.set('underline', !!options.underline);
+                                cleanStyle('underline');
                             }
                         }
                         applyTextBackgroundRenderer(o);
