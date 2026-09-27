@@ -1,3 +1,9 @@
+
+## v0.9.8 / 20260927
+- 🎨 文本框支持设置缩放是调整文本布局还是文字大小，支持按住shift临时切换
+- 🎨 增加文字下划线功能 ([#36](https://github.com/Achuan-2/siyuan-plugin-imgReEditor/issues/36))
+
+
 ## v0.9.7 / 20260822
 - 🎨 png支持无损压缩/有损压缩
 - 🎨 支持webp压缩
