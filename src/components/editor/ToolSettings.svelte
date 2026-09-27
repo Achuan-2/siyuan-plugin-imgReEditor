@@ -525,6 +525,14 @@
                 >
                     I
                 </button>
+                <button
+                    class:active={settings.underline}
+                    on:click={() => emitChange({ underline: !settings.underline })}
+                    style="text-decoration:underline; width:32px;"
+                    title="下划线"
+                >
+                    U
+                </button>
             </div>
         </div>
         <div class="row">
