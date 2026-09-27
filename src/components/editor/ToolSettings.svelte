@@ -1646,7 +1646,7 @@
         color: var(--b3-theme-on-surface-light, #888);
     }
     .hint {
-        margin: -2px 0 10px 88px;
+        margin: -2px 0 10px;
         color: var(--b3-theme-on-surface-light, #888);
         font-size: 12px;
         line-height: 1.4;
