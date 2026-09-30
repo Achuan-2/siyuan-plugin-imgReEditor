@@ -205,6 +205,24 @@
     // lock aspect-ratio handling: 当勾选时，修改宽度会自动调整高度以保持比例
     let lockCanvasRatio: boolean = false;
     let lockedAspectRatio: number | null = null; // width / height
+    const canvasRatioPresets = [
+        { label: '3:4', ratio: 3 / 4 },
+        { label: '2.35:1', ratio: 2.35 },
+        { label: '4:3', ratio: 4 / 3 },
+        { label: '9:16', ratio: 9 / 16 },
+        { label: '16:9', ratio: 16 / 9 },
+    ];
+    let selectedCanvasRatio = '';
+
+    function applyCanvasRatio(preset: { label: string; ratio: number }) {
+        const width = Math.max(1, Math.round(settings.width || 800));
+        const height = Math.max(1, Math.round(width / preset.ratio));
+        selectedCanvasRatio = preset.label;
+        lockCanvasRatio = true;
+        lockedAspectRatio = preset.ratio;
+        emitChange({ width, height });
+        emitResize(width, height);
+    }
 
     function toggleLockAspect(checked: boolean) {
         lockCanvasRatio = checked;
@@ -214,6 +232,7 @@
             lockedAspectRatio = w / h;
         } else {
             lockedAspectRatio = null;
+            selectedCanvasRatio = '';
         }
     }
 
@@ -222,7 +241,9 @@
     }
 
     function handleWidthInput(e: Event) {
-        const w = Math.max(1, Math.round(+getValue(e)));
+        const value = getValue(e);
+        if (!value || !Number.isFinite(+value)) return;
+        const w = Math.max(1, Math.round(+value));
         let h = settings.height || 600;
         if (lockCanvasRatio && lockedAspectRatio) {
             h = Math.max(1, Math.round(w / lockedAspectRatio));
@@ -234,7 +255,9 @@
     }
 
     function handleHeightInput(e: Event) {
-        const h = Math.max(1, Math.round(+getValue(e)));
+        const value = getValue(e);
+        if (!value || !Number.isFinite(+value)) return;
+        const h = Math.max(1, Math.round(+value));
         let w = settings.width || 800;
         if (lockCanvasRatio && lockedAspectRatio) {
             w = Math.max(1, Math.round(h * lockedAspectRatio));
@@ -247,7 +270,18 @@
 
     // keep locked ratio in sync if settings change externally
     $: if (lockCanvasRatio && settings && settings.width && settings.height) {
-        lockedAspectRatio = settings.width / settings.height;
+        const preset = canvasRatioPresets.find(p => p.label === selectedCanvasRatio);
+        // Keep the exact preset ratio despite integer pixel rounding. External
+        // resizing (e.g. undo or selecting a canvas region) updates the locked ratio.
+        if (preset && (
+            Math.round(settings.width / preset.ratio) === settings.height ||
+            Math.round(settings.height * preset.ratio) === settings.width
+        )) {
+            lockedAspectRatio = preset.ratio;
+        } else {
+            selectedCanvasRatio = '';
+            lockedAspectRatio = settings.width / settings.height;
+        }
     }
 </script>
 
@@ -1115,6 +1149,19 @@
         </div>
     {:else if tool === 'canvas'}
         <div class="row">
+            <div class="canvas-ratio-presets" role="group" aria-label={t('editor.fixedRatio')}>
+                {#each canvasRatioPresets as preset}
+                    <button
+                        class:active={lockCanvasRatio && selectedCanvasRatio === preset.label}
+                        aria-pressed={lockCanvasRatio && selectedCanvasRatio === preset.label}
+                        on:click={() => applyCanvasRatio(preset)}
+                    >
+                        {preset.label}
+                    </button>
+                {/each}
+            </div>
+        </div>
+        <div class="row">
             <label for="lock-canvas-ratio">{t('editor.fixedRatio')}</label>
             <input
                 id="lock-canvas-ratio"
@@ -1617,6 +1664,11 @@
     }
     .empty {
         color: var(--b3-theme-on-surface-light, #888);
+    }
+    .canvas-ratio-presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
     }
     .hint {
         margin: -2px 0 10px;

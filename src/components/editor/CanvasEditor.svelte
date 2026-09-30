@@ -6536,6 +6536,9 @@
     // Resize canvas (for canvas mode)
     export function resizeCanvas(width: number, height: number) {
         if (!canvas || !isCanvasMode) return;
+        if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+        width = Math.max(1, Math.round(width));
+        height = Math.max(1, Math.round(height));
 
         try {
             // Update boundary rectangle (the project size)
@@ -6544,6 +6547,8 @@
                 boundaryRect.set({ width, height });
                 boundaryRect.setCoords();
             }
+
+            activeToolOptions = { ...activeToolOptions, width, height };
 
             // Update background if exists
             if (activeToolOptions && activeToolOptions.fill) {
