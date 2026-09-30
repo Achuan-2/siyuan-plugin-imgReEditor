@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { t } from '../../utils/i18n';
     import { createEventDispatcher } from 'svelte';
     export let canUndo: boolean = false;
     export let canRedo: boolean = false;
@@ -22,7 +23,7 @@
         class:active={active === 'hand'}
         class:b3-button--outline={active !== 'hand'}
         on:click={() => emit('tool', { tool: 'hand' })}
-        title="手型工具"
+        title={t('editor.hand')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
@@ -38,7 +39,7 @@
         class:active={active === 'select'}
         class:b3-button--outline={active !== 'select'}
         on:click={() => emit('tool', { tool: 'select' })}
-        title="选择工具"
+        title={t('editor.select')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
@@ -52,7 +53,7 @@
                 class:active={active === 'crop'}
                 class:b3-button--outline={active !== 'crop'}
                 on:click={() => emit('tool', { tool: 'crop' })}
-                title="裁剪工具"
+                title={t('editor.cropTool')}
             >
                 <svg class="icon" viewBox="0 0 24 24">
                     <path d="M6.13 1L6 16a2 2 0 0 0 2 2h15" />
@@ -66,7 +67,7 @@
                 class:active={active === 'transform'}
                 class:b3-button--outline={active !== 'transform'}
                 on:click={() => emit('tool', { tool: 'transform' })}
-                title="变换"
+                title={t('editor.transform')}
             >
                 <svg class="fill-icon" viewBox="0 0 1024 1024">
                     <path d="M1024 0v1024H0V0z" fill="#FFFFFF" fill-opacity=".01" />
@@ -83,7 +84,7 @@
             class:active={active === 'shape' && activeShape === 'rect'}
             class:b3-button--outline={!(active === 'shape' && activeShape === 'rect')}
             on:click={() => emit('tool', { tool: 'shape', shape: 'rect' })}
-            title="矩形"
+            title={t('editor.rect')}
         >
             <svg class="icon" viewBox="0 0 24 24">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -94,7 +95,7 @@
             class:active={active === 'shape' && activeShape === 'circle'}
             class:b3-button--outline={!(active === 'shape' && activeShape === 'circle')}
             on:click={() => emit('tool', { tool: 'shape', shape: 'circle' })}
-            title="圆形"
+            title={t('editor.circle')}
         >
             <svg class="icon" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" /></svg>
         </button>
@@ -104,7 +105,7 @@
         class:active={active === 'arrow'}
         class:b3-button--outline={active !== 'arrow'}
         on:click={() => emit('tool', { tool: 'arrow' })}
-        title="箭头"
+        title={t('editor.arrow')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M5 12h14" />
@@ -116,7 +117,7 @@
         class:active={active === 'number-marker'}
         class:b3-button--outline={active !== 'number-marker'}
         on:click={() => emit('tool', { tool: 'number-marker' })}
-        title="数字标记"
+        title={t('editor.numberMarker')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" />
@@ -128,7 +129,7 @@
         class:active={active === 'text'}
         class:b3-button--outline={active !== 'text'}
         on:click={() => emit('tool', { tool: 'text' })}
-        title="文本"
+        title={t('editor.text')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M4 7V4h16v3" />
@@ -141,7 +142,7 @@
         class:active={active === 'brush'}
         class:b3-button--outline={active !== 'brush'}
         on:click={() => emit('tool', { tool: 'brush' })}
-        title="画笔"
+        title={t('editor.brush')}
     >
         <svg class="fill-icon" viewBox="0 0 1024 1024">
             <path
@@ -157,7 +158,7 @@
         class:active={active === 'eraser'}
         class:b3-button--outline={active !== 'eraser'}
         on:click={() => emit('tool', { tool: 'eraser' })}
-        title="橡皮擦"
+        title={t('editor.eraser')}
     >
         <svg class="fill-icon" viewBox="0 0 1024 1024">
             <path
@@ -170,7 +171,7 @@
         class:active={active === 'mosaic'}
         class:b3-button--outline={active !== 'mosaic'}
         on:click={() => emit('tool', { tool: 'mosaic' })}
-        title="马赛克"
+        title={t('editor.mosaic')}
     >
         <svg class="fill-icon" viewBox="0 0 1024 1024">
             <path
@@ -183,7 +184,7 @@
         class:active={active === 'magnifier'}
         class:b3-button--outline={active !== 'magnifier'}
         on:click={() => emit('tool', { tool: 'magnifier' })}
-        title="放大镜"
+        title={t('editor.magnifier')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8"></circle>
@@ -198,7 +199,7 @@
             class:active={active === 'image-border'}
             class:b3-button--outline={active !== 'image-border'}
             on:click={() => emit('tool', { tool: 'image-border' })}
-            title="图片边框"
+            title={t('editor.imageBorder')}
         >
             <svg class="icon" viewBox="0 0 24 24">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -211,7 +212,7 @@
         class:active={active === 'image'}
         class:b3-button--outline={active !== 'image'}
         on:click={() => emit('tool', { tool: 'image' })}
-        title="图片工具"
+        title={t('editor.imageTools')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
@@ -225,7 +226,7 @@
             class:active={active === 'canvas'}
             class:b3-button--outline={active !== 'canvas'}
             on:click={() => emit('tool', { tool: 'canvas' })}
-            title="画布设置"
+            title={t('editor.canvasSettings')}
         >
             <svg class="fill-icon" viewBox="0 0 1024 1024">
                 <path
@@ -242,7 +243,7 @@
         class:active={active === 'align'}
         class:b3-button--outline={active !== 'align'}
         on:click={() => emit('tool', { tool: 'align' })}
-        title="对齐/分布"
+        title={t('editor.alignDistribute')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M3 3h18" />
@@ -256,7 +257,7 @@
         class="b3-button b3-button--outline"
         on:click={() => emit('undo')}
         disabled={!canUndo}
-        title="撤销"
+        title={t('editor.undo')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M3 7v6h6" />
@@ -267,7 +268,7 @@
         class="b3-button b3-button--outline"
         on:click={() => emit('redo')}
         disabled={!canRedo}
-        title="重做"
+        title={t('editor.redo')}
     >
         <svg class="icon" viewBox="0 0 24 24">
             <path d="M21 7v6h-6" />
@@ -279,7 +280,7 @@
             <button
                 class="b3-button b3-button--outline"
                 on:click={() => emit('copy-file')}
-                title="复制图片文件"
+                title={t('editor.copyImageFile')}
             >
                 <svg class="icon" viewBox="0 0 24 24">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -289,7 +290,7 @@
             <button
                 class="b3-button b3-button--outline"
                 on:click={() => emit('save-as')}
-                title="另存为"
+                title={t('editor.saveAs')}
             >
                 <svg class="fill-icon" viewBox="0 0 1024 1024">
                     <path
@@ -301,7 +302,7 @@
             <button
                 class="b3-button b3-button--outline"
                 on:click={() => emit('history')}
-                title="截图历史"
+                title={t('editor.screenshotHistory')}
             >
                 <svg class="icon" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="10" />
@@ -315,8 +316,8 @@
             class:active={isFullscreen}
             class:b3-button--outline={!isFullscreen}
             on:click={() => emit('fullscreen')}
-            title={isFullscreen ? '退出全屏' : '全屏编辑'}
-            aria-label={isFullscreen ? '退出全屏' : '全屏编辑'}
+            title={isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
+            aria-label={isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
         >
             {#if isFullscreen}
                 <svg class="icon" viewBox="0 0 24 24">
@@ -338,7 +339,7 @@
         <button
             class="b3-button b3-button--outline"
             on:click={() => emit('open-in-tab')}
-            title="在Tab中打开"
+            title={t('editor.openInTab')}
         >
             <svg class="icon" viewBox="0 0 24 24">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -347,7 +348,7 @@
             </svg>
         </button>
 
-        <button class="b3-button b3-button--outline" on:click={() => emit('pin')} title="贴图">
+        <button class="b3-button b3-button--outline" on:click={() => emit('pin')} title={t('editor.pin')}>
             <svg class="icon" viewBox="0 0 24 24">
                 <line x1="12" y1="17" x2="12" y2="22" />
                 <path
@@ -356,14 +357,14 @@
             </svg>
         </button>
 
-        <button class="b3-button b3-button--outline" on:click={() => emit('save')} title="保存">
+        <button class="b3-button b3-button--outline" on:click={() => emit('save')} title={t('editor.save')}>
             <svg class="icon" viewBox="0 0 24 24">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                 <polyline points="17,21 17,13 7,13 7,21" />
                 <polyline points="7,3 7,8 15,8" />
             </svg>
         </button>
-        <button class="b3-button b3-button--outline" on:click={() => emit('cancel')} title="取消">
+        <button class="b3-button b3-button--outline" on:click={() => emit('cancel')} title={t('editor.cancel')}>
             <svg class="icon" viewBox="0 0 24 24">
                 <path d="M18 6L6 18" />
                 <path d="M6 6l12 12" />

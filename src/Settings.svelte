@@ -15,7 +15,7 @@
                 filePath: filePath,
             });
         } catch (error) {
-            await pushErrMsg('当前客户端不支持打开插件数据文件夹');
+            await pushErrMsg(t('settings.openFolderUnsupported'));
         }
     };
 
@@ -29,6 +29,7 @@
     let settings = { ...getDefaultSettings() };
 
     interface ISettingGroup {
+        id: string;
         name: string;
         items: ISettingItem[];
         //  Type："checkbox" | "select" | "textinput" | "textarea" | "number" | "slider" | "button" | "hint" | "custom";
@@ -36,31 +37,32 @@
 
     let groups: ISettingGroup[] = [
         {
-            name: '压缩设置',
+            id: 'compression',
+            name: t('settings.settingsGroup.compression'),
             items: [
                 {
                     key: 'enableImageCompression',
                     value: settings.enableImageCompression,
                     type: 'checkbox',
-                    title: '编辑保存后压缩图片',
+                    title: t('settings.enableImageCompression.title'),
                     description:
-                        '开启后保存编辑结果时自动进行压缩；启用下方 WebP 转换后，PNG、JPG/JPEG 将改存为 WebP。',
+                        t('settings.enableImageCompression.description'),
                 },
                 {
                     key: 'convertToWebP',
                     value: settings.convertToWebP,
                     type: 'checkbox',
-                    title: 'PNG/JPG 转换为 WebP',
+                    title: t('settings.convertToWebP.title'),
                     description:
-                        '开启后会尝试将 PNG、JPG/JPEG 转为 WebP；手动压缩及粘贴/拖拽自动压缩仅在 WebP 更小时采用，否则保留原文件。编辑保存仍会按此选项改存为 WebP，工程数据会写入 XMP 元数据。',
+                        t('settings.convertToWebP.description'),
                 },
                 {
                     key: 'webpQuality',
                     value: settings.webpQuality ?? 100,
                     type: 'slider',
-                    title: 'WebP 压缩质量',
+                    title: t('settings.webpQuality.title'),
                     description:
-                        '默认 100（无损压缩）。低于 100 时会使用有损压缩，可能使橙色等高饱和颜色发暗、发灰；仅在转换为 WebP 或压缩 WebP 时生效。',
+                        t('settings.webpQuality.description'),
                     slider: {
                         min: 10,
                         max: 100,
@@ -71,21 +73,21 @@
                     key: 'pngCompressionMode',
                     value: settings.pngCompressionMode || 'lossless',
                     type: 'select',
-                    title: 'PNG 压缩模式',
+                    title: t('settings.pngCompressionMode.title'),
                     description:
-                        '无损压缩使用 Oxipng 引擎（完全保留 32 位原始画质）；有损压缩通过调色板颜色量化大幅减小体积。',
+                        t('settings.pngCompressionMode.description'),
                     options: {
-                        lossless: '无损压缩 (Oxipng 引擎)',
-                        lossy: '有损压缩 (调色板量化)',
+                        lossless: t('settings.pngCompressionMode.options.lossless'),
+                        lossy: t('settings.pngCompressionMode.options.lossy'),
                     },
                 },
                 {
                     key: 'pngQuality',
                     value: settings.pngQuality ?? 92,
                     type: 'slider',
-                    title: 'PNG 有损压缩质量',
+                    title: t('settings.pngQuality.title'),
                     description:
-                        '默认 92。仅在 PNG 模式为“有损压缩”时生效，用于控制调色板颜色数（值越低体积越小）。',
+                        t('settings.pngQuality.description'),
                     slider: {
                         min: 10,
                         max: 100,
@@ -96,9 +98,9 @@
                     key: 'jpegQuality',
                     value: settings.jpegQuality ?? 92,
                     type: 'slider',
-                    title: 'JPG/JPEG 压缩质量',
+                    title: t('settings.jpegQuality.title'),
                     description:
-                        '默认 92。用于控制 JPG/JPEG 图片重新编码的质量比例。',
+                        t('settings.jpegQuality.description'),
                     slider: {
                         min: 10,
                         max: 100,
@@ -109,37 +111,37 @@
                     key: 'enablePasteImageCompression',
                     value: settings.enablePasteImageCompression,
                     type: 'checkbox',
-                    title: '粘贴图片自动压缩',
+                    title: t('settings.enablePasteImageCompression.title'),
                     description:
-                        '开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅在压缩结果更小时自动替换图片链接，失败则保留原图。默认关闭。',
+                        t('settings.enablePasteImageCompression.description'),
                 },
                 {
                     key: 'showPasteImageCompressionNotification',
                     value: settings.showPasteImageCompressionNotification,
                     type: 'checkbox',
-                    title: '粘贴图片压缩提示',
+                    title: t('settings.showPasteImageCompressionNotification.title'),
                     description:
-                        '开启后显示粘贴或拖拽图片自动压缩后的大小变化提示；关闭后在后台静默压缩。默认开启，压缩失败时仍会提示。',
+                        t('settings.showPasteImageCompressionNotification.description'),
                 },
                 {
                     key: 'compressAllAssets',
                     value: '',
                     type: 'button',
-                    title: '压缩 assets 全部图片',
+                    title: t('settings.compressAllAssets.title'),
                     description:
-                        '递归压缩 data/assets 中的 PNG、JPG/JPEG、WebP 图片。即使开启 WebP 转换，也会保留原格式、文件名和笔记引用；未修改且已按相同参数处理的图片会自动跳过。',
+                        t('settings.compressAllAssets.description'),
                     button: {
-                        label: '压缩全部图片',
+                        label: t('settings.compressAllAssets.label'),
                         callback: async () => {
                             confirm(
-                                '压缩 assets 全部图片',
-                                '将按当前 PNG、JPG/JPEG、WebP 压缩参数覆盖 data/assets 中可压缩的原文件。为避免笔记引用失效，此入口不会转换格式，并会保留原文件名。确认继续吗？',
+                                t('settings.compressAllAssets.title'),
+                                t('settings.compressAllAssets.confirmMessage'),
                                 async () => {
                                     let loadingDialog: any = null;
                                     let loadingComponent: any = null;
                                     try {
                                         loadingDialog = new Dialog({
-                                            title: '压缩 assets 图片',
+                                            title: t('settings.compressAllAssets.dialogTitle'),
                                             content: `<div id="loadingDialogContent"></div>`,
                                             width: '360px',
                                             height: '170px',
@@ -149,26 +151,30 @@
                                             target: loadingDialog.element.querySelector(
                                                 '#loadingDialogContent'
                                             ),
-                                            props: { message: '正在扫描 assets 图片...' },
+                                            props: { message: t('settings.compressAllAssets.scanning') },
                                         });
 
                                         if (
                                             typeof plugin.compressAllAssetImages !== 'function'
                                         ) {
-                                            throw new Error('当前插件实例不支持批量压缩');
+                                            throw new Error(t('settings.compressAllAssets.unsupported'));
                                         }
 
                                         const result = await plugin.compressAllAssetImages(
                                             ({ current, total, fileName }) => {
                                                 loadingComponent?.$set({
-                                                    message: `正在处理 ${current}/${total}：${fileName}`,
+                                                    message: t('settings.compressAllAssets.processing', {
+                                                        current: String(current),
+                                                        total: String(total),
+                                                        fileName,
+                                                    }),
                                                 });
                                             }
                                         );
 
                                         if (result.total === 0) {
                                             await pushMsg(
-                                                'assets 中没有可压缩的 PNG、JPG/JPEG、WebP 图片'
+                                                t('settings.compressAllAssets.empty')
                                             );
                                             return;
                                         }
@@ -179,12 +185,16 @@
                                         );
                                         const savedText =
                                             result.compressed > 0
-                                                ? `，节省 ${formatBytes(savedBytes)}`
+                                                ? t('settings.compressAllAssets.savedSpace', { size: formatBytes(savedBytes) })
                                                 : '';
                                         const summary =
-                                            `assets 图片压缩完成：压缩 ${result.compressed} 张，` +
-                                            `记忆跳过 ${result.remembered} 张，无需覆盖 ${result.notSmaller} 张，` +
-                                            `失败 ${result.failed} 张${savedText}`;
+                                            t('settings.compressAllAssets.summary', {
+                                                compressed: String(result.compressed),
+                                                remembered: String(result.remembered),
+                                                notSmaller: String(result.notSmaller),
+                                                failed: String(result.failed),
+                                                savedText,
+                                            });
 
                                         if (result.failed > 0) {
                                             await pushErrMsg(summary, 10000);
@@ -194,8 +204,10 @@
                                     } catch (err) {
                                         console.error('Compress all assets failed:', err);
                                         await pushErrMsg(
-                                            '压缩 assets 图片失败: ' +
-                                                (err && err.message ? err.message : err),
+                                            t('common.errorWithDetail', {
+                                                message: t('settings.compressAllAssets.failed'),
+                                                error: String(err?.message || err),
+                                            }),
                                             10000
                                         );
                                     } finally {
@@ -211,14 +223,15 @@
             ],
         },
         {
-            name: '截图设置',
+            id: 'screenshot',
+            name: t('settings.settingsGroup.screenshot'),
             items: [
                 {
                     key: 'enableScreenshot',
                     value: settings.enableScreenshot,
                     type: 'checkbox',
-                    title: '启用截图功能',
-                    description: '关闭后不注册截图快捷键，也不显示顶栏截图入口；默认关闭。',
+                    title: t('settings.enableScreenshot.title'),
+                    description: t('settings.enableScreenshot.description'),
                 },
                 {
                     key: 'screenshotLimit',
@@ -230,7 +243,8 @@
             ],
         },
         {
-            name: '保存设置',
+            id: 'storage',
+            name: t('settings.settingsGroup.storage'),
             items: [
                 {
                     key: 'storageMode',
@@ -247,10 +261,10 @@
                     key: 'openDataFolder',
                     value: '',
                     type: 'button',
-                    title: '打开插件数据文件夹',
+                    title: t('settings.openDataFolder.title'),
                     description: '',
                     button: {
-                        label: '打开文件夹',
+                        label: t('settings.openDataFolder.label'),
                         callback: async () => {
                             const path =
                                 window.siyuan.config.system.dataDir +
@@ -263,19 +277,19 @@
                     key: 'tidyBackup',
                     value: '',
                     type: 'button',
-                    title: '整理 backup 文件夹',
+                    title: t('settings.tidyBackup.title'),
                     description:
-                        '检查 backup 下的备份文件，若 assets 文件夹中不存在同名文件（去除 .json 后缀），则删除对应 backup 文件。',
+                        t('settings.tidyBackup.description'),
                     button: {
-                        label: '整理 backup',
+                        label: t('settings.tidyBackup.label'),
                         callback: async () => {
                             confirm(
-                                '整理 backup 文件夹',
-                                '确认要整理 backup 文件夹吗？将删除没有对应 assets 的备份文件，此操作不可恢复。',
+                                t('settings.tidyBackup.title'),
+                                t('settings.tidyBackup.confirmMessage'),
                                 async () => {
                                     let loadingDialog: any;
                                     loadingDialog = new Dialog({
-                                        title: '整理中',
+                                        title: t('settings.tidyBackup.dialogTitle'),
                                         content: `<div id="loadingDialogContent"></div>`,
                                         width: '300px',
                                         height: '150px',
@@ -285,7 +299,7 @@
                                         target: loadingDialog.element.querySelector(
                                             '#loadingDialogContent'
                                         ),
-                                        props: { message: '正在整理 backup 文件夹...' },
+                                        props: { message: t('settings.tidyBackup.progress') },
                                     });
                                     try {
                                         const backupDir =
@@ -298,7 +312,7 @@
                                             !Array.isArray(entries) ||
                                             entries.length === 0
                                         ) {
-                                            await pushMsg('backup 文件夹已为空');
+                                            await pushMsg(t('settings.backupEmpty'));
                                             return;
                                         }
 
@@ -350,14 +364,16 @@
                                         }
 
                                         await pushMsg(
-                                            `已整理 backup 文件夹，删除 ${removedCount} 个无对应 assets 的备份文件`
+                                            t('settings.tidyBackup.success', { count: String(removedCount) })
                                         );
                                         loadingDialog.destroy();
                                     } catch (err) {
                                         console.error(err);
                                         await pushErrMsg(
-                                            '整理 backup 失败: ' +
-                                                (err && err.message ? err.message : err)
+                                            t('common.errorWithDetail', {
+                                                message: t('settings.tidyBackup.failed'),
+                                                error: String(err?.message || err),
+                                            })
                                         );
                                         loadingDialog.destroy();
                                     }
@@ -370,22 +386,22 @@
             ],
         },
         {
-            name: t('settings.settingsGroup.reset') || 'Reset Settings',
+            id: 'reset',
+            name: t('settings.settingsGroup.reset'),
             items: [
                 {
                     key: 'reset',
                     value: '',
                     type: 'button',
-                    title: t('settings.reset.title') || 'Reset Settings',
+                    title: t('settings.reset.title'),
                     description:
-                        t('settings.reset.description') || 'Reset all settings to default values',
+                        t('settings.reset.description'),
                     button: {
-                        label: t('settings.reset.label') || 'Reset',
+                        label: t('settings.reset.label'),
                         callback: async () => {
                             confirm(
-                                t('settings.reset.title') || 'Reset Settings',
-                                t('settings.reset.confirmMessage') ||
-                                    'Are you sure you want to reset all settings to default values? This action cannot be undone.',
+                                t('settings.reset.title'),
+                                t('settings.reset.confirmMessage'),
                                 async () => {
                                     // 确认回调
                                     settings = { ...getDefaultSettings() };
@@ -398,19 +414,19 @@
                         },
                     },
                 },
-                                {
+                {
                     key: 'clearBackup',
                     value: '',
                     type: 'button',
-                    title: '清空 backup 文件夹',
+                    title: t('settings.clearBackup.title'),
                     description:
-                        '清空 data/storage/petal/siyuan-plugin-imgReEditor/backup 下的所有文件（不可恢复，删除后无法再二次编辑backup模式下编辑保存的图片）',
+                        t('settings.clearBackup.description'),
                     button: {
-                        label: '清空 backup',
+                        label: t('settings.clearBackup.label'),
                         callback: async () => {
                             confirm(
-                                '清空 backup 文件夹',
-                                '确认要清空 backup 文件夹吗？此操作不可恢复。',
+                                t('settings.clearBackup.title'),
+                                t('settings.clearBackup.confirmMessage'),
                                 async () => {
                                     try {
                                         const dir =
@@ -421,7 +437,7 @@
                                             !Array.isArray(entries) ||
                                             entries.length === 0
                                         ) {
-                                            await pushMsg('backup 文件夹已为空');
+                                            await pushMsg(t('settings.backupEmpty'));
                                             return;
                                         }
                                         for (const e of entries) {
@@ -437,12 +453,14 @@
                                                 console.warn('remove file failed', err);
                                             }
                                         }
-                                        await pushMsg('已清空 backup 文件夹');
+                                        await pushMsg(t('settings.clearBackup.success'));
                                     } catch (err) {
                                         console.error(err);
                                         await pushErrMsg(
-                                            '清空 backup 失败: ' +
-                                                (err && err.message ? err.message : err)
+                                            t('common.errorWithDetail', {
+                                                message: t('settings.clearBackup.failed'),
+                                                error: String(err?.message || err),
+                                            })
                                         );
                                     }
                                 },
@@ -455,7 +473,26 @@
         },
     ];
 
-    let focusGroup = groups[0].name;
+    let focusGroup = groups[0].id;
+
+    function handleGroupKeydown(event: KeyboardEvent, index: number) {
+        let nextIndex = index;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+            nextIndex = (index + 1) % groups.length;
+        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+            nextIndex = (index - 1 + groups.length) % groups.length;
+        } else if (event.key === 'Home') {
+            nextIndex = 0;
+        } else if (event.key === 'End') {
+            nextIndex = groups.length - 1;
+        } else {
+            return;
+        }
+        event.preventDefault();
+        focusGroup = groups[nextIndex].id;
+        const tabs = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+        tabs?.[nextIndex]?.focus();
+    }
 
     interface ChangeEvent {
         group: string;
@@ -502,26 +539,32 @@
         }));
     }
 
-    $: currentGroup = groups.find(group => group.name === focusGroup);
+    $: currentGroup = groups.find(group => group.id === focusGroup);
 </script>
 
 <div class="fn__flex-1 fn__flex config__panel">
-    <ul class="b3-tab-bar b3-list b3-list--background">
-        {#each groups as group}
-            <li
-                data-name="editor"
-                class:b3-list-item--focus={group.name === focusGroup}
-                class="b3-list-item"
+    <div class="settings-navigation" role="tablist" aria-label={t('settings.settingsPanel')} aria-orientation="vertical">
+        {#each groups as group, index (group.id)}
+            <button
+                type="button"
+                role="tab"
+                id={'imgreeditor-settings-tab-' + group.id}
+                aria-controls="imgreeditor-settings-panel"
+                aria-selected={group.id === focusGroup}
+                tabindex={group.id === focusGroup ? 0 : -1}
+                class:active={group.id === focusGroup}
+                class="settings-tab"
                 on:click={() => {
-                    focusGroup = group.name;
+                    focusGroup = group.id;
                 }}
-                on:keydown={() => {}}
+                on:keydown={event => handleGroupKeydown(event, index)}
             >
-                <span class="b3-list-item__text">{group.name}</span>
-            </li>
+                {group.name}
+            </button>
         {/each}
-    </ul>
-    <div class="config__tab-wrap">
+    </div>
+    <div class="config__tab-wrap" id="imgreeditor-settings-panel" role="tabpanel" aria-labelledby={'imgreeditor-settings-tab-' + focusGroup} tabindex="0">
+        <h2>{currentGroup?.name || ''}</h2>
         <SettingPanel
             group={currentGroup?.name || ''}
             settingItems={currentGroup?.items || []}
@@ -537,15 +580,99 @@
         display: flex;
         flex-direction: row;
         overflow: hidden;
+        min-width: 0;
+        color: var(--b3-theme-on-background);
+        background: var(--b3-theme-background);
+        container-type: inline-size;
     }
-    .config__panel > .b3-tab-bar {
-        width: min(30%, 170px);
+    .settings-navigation {
+        flex: 0 0 148px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 12px 8px;
+        overflow: auto;
+        border-right: 1px solid var(--b3-border-color);
+        background: var(--b3-theme-surface);
     }
-
+    .settings-tab {
+        border: 0;
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+        cursor: pointer;
+    }
+    .settings-tab:hover {
+        background: var(--b3-list-hover);
+    }
+    .settings-tab.active {
+        color: var(--b3-theme-primary);
+        background: var(--b3-theme-primary-lightest);
+        font-weight: 600;
+    }
+    .settings-tab:focus-visible {
+        outline: 2px solid var(--b3-theme-primary);
+        outline-offset: -2px;
+    }
     .config__tab-wrap {
         flex: 1;
+        min-width: 0;
         height: 100%;
+        box-sizing: border-box;
         overflow: auto;
-        padding: 2px;
+        padding: 20px 24px;
+    }
+    .config__tab-wrap h2 {
+        margin: 0 0 20px;
+        font-size: 18px;
+        line-height: 1.5;
+    }
+    .config__tab-wrap :global(.item-wrap) {
+        align-items: flex-start;
+        gap: 16px;
+        padding: 0 0 20px;
+        margin-bottom: 20px;
+    }
+    .config__tab-wrap :global(.item-wrap > .fn__flex-1) {
+        min-width: 0;
+    }
+    .config__tab-wrap :global(.fn__space) {
+        display: none;
+    }
+    .config__tab-wrap :global(.b3-label__text) {
+        margin-top: 6px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+    }
+    .config__tab-wrap :global(.fn__size200) {
+        width: 200px;
+        max-width: 100%;
+    }
+    .config__tab-wrap :global(.b3-button) {
+        height: auto;
+        min-height: 32px;
+        white-space: normal;
+        line-height: 1.5;
+    }
+    @container (max-width: 640px) {
+        .settings-navigation {
+            flex-basis: 112px;
+            padding: 8px 4px;
+        }
+        .config__tab-wrap {
+            padding: 16px;
+        }
+        .config__tab-wrap :global(.item-wrap) {
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .config__tab-wrap :global(.item-wrap > .fn__flex-1) {
+            flex-basis: 100%;
+        }
     }
 </style>

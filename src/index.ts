@@ -944,14 +944,14 @@ export default class PluginSample extends Plugin {
         };
 
         if (!format || !imagePath) {
-            await notifyErr('暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG、WebP');
+            await notifyErr(t('imageCompression.unsupported'));
             return { status: 'skipped', reason: 'unsupported' };
         }
 
         try {
             const blob = await getFileBlob(`data/${imagePath}`);
             if (!blob || blob.size === 0) {
-                await notifyErr('无法获取图片文件或文件为空');
+                await notifyErr(t('imageEditor.emptyImage'));
                 return { status: 'skipped', reason: 'empty' };
             }
 
@@ -1017,7 +1017,10 @@ export default class PluginSample extends Plugin {
                 !shouldUseReencodedImage(blob.size, compressedBlob.size)
             ) {
                 await notifyMsg(
-                    `压缩后不会更小，已保留原图（原 ${formatBytes(blob.size)}，压缩后 ${formatBytes(compressedBlob.size)}）`
+                    t('imageCompression.notSmaller', {
+                        originalSize: formatBytes(blob.size),
+                        compressedSize: formatBytes(compressedBlob.size),
+                    })
                 );
                 return {
                     status: 'skipped',
@@ -1057,7 +1060,7 @@ export default class PluginSample extends Plugin {
 
             const saved = await getFileBlob(`data/${savedPath}`);
             if (!saved || saved.size === 0) {
-                await notifyErr('压缩后写入图片失败');
+                await notifyErr(t('imageCompression.writeFailed'));
                 return { status: 'skipped', reason: 'write-failed' };
             }
 
@@ -1076,10 +1079,12 @@ export default class PluginSample extends Plugin {
                 });
             }
 
-            const actionText = isFormatConversion ? '转换完成' : '压缩完成';
-            const convertedText = isFormatConversion ? `，已保存为 ${savedFileName}` : '';
             await notifyMsg(
-                `${actionText}：${formatBytes(blob.size)} -> ${formatBytes(saved.size)}${convertedText}`
+                t(isFormatConversion ? 'imageCompression.converted' : 'imageCompression.success', {
+                    originalSize: formatBytes(blob.size),
+                    savedSize: formatBytes(saved.size),
+                    fileName: savedFileName,
+                })
             );
             return {
                 status: 'compressed',
@@ -1090,7 +1095,7 @@ export default class PluginSample extends Plugin {
             };
         } catch (error) {
             console.error('Compress image failed:', error);
-            await notifyErr('压缩图片失败');
+            await notifyErr(t('imageCompression.failed'));
             return { status: 'failed' };
         }
     }
@@ -1193,7 +1198,7 @@ export default class PluginSample extends Plugin {
         menu.addItem({
             id: 'edit-image',
             icon: 'iconImage',
-            label: 'ImgReEditor 编辑',
+            label: t('imageEditor.menuEditImage'),
             index: 1,
             click: async () => {
                 // 检测图片是否包含画布模式标记
@@ -1245,14 +1250,14 @@ export default class PluginSample extends Plugin {
         menu.addItem({
             id: 'compress-image',
             icon: 'iconImage',
-            label: '压缩图片',
+            label: t('imageCompression.title'),
             index: 1,
             click: async () => {
                 confirm(
-                    '压缩图片',
+                    t('imageCompression.title'),
                     this.settings?.convertToWebP === true && getCompressibleImageFormat(imageURL) !== 'webp'
-                        ? '将尝试转为 WebP；仅采用体积更小的结果，并更新当前图片块的引用；仍被其他位置引用的原资源会保留。继续吗？'
-                        : '将使用当前压缩设置覆盖原图片。继续吗？',
+                        ? t('imageCompression.confirmConvert')
+                        : t('imageCompression.confirmOverwrite'),
                     async () => {
                         const result = await this.compressImageAsset(imageURL, imageElement);
                         if (result.status === 'compressed' && result.originalPath !== result.savedPath) {
@@ -1266,7 +1271,7 @@ export default class PluginSample extends Plugin {
                             } catch (error) {
                                 console.error('Failed to update converted WebP block reference:', error);
                                 const { pushErrMsg } = await import('./api');
-                                await pushErrMsg('图片已转换为 WebP，但更新图片块引用失败；原图片未删除');
+                                await pushErrMsg(t('imageCompression.referenceUpdateFailed'));
                             }
                         }
                     }
@@ -1276,7 +1281,7 @@ export default class PluginSample extends Plugin {
         menu.addItem({
             id: 'copy-image',
             icon: 'iconCopy',
-            label: '拷贝图片',
+            label: t('imageEditor.menuCopyImage'),
             index: 1,
             click: async () => {
                 try {

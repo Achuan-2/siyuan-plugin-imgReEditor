@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { t } from '../../utils/i18n';
     import { createEventDispatcher, onMount } from 'svelte';
     import ColorPicker from './ColorPicker.svelte';
     import GradientDesigner from './GradientDesigner.svelte';
@@ -70,10 +71,18 @@
         }
     }
 
-    // 判断字符串中是否包含中文字符
     function isChinese(text: string | undefined | null) {
-        if (!text) return false;
-        return /[\u4e00-\u9fff]/.test(text);
+        return !!text && /[\u4e00-\u9fff]/.test(text);
+    }
+
+    function getSelectionLabel(type: string) {
+        const keys: Record<string, string> = {
+            rect: 'rect', circle: 'circle', ellipse: 'ellipse', arrow: 'arrow',
+            text: 'text', 'i-text': 'text', textbox: 'text',
+            'number-marker': 'number-marker', mosaic: 'mosaic', 'mosaic-rect': 'mosaic',
+            path: 'brush', image: 'image', group: 'group',
+        };
+        return keys[type] ? t('editor.' + keys[type]) : type;
     }
 
     // keep fontSearch in sync when settings.family changes externally
@@ -245,7 +254,7 @@
 <div
     class="tool-settings"
     role="region"
-    aria-label="工具设置"
+    aria-label={t('editor.settings')}
     on:keydown={handleInsideKey}
     on:keyup={handleInsideKey}
     on:keypress={handleInsideKey}
@@ -253,10 +262,10 @@
     on:wheel={handleInsideWheel}
 >
     {#if !tool}
-        <div class="empty">请选择工具</div>
+        <div class="empty">{t('editor.chooseTool')}</div>
     {:else if tool === 'shape'}
         <div class="row">
-            <label for="stroke-color">描边颜色</label>
+            <label for="stroke-color">{t('editor.strokeColor')}</label>
             <ColorPicker
                 colorKey={`shape-${settings.shape || 'rect'}-stroke`}
                 value={settings.stroke || '#ff0000'}
@@ -266,7 +275,7 @@
             />
         </div>
         <div class="row">
-            <label for="stroke-width">描边宽度</label>
+            <label for="stroke-width">{t('editor.strokeWidth')}</label>
             <input
                 id="stroke-width"
                 type="number"
@@ -277,7 +286,7 @@
             />
         </div>
         <div class="row">
-            <label for="fill-en">填充</label>
+            <label for="fill-en">{t('editor.fill')}</label>
             <input
                 id="fill-en"
                 type="checkbox"
@@ -297,7 +306,7 @@
         </div>
         {#if settings.fill}
             <div class="row">
-                <label for="fill-opacity">填充透明度</label>
+                <label for="fill-opacity">{t('editor.fillOpacity')}</label>
                 <input
                     id="fill-opacity"
                     type="range"
@@ -311,7 +320,7 @@
         {/if}
     {:else if tool === 'brush'}
         <div class="row">
-            <label for="brush-color">颜色</label>
+            <label for="brush-color">{t('editor.color')}</label>
             <ColorPicker
                 colorKey="brush-color"
                 value={settings.stroke || '#ff0000'}
@@ -321,7 +330,7 @@
             />
         </div>
         <div class="row">
-            <label for="brush-size">粗细</label>
+            <label for="brush-size">{t('editor.size')}</label>
             <input
                 id="brush-size"
                 type="number"
@@ -333,7 +342,7 @@
         </div>
     {:else if tool === 'eraser'}
         <div class="row">
-            <label for="eraser-size">粗细</label>
+            <label for="eraser-size">{t('editor.size')}</label>
             <input
                 id="eraser-size"
                 type="number"
@@ -345,7 +354,7 @@
         </div>
     {:else if tool === 'arrow'}
         <div class="row">
-            <label for="arrow-color">颜色</label>
+            <label for="arrow-color">{t('editor.color')}</label>
             <ColorPicker
                 colorKey="arrow-color"
                 value={settings.stroke || '#ff0000'}
@@ -355,7 +364,7 @@
             />
         </div>
         <div class="row">
-            <label for="arrow-width">粗细</label>
+            <label for="arrow-width">{t('editor.size')}</label>
             <input
                 id="arrow-width"
                 type="number"
@@ -366,74 +375,74 @@
             />
         </div>
         <div class="row">
-            <label for="arrow-head">箭头位置</label>
+            <label for="arrow-head">{t('editor.arrowPosition')}</label>
             <select
                 id="arrow-head"
                 value={settings.arrowHead || 'right'}
                 on:change={e => emitChange({ arrowHead: getValue(e) })}
             >
-                <option value="none">无</option>
-                <option value="left">左边</option>
-                <option value="right">右边</option>
-                <option value="both">两边</option>
+                <option value="none">{t('editor.none')}</option>
+                <option value="left">{t('editor.left')}</option>
+                <option value="right">{t('editor.right')}</option>
+                <option value="both">{t('editor.both')}</option>
             </select>
         </div>
         <div class="row">
-            <label for="arrow-head-style">箭头样式</label>
+            <label for="arrow-head-style">{t('editor.arrowStyle')}</label>
             <select
                 id="arrow-head-style"
                 value={settings.headStyle || 'sharp'}
                 on:change={e => emitChange({ headStyle: getValue(e) })}
             >
-                <option value="sharp">尖箭头</option>
-                <option value="swallowtail">燕尾箭头</option>
-                <option value="sharp-hollow">尖箭头空心</option>
-                <option value="swallowtail-hollow">燕尾箭头空心</option>
+                <option value="sharp">{t('editor.sharp')}</option>
+                <option value="swallowtail">{t('editor.swallowtail')}</option>
+                <option value="sharp-hollow">{t('editor.sharpHollow')}</option>
+                <option value="swallowtail-hollow">{t('editor.swallowtailHollow')}</option>
             </select>
         </div>
         <div class="row">
-            <label for="arrow-line-style">线段样式</label>
+            <label for="arrow-line-style">{t('editor.lineStyle')}</label>
             <select
                 id="arrow-line-style"
                 value={settings.lineStyle || 'solid'}
                 on:change={e => emitChange({ lineStyle: getValue(e) })}
             >
-                <option value="solid">实线</option>
-                <option value="dashed">均匀虚线</option>
-                <option value="dotted">点线</option>
-                <option value="dash-dot">线点线</option>
+                <option value="solid">{t('editor.solid')}</option>
+                <option value="dashed">{t('editor.dashed')}</option>
+                <option value="dotted">{t('editor.dotted')}</option>
+                <option value="dash-dot">{t('editor.dashDot')}</option>
             </select>
         </div>
         <div class="row">
-            <label for="arrow-thickness-style">线段粗细</label>
+            <label for="arrow-thickness-style">{t('editor.lineThickness')}</label>
             <select
                 id="arrow-thickness-style"
                 value={settings.thicknessStyle || 'uniform'}
                 on:change={e => emitChange({ thicknessStyle: getValue(e) })}
             >
-                <option value="uniform">均匀</option>
-                <option value="varying">变化</option>
+                <option value="uniform">{t('editor.uniform')}</option>
+                <option value="varying">{t('editor.varying')}</option>
             </select>
         </div>
         <div class="row">
-            <label for="arrow-anchor-style">中间锚点</label>
+            <label for="arrow-anchor-style">{t('editor.anchor')}</label>
             <select
                 id="arrow-anchor-style"
                 value={settings.anchorStyle || 'curved'}
                 on:change={e => emitChange({ anchorStyle: getValue(e) })}
             >
-                <option value="straight">直线段</option>
-                <option value="curved">弯曲</option>
+                <option value="straight">{t('editor.straight')}</option>
+                <option value="curved">{t('editor.curved')}</option>
             </select>
         </div>
     {:else if tool === 'text'}
         <div class="row">
-            <label for="font-family">字体</label>
+            <label for="font-family">{t('editor.font')}</label>
             <div style="position:relative; width:60%;">
                 <input
                     id="font-family"
                     type="text"
-                    placeholder="搜索字体（空格为 AND）"
+                    placeholder={t('editor.fontSearch')}
                     value={fontSearch}
                     on:input={e => {
                         fontSearch = getValue(e);
@@ -460,7 +469,7 @@
                 {#if showFontDropdown}
                     <ul class="font-dropdown" role="listbox">
                         {#if loadingFonts}
-                            <li class="disabled">检测字体中...</li>
+                            <li class="disabled">{t('editor.detectingFonts')}</li>
                         {:else}
                             {#each filteredFonts as f, i}
                                 <li
@@ -483,7 +492,7 @@
             </div>
         </div>
         <div class="row">
-            <label for="font-size">字号</label>
+            <label for="font-size">{t('editor.fontSize')}</label>
             <input
                 id="font-size"
                 type="number"
@@ -494,26 +503,26 @@
             />
         </div>
         <div class="row">
-            <label for="text-resize-mode">缩放行为</label>
+            <label for="text-resize-mode">{t('editor.resizeBehavior')}</label>
             <select
                 id="text-resize-mode"
                 value={settings.textResizeMode || 'layout'}
                 on:change={e =>
                     emitChange({ textResizeMode: getValue(e), textResizeModeVersion: 2 })}
             >
-                <option value="layout">调整文字布局</option>
-                <option value="font-size">调整字体大小</option>
+                <option value="layout">{t('editor.textLayout')}</option>
+                <option value="font-size">{t('editor.resizeFont')}</option>
             </select>
         </div>
-        <div class="hint">默认调整文字布局；按住 Shift 可临时调整字体大小</div>
+        <div class="hint">{t('editor.textResizeHint')}</div>
         <div class="row">
-            <span class="label">样式</span>
+            <span class="label">{t('editor.style')}</span>
             <div style="display:flex;gap:4px;">
                 <button
                     class:active={settings.bold}
                     on:click={() => emitChange({ bold: !settings.bold })}
                     style="font-weight:bold; width:32px;"
-                    title="加粗"
+                    title={t('editor.bold')}
                 >
                     B
                 </button>
@@ -521,7 +530,7 @@
                     class:active={settings.italic}
                     on:click={() => emitChange({ italic: !settings.italic })}
                     style="font-style:italic; width:32px;"
-                    title="斜体"
+                    title={t('editor.italic')}
                 >
                     I
                 </button>
@@ -529,14 +538,14 @@
                     class:active={settings.underline}
                     on:click={() => emitChange({ underline: !settings.underline })}
                     style="text-decoration:underline; width:32px;"
-                    title="下划线"
+                    title={t('editor.underline')}
                 >
                     U
                 </button>
             </div>
         </div>
         <div class="row">
-            <label for="font-color">颜色</label>
+            <label for="font-color">{t('editor.color')}</label>
             <ColorPicker
                 colorKey="text-fill"
                 value={settings.fill || '#000000'}
@@ -546,7 +555,7 @@
             />
         </div>
         <div class="row">
-            <label for="font-stroke">描边颜色</label>
+            <label for="font-stroke">{t('editor.strokeColor')}</label>
             <ColorPicker
                 colorKey="text-stroke"
                 value={settings.stroke || '#ffffff'}
@@ -556,7 +565,7 @@
             />
         </div>
         <div class="row">
-            <label for="font-stroke-width">描边粗细</label>
+            <label for="font-stroke-width">{t('editor.strokeThickness')}</label>
             <input
                 id="font-stroke-width"
                 type="number"
@@ -570,7 +579,7 @@
             <span class="val">{settings.strokeWidth ?? 0}px</span>
         </div>
         <div class="row">
-            <label for="text-bg-enabled">背景</label>
+            <label for="text-bg-enabled">{t('editor.background')}</label>
             <input
                 id="text-bg-enabled"
                 type="checkbox"
@@ -592,7 +601,7 @@
         </div>
         {#if settings.textBackgroundEnabled}
             <div class="row">
-                <label for="text-bg-fill">背景色</label>
+                <label for="text-bg-fill">{t('editor.backgroundColor')}</label>
                 <ColorPicker
                     colorKey="text-background-fill"
                     value={settings.textBackgroundFill || '#ffffff'}
@@ -602,7 +611,7 @@
                 />
             </div>
             <div class="row">
-                <label for="text-bg-opacity">背景不透明度</label>
+                <label for="text-bg-opacity">{t('editor.backgroundOpacity')}</label>
                 <input
                     id="text-bg-opacity"
                     type="range"
@@ -614,7 +623,7 @@
                 <span class="val">{Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}%</span>
             </div>
             <div class="row">
-                <label for="text-bg-radius">圆角</label>
+                <label for="text-bg-radius">{t('editor.cornerRadius')}</label>
                 <input
                     id="text-bg-radius"
                     type="number"
@@ -628,7 +637,7 @@
                 <span class="val">px</span>
             </div>
             <div class="row">
-                <label for="text-bg-padding">内边距</label>
+                <label for="text-bg-padding">{t('editor.padding')}</label>
                 <input
                     id="text-bg-padding"
                     type="number"
@@ -642,7 +651,7 @@
                 <span class="val">px</span>
             </div>
             <div class="row">
-                <label for="text-bg-stroke-enabled">边框</label>
+                <label for="text-bg-stroke-enabled">{t('editor.border')}</label>
                 <input
                     id="text-bg-stroke-enabled"
                     type="checkbox"
@@ -659,7 +668,7 @@
             </div>
             {#if settings.textBackgroundStrokeEnabled}
                 <div class="row">
-                    <label for="text-bg-stroke">边框颜色</label>
+                    <label for="text-bg-stroke">{t('editor.borderColor')}</label>
                     <ColorPicker
                         colorKey="text-background-stroke"
                         value={settings.textBackgroundStroke || settings.textBackgroundFill || '#ffffff'}
@@ -672,7 +681,7 @@
         {/if}
     {:else if tool === 'number-marker'}
         <div class="row">
-            <label for="num-bg-color">背景颜色</label>
+            <label for="num-bg-color">{t('editor.bgColor')}</label>
             <ColorPicker
                 colorKey="number-marker-fill"
                 value={settings.fill || '#ff0000'}
@@ -682,7 +691,7 @@
             />
         </div>
         <div class="row">
-            <label for="num-fontsize">字体大小</label>
+            <label for="num-fontsize">{t('editor.fontSizeLabel')}</label>
             <input
                 id="num-fontsize"
                 type="number"
@@ -694,7 +703,7 @@
             />
         </div>
         <div class="row">
-            <label for="num-count">{settings.isSelection ? '当前编号' : '下个编号'}</label>
+            <label for="num-count">{settings.isSelection ? t('editor.currentNumber') : t('editor.nextNumber')}</label>
             <input
                 id="num-count"
                 type="number"
@@ -706,7 +715,7 @@
         </div>
         {#if settings.isSelection}
             <div class="row">
-                <label for="next-num-count">下个编号</label>
+                <label for="next-num-count">{t('editor.nextNumber')}</label>
                 <input
                     id="next-num-count"
                     type="number"
@@ -719,7 +728,7 @@
         {/if}
     {:else if tool === 'crop'}
         <div class="row">
-            <span class="label">裁剪</span>
+            <span class="label">{t('editor.crop')}</span>
             <div style="display:flex;flex-direction:column;gap:8px;">
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button
@@ -727,7 +736,7 @@
                         on:click={() =>
                             dispatch('action', { action: 'setCropRatio', label: 'none' })}
                     >
-                        无比例
+                        {t('editor.freeRatio')}
                     </button>
                     <button
                         class:active={settings.cropRatioLabel === '1:1'}
@@ -767,14 +776,14 @@
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button on:click={() => dispatch('action', { action: 'applyCrop' })}>
-                        应用
+                        {t('editor.apply')}
                     </button>
                 </div>
             </div>
         </div>
     {:else if tool === 'image-border'}
         <div class="row">
-            <label for="border-enabled">启用图片边框</label>
+            <label for="border-enabled">{t('editor.enableImageBorder')}</label>
             <input
                 id="border-enabled"
                 type="checkbox"
@@ -783,7 +792,7 @@
             />
         </div>
         <div class="row">
-            <label for="border-bg-color">背景颜色</label>
+            <label for="border-bg-color">{t('editor.bgColor')}</label>
             <ColorPicker
                 colorKey="image-border-fill"
                 value={typeof settings.fill === 'string' &&
@@ -810,7 +819,7 @@
                         />
                         <button
                             class="preset-delete-btn"
-                            title="删除"
+                            title={t('editor.delete')}
                             on:click|stopPropagation={() => {
                                 const newSaved = savedGradients.filter(g => g !== grad);
                                 dispatch('updateSavedGradients', newSaved);
@@ -823,7 +832,7 @@
                 <button
                     class="preset-btn custom-btn"
                     class:active={showGradientDesigner}
-                    title="设计渐变"
+                    title={t('editor.designGradient')}
                     on:click={() => (showGradientDesigner = !showGradientDesigner)}
                 >
                     🎨
@@ -844,7 +853,7 @@
             </div>
         {/if}
         <div class="row">
-            <label for="border-margin">边框间距</label>
+            <label for="border-margin">{t('editor.borderMargin')}</label>
             <input
                 id="border-margin"
                 type="range"
@@ -856,7 +865,7 @@
             <span class="val">{settings.margin || 69}</span>
         </div>
         <div class="row">
-            <label for="border-radius">图片圆角</label>
+            <label for="border-radius">{t('editor.imageRadius')}</label>
             <input
                 id="border-radius"
                 type="range"
@@ -868,7 +877,7 @@
             <span class="val">{settings.radius || 0}</span>
         </div>
         <div class="row">
-            <label for="border-outer-radius">边框圆角</label>
+            <label for="border-outer-radius">{t('editor.borderRadius')}</label>
             <input
                 id="border-outer-radius"
                 type="range"
@@ -880,7 +889,7 @@
             <span class="val">{settings.outerRadius || 0}</span>
         </div>
         <div class="row">
-            <label for="border-shadow">阴影大小</label>
+            <label for="border-shadow">{t('editor.shadowSize')}</label>
             <input
                 id="border-shadow"
                 type="range"
@@ -892,7 +901,7 @@
             <span class="val">{settings.shadowBlur || 20}</span>
         </div>
         <div class="row">
-            <label for="border-shadow-color">阴影颜色</label>
+            <label for="border-shadow-color">{t('editor.shadowColor')}</label>
             <ColorPicker
                 colorKey="image-border-shadow-color"
                 value={settings.shadowColor || '#000000'}
@@ -902,7 +911,7 @@
             />
         </div>
         <div class="row">
-            <label for="border-shadow-opacity">阴影透明度</label>
+            <label for="border-shadow-opacity">{t('editor.shadowOpacity')}</label>
             <input
                 id="border-shadow-opacity"
                 type="range"
@@ -915,7 +924,7 @@
         </div>
     {:else if tool === 'mosaic'}
         <div class="row">
-            <label for="mosaic-size">马赛克大小</label>
+            <label for="mosaic-size">{t('editor.mosaicSize')}</label>
             <input
                 id="mosaic-size"
                 type="range"
@@ -928,7 +937,7 @@
         </div>
     {:else if tool === 'magnifier'}
         <div class="row">
-            <label>形状</label>
+            <span class="label">{t('editor.shape')}</span>
             <div class="radio-group">
                 <label>
                     <input
@@ -938,7 +947,7 @@
                         checked={!settings.magnifierShape || settings.magnifierShape === 'rect'}
                         on:change={() => emitChange({ magnifierShape: 'rect' })}
                     />
-                    矩形
+                    {t('editor.rect')}
                 </label>
                 <label>
                     <input
@@ -948,12 +957,12 @@
                         checked={settings.magnifierShape === 'circle'}
                         on:change={() => emitChange({ magnifierShape: 'circle' })}
                     />
-                    圆形
+                    {t('editor.circle')}
                 </label>
             </div>
         </div>
         <div class="row">
-            <label for="magnifier-source-border-color">框选颜色</label>
+            <label for="magnifier-source-border-color">{t('editor.sourceColor')}</label>
             <ColorPicker
                 colorKey="magnifier-source-border-color"
                 value={settings.sourceStroke || '#00ccff'}
@@ -963,7 +972,7 @@
             />
         </div>
         <div class="row">
-            <label for="magnifier-source-border-width">框选粗细</label>
+            <label for="magnifier-source-border-width">{t('editor.sourceWidth')}</label>
             <input
                 id="magnifier-source-border-width"
                 type="range"
@@ -975,7 +984,7 @@
             <span class="val">{settings.sourceStrokeWidth || 1}</span>
         </div>
         <div class="row">
-            <label for="magnifier-conn-color">连线颜色</label>
+            <label for="magnifier-conn-color">{t('editor.connectionColor')}</label>
             <ColorPicker
                 colorKey="magnifier-conn-color"
                 value={settings.connectionStroke || '#00ccff'}
@@ -985,7 +994,7 @@
             />
         </div>
         <div class="row">
-            <label for="magnifier-conn-width">连线粗细</label>
+            <label for="magnifier-conn-width">{t('editor.connectionWidth')}</label>
             <input
                 id="magnifier-conn-width"
                 type="range"
@@ -997,7 +1006,7 @@
             <span class="val">{settings.connectionStrokeWidth || 1}</span>
         </div>
                 <div class="row">
-            <label for="magnifier-zoom">放大倍数</label>
+            <label for="magnifier-zoom">{t('editor.magnification')}</label>
             <input
                 id="magnifier-zoom"
                 type="range"
@@ -1010,7 +1019,7 @@
             <span class="val">{parseFloat((settings.magnification || 2).toFixed(1))}x</span>
         </div>
         <div class="row">
-            <label for="magnifier-border-color">放大边框颜色</label>
+            <label for="magnifier-border-color">{t('editor.magnifierBorderColor')}</label>
             <ColorPicker
                 colorKey="magnifier-border-color"
                 value={settings.stroke || '#000000'}
@@ -1020,7 +1029,7 @@
             />
         </div>
         <div class="row">
-            <label for="magnifier-border-width">放大边框粗细</label>
+            <label for="magnifier-border-width">{t('editor.magnifierBorderWidth')}</label>
             <input
                 id="magnifier-border-width"
                 type="range"
@@ -1034,7 +1043,7 @@
     {:else if tool === 'image'}
         {#if settings.isSelection}
             <div class="row">
-                <label for="img-width">宽度</label>
+                <label for="img-width">{t('editor.width')}</label>
                 <input
                     id="img-width"
                     type="number"
@@ -1045,7 +1054,7 @@
                 <span class="val">px</span>
             </div>
             <div class="row">
-                <label for="img-height">高度</label>
+                <label for="img-height">{t('editor.height')}</label>
                 <input
                     id="img-height"
                     type="number"
@@ -1056,7 +1065,7 @@
                 <span class="val">px</span>
             </div>
             <div class="row">
-                <label for="img-lock-ratio">锁定比例</label>
+                <label for="img-lock-ratio">{t('editor.lockRatio')}</label>
                 <input
                     id="img-lock-ratio"
                     type="checkbox"
@@ -1065,7 +1074,7 @@
                 />
             </div>
             <div class="row">
-                <label for="img-corner-radius">圆角</label>
+                <label for="img-corner-radius">{t('editor.cornerRadius')}</label>
                 <input
                     id="img-corner-radius"
                     type="range"
@@ -1087,7 +1096,7 @@
                     on:click={() => dispatch('action', { action: 'enterImageCropMode' })}
                     style="width: 100%;"
                 >
-                    裁剪图片
+                    {t('editor.cropImage')}
                 </button>
             </div>
             <div
@@ -1101,12 +1110,12 @@
                 on:click={() => dispatch('action', { action: 'uploadImage' })}
                 style="width: 100%;"
             >
-                上传并添加图片
+                {t('editor.addImage')}
             </button>
         </div>
     {:else if tool === 'canvas'}
         <div class="row">
-            <label for="lock-canvas-ratio">固定宽高比例</label>
+            <label for="lock-canvas-ratio">{t('editor.fixedRatio')}</label>
             <input
                 id="lock-canvas-ratio"
                 type="checkbox"
@@ -1116,7 +1125,7 @@
         </div>
 
         <div class="row">
-            <label for="canvas-width">画布宽度</label>
+            <label for="canvas-width">{t('editor.canvasWidth')}</label>
             <input
                 id="canvas-width"
                 type="number"
@@ -1128,7 +1137,7 @@
             />
         </div>
         <div class="row">
-            <label for="canvas-height">画布高度</label>
+            <label for="canvas-height">{t('editor.canvasHeight')}</label>
             <input
                 id="canvas-height"
                 type="number"
@@ -1140,7 +1149,7 @@
             />
         </div>
         <div class="row">
-            <label for="canvas-bg-color">背景颜色</label>
+            <label for="canvas-bg-color">{t('editor.bgColor')}</label>
             <ColorPicker
                 colorKey="canvas-fill"
                 value={typeof settings.fill === 'string' &&
@@ -1168,7 +1177,7 @@
                 <button
                     class="preset-btn custom-btn"
                     class:active={showCanvasGradientDesigner}
-                    title="设计渐变"
+                    title={t('editor.designGradient')}
                     on:click={() => (showCanvasGradientDesigner = !showCanvasGradientDesigner)}
                 >
                     🎨
@@ -1195,30 +1204,30 @@
                 class:active={selectCanvasSizeMode}
                 class:resize-active={selectCanvasSizeMode}
             >
-                调整大小
+                {t('editor.resize')}
             </button>
-            <button on:click={() => dispatch('action', { action: 'uploadImage' })}>上传图片</button>
+            <button on:click={() => dispatch('action', { action: 'uploadImage' })}>{t('editor.uploadImage')}</button>
         </div>
     {:else if tool === 'transform'}
         <div class="row">
-            <div class="label">翻转</div>
+            <div class="label">{t('editor.flip')}</div>
             <div style="display:flex;gap:8px;">
                 <button on:click={() => dispatch('action', { action: 'flip', dir: 'horizontal' })}>
-                    水平
+                    {t('editor.horizontal')}
                 </button>
                 <button on:click={() => dispatch('action', { action: 'flip', dir: 'vertical' })}>
-                    垂直
+                    {t('editor.vertical')}
                 </button>
             </div>
         </div>
         <div class="row">
-            <div class="label">旋转</div>
+            <div class="label">{t('editor.rotate')}</div>
             <div style="display:flex;gap:8px;">
                 <button on:click={() => dispatch('action', { action: 'rotate', dir: 'cw' })}>
-                    顺时针 90°
+                    {t('editor.clockwise')}
                 </button>
                 <button on:click={() => dispatch('action', { action: 'rotate', dir: 'ccw' })}>
-                    逆时针 90°
+                    {t('editor.counterclockwise')}
                 </button>
             </div>
         </div>
@@ -1227,7 +1236,7 @@
             <!-- Row 1: Horizontal align -->
             <button
                 class="icon-btn"
-                title="左对齐"
+                title={t('editor.alignLeft')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'h-left', forceCanvas: false })}
             >
@@ -1239,7 +1248,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="水平居中"
+                title={t('editor.alignHCenter')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'h-center', forceCanvas: false })}
             >
@@ -1260,7 +1269,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="右对齐"
+                title={t('editor.alignRight')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'h-right', forceCanvas: false })}
             >
@@ -1272,7 +1281,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="以画布水平居中对齐"
+                title={t('editor.canvasHCenter')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'h-center', forceCanvas: true })}
             >
@@ -1293,7 +1302,7 @@
             <!-- Row 2: Vertical align -->
             <button
                 class="icon-btn"
-                title="顶对齐"
+                title={t('editor.alignTop')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'v-top', forceCanvas: false })}
             >
@@ -1305,7 +1314,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="垂直居中"
+                title={t('editor.alignVCenter')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'v-middle', forceCanvas: false })}
             >
@@ -1326,7 +1335,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="底对齐"
+                title={t('editor.alignBottom')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'v-bottom', forceCanvas: false })}
             >
@@ -1338,7 +1347,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="以画布垂直居中对齐"
+                title={t('editor.canvasVCenter')}
                 on:click={() =>
                     dispatch('action', { action: 'align', type: 'v-middle', forceCanvas: true })}
             >
@@ -1359,7 +1368,7 @@
             <!-- Row 3: Horizontal distribute -->
             <button
                 class="icon-btn"
-                title="水平分布（左对齐）"
+                title={t('editor.distributeLeft')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'h-left' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1388,7 +1397,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="水平分布（中心对齐）"
+                title={t('editor.distributeHCenter')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'h-center' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1417,7 +1426,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="水平分布（右对齐）"
+                title={t('editor.distributeRight')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'h-right' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1446,7 +1455,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="水平等距"
+                title={t('editor.spaceHorizontal')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'h-even' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1460,7 +1469,7 @@
             <!-- Row 4: Vertical distribute -->
             <button
                 class="icon-btn"
-                title="垂直分布（顶部对齐）"
+                title={t('editor.distributeTop')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'v-top' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1489,7 +1498,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="垂直分布（居中对齐）"
+                title={t('editor.distributeVCenter')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'v-center' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1518,7 +1527,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="垂直分布（底部对齐）"
+                title={t('editor.distributeBottom')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'v-bottom' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1547,7 +1556,7 @@
             </button>
             <button
                 class="icon-btn"
-                title="垂直等距"
+                title={t('editor.spaceVertical')}
                 on:click={() => dispatch('action', { action: 'distribute', type: 'v-even' })}
             >
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -1579,55 +1588,19 @@
                     >
                         <path d="M12 5v14M5 12h14" />
                     </svg>
-                    激活 {isChinese(settings.selectionType)
-                        ? settings.selectionType
-                        : (type => {
-                              const map = {
-                                  rect: '矩形',
-                                  circle: '圆形',
-                                  ellipse: '椭圆',
-                                  arrow: '箭头',
-                                  text: '文本',
-                                  'i-text': '文本',
-                                  textbox: '文本',
-                                  'number-marker': '序号',
-                                  mosaic: '马赛克',
-                                  'mosaic-rect': '马赛克',
-                                  path: '画笔',
-                                  image: '图片',
-                                  group: '组合',
-                              };
-                              return map[type] || type;
-                          })(settings.selectionType)} 设置
+                    {t('editor.activateSelection', { type: getSelectionLabel(settings.selectionType) })}
                 </button>
             </div>
             <div class="empty" style="font-size: 12px; opacity: 0.8;">
-                已选中 {(type => {
-                    const map = {
-                        rect: '矩形',
-                        circle: '圆形',
-                        ellipse: '椭圆',
-                        arrow: '箭头',
-                        text: '文本',
-                        'i-text': '文本',
-                        textbox: '文本',
-                        'number-marker': '序号',
-                        mosaic: '马赛克',
-                        'mosaic-rect': '马赛克',
-                        path: '画笔',
-                        image: '图片',
-                        group: '组合',
-                    };
-                    return map[type] || type;
-                })(settings.selectionType)}，点击上方按钮进行修改
+                {t('editor.selectedHint', { type: getSelectionLabel(settings.selectionType) })}
             </div>
         {:else if settings.isMixedSelection === true || settings.selectionType === 'activeSelection'}
-            <div class="empty">选择了多种类型的对象，无法批量修改设置</div>
+            <div class="empty">{t('editor.mixedSelection')}</div>
         {:else}
-            <div class="empty">请选择一个形状以激活设置</div>
+            <div class="empty">{t('editor.selectShape')}</div>
         {/if}
     {:else}
-        <div class="empty">暂无设置</div>
+        <div class="empty">{t('editor.noSettings')}</div>
     {/if}
 </div>
 
@@ -1668,6 +1641,8 @@
         min-width: 56px;
         font-size: 13px;
         display: inline-block;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
     }
     /* 非 label 元素（控件）占据剩余空间并可收缩换行 */
     .row > :not(label) {

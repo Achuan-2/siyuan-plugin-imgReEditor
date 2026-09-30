@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { t } from '../../utils/i18n';
     import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
     import ColorPicker from 'svelte-awesome-color-picker';
 
@@ -177,7 +178,7 @@
                 updatePopupPosition();
             }
         }}
-        title="选择颜色"
+        title={t('editor.chooseColor')}
     >
         <span class="color-indicator"></span>
     </button>
@@ -192,7 +193,7 @@
         >
             {#if myRecentColors.length > 0}
                 <div class="color-section">
-                    <div class="section-title">最近使用</div>
+                    <div class="section-title">{t('editor.recentColors')}</div>
                     <div class="color-grid recent">
                         {#each myRecentColors as color}
                             <button
@@ -208,7 +209,7 @@
             {/if}
 
             <div class="color-section">
-                <div class="section-title">默认颜色</div>
+                <div class="section-title">{t('editor.defaultColors')}</div>
                 <div class="color-grid default">
                     {#each defaultColors as color}
                         <button
@@ -225,7 +226,7 @@
             <div class="color-section more">
                 <button class="more-colors-btn" on:click={openNativePicker}>
                     <span class="rainbow-icon">🎨</span>
-                    更多颜色...
+                    {t('editor.moreColors')}
                 </button>
             </div>
         </div>
@@ -242,7 +243,7 @@
                 addToRecent(value);
                 showAwesomePicker = false;
             }}
-            title="关闭"
+            title={t('editor.close')}
         >
             ×
         </button>

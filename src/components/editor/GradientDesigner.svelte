@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { t } from '../../utils/i18n';
     import { createEventDispatcher } from 'svelte';
     import ColorPicker from './ColorPicker.svelte';
 
@@ -60,7 +61,7 @@
 
     <div class="controls">
         <div class="control-row">
-            <label for="grad-angle">角度</label>
+            <label for="grad-angle">{t('editor.angle')}</label>
             <input
                 id="grad-angle"
                 type="range"
@@ -73,7 +74,7 @@
         </div>
 
         <div class="control-row">
-            <span class="label">颜色 1</span>
+            <span class="label">{t('editor.color1')}</span>
             <ColorPicker
                 value={color1}
                 {recentColors}
@@ -84,7 +85,7 @@
         </div>
 
         <div class="control-row">
-            <span class="label">颜色 2</span>
+            <span class="label">{t('editor.color2')}</span>
             <ColorPicker
                 value={color2}
                 {recentColors}
@@ -96,7 +97,7 @@
     </div>
 
     <div class="actions">
-        <button class="save-btn" on:click={saveCurrent}>保存渐变</button>
+        <button class="save-btn" on:click={saveCurrent}>{t('editor.saveGradient')}</button>
     </div>
 </div>
 

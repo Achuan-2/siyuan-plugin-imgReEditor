@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { t } from '../../utils/i18n';
     import { onMount, onDestroy, createEventDispatcher } from 'svelte';
     import {
         Canvas,
@@ -1921,7 +1922,7 @@
                     // Textbox supports both font-size scaling and width-based
                     // reflow, so prefer it for newly created text objects.
                     try {
-                        itext = new Textbox('文字', {
+                        itext = new Textbox(t('editor.defaultText'), {
                             left: pointer.x,
                             top: pointer.y,
                             fontFamily,
@@ -1945,7 +1946,7 @@
                     }
                     if (!itext) {
                         try {
-                            itext = new IText('文字', {
+                            itext = new IText(t('editor.defaultText'), {
                                 left: pointer.x,
                                 top: pointer.y,
                                 fontFamily,
@@ -1968,7 +1969,7 @@
                     }
                     if (!itext) {
                         try {
-                            itext = new Text('文字', {
+                            itext = new Text(t('editor.defaultText'), {
                                 left: pointer.x,
                                 top: pointer.y,
                                 fontFamily,
@@ -3851,7 +3852,7 @@
         imgEl.onerror = () => {
             isImageCropping = false;
             targetImageToCrop = null;
-            pushErrMsg('加载原图失败');
+            pushErrMsg(t('editor.loadOriginalFailed'));
         };
         imgEl.src = originalSrc;
     }
@@ -6802,19 +6803,19 @@
 
         // Group / Ungroup options
         if (canGroup) {
-            menuItems.push({ label: '组合', action: () => groupSelection() });
+            menuItems.push({ label: t('editor.group'), action: () => groupSelection() });
         }
         if (isGroup) {
-            menuItems.push({ label: '取消组合', action: () => ungroupSelection() });
+            menuItems.push({ label: t('editor.ungroup'), action: () => ungroupSelection() });
         }
 
         // Standard ordering actions
-        menuItems.push({ label: '置于顶层', action: () => bringToFront() });
-        menuItems.push({ label: '上移一层', action: () => bringForward() });
-        menuItems.push({ label: '下移一层', action: () => sendBackward() });
-        menuItems.push({ label: '置于底层', action: () => sendToBack() });
+        menuItems.push({ label: t('editor.bringToFront'), action: () => bringToFront() });
+        menuItems.push({ label: t('editor.bringForward'), action: () => bringForward() });
+        menuItems.push({ label: t('editor.sendBackward'), action: () => sendBackward() });
+        menuItems.push({ label: t('editor.sendToBack'), action: () => sendToBack() });
         menuItems.push({ label: '---', action: null });
-        menuItems.push({ label: isLocked ? '解锁' : '锁定', action: () => toggleLock() });
+        menuItems.push({ label: isLocked ? t('editor.unlock') : t('editor.lock'), action: () => toggleLock() });
 
         menuItems.forEach(item => {
             if (item.label === '---') {
@@ -6959,10 +6960,10 @@
 
     <div class="zoom-controls">
         <div class="zoom-info">{zoomDisplay}</div>
-        <button on:click={() => handleZoom(1)} title="放大">+</button>
+        <button on:click={() => handleZoom(1)} title={t('editor.zoomIn')}>+</button>
         <button on:click={() => handleZoom1to1()} title="1:1">1:1</button>
-        <button on:click={() => fitImageToViewport()} title="最佳适配">Fit</button>
-        <button on:click={() => handleZoom(-1)} title="缩小">-</button>
+        <button on:click={() => fitImageToViewport()} title={t('editor.fit')}>Fit</button>
+        <button on:click={() => handleZoom(-1)} title={t('editor.zoomOut')}>-</button>
     </div>
 </div>
 

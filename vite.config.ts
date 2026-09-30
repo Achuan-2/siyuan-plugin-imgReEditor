@@ -46,16 +46,16 @@ export default defineConfig({
         ...(isDev ? [
             {
                 name: 'auto-copy-to-siyuan',
-                writeBundle() {
+                closeBundle() {
                     try {
-                        // Run the copy script after build
+                        // Wait until static-copy has written the language files before deployment.
                         execSync('node --no-warnings ./scripts/make_dev_copy.js', {
                             stdio: 'inherit',
                             cwd: process.cwd()
                         });
                     } catch (error) {
                         console.warn('Auto copy to SiYuan failed:', error.message);
-                        console.warn('You can manually run: pnpm run make-link-win');
+                        console.warn('You can manually run: pnpm run make_dev_copy');
                     }
                 }
             }

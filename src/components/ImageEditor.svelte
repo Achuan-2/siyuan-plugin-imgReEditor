@@ -208,7 +208,7 @@
                 });
             } catch (e) {
                 console.warn('Failed to encode history screenshot as WebP:', e);
-                pushErrMsg('当前客户端无法编码 WebP');
+                pushErrMsg(t('imageEditor.webpUnsupported'));
                 return null;
             }
         } else if (settings?.enableImageCompression !== false) {
@@ -325,10 +325,10 @@
 
         try {
             await copyFileToClipboard(path);
-            pushMsg('文件已保存到历史并复制到剪贴板');
+            pushMsg(t('screenshot.copySuccess'));
         } catch (e) {
             console.error('Failed to copy file', e);
-            pushErrMsg('复制失败');
+            pushErrMsg(t('imageEditor.copyFailed'));
         }
     }
 
@@ -417,7 +417,7 @@
                         screenshotAssetName = base;
                         screenshotHistoryPath = `${SCREENSHOT_HISTORY_DIR}/${base}`;
                     } catch (e) {}
-                    pushMsg('另存为成功');
+                    pushMsg(t('screenshot.saveAsSuccess'));
                 }
             } else {
                 // Fallback for browser or if remote is not available
@@ -790,7 +790,7 @@
                     editorReady = true;
                     return;
                 }
-                pushErrMsg('无法获取图片文件或文件为空');
+                pushErrMsg(t('imageEditor.emptyImage'));
                 return;
             }
 
@@ -932,7 +932,10 @@
             return;
         } catch (e) {
             console.error('Error loading image:', e);
-            pushErrMsg('加载图片失败: ' + (e.message || '未知错误'));
+            pushErrMsg(t('common.errorWithDetail', {
+                message: t('imageEditor.loadFailed'),
+                error: e.message || t('imageEditor.unknownError'),
+            }));
         }
     }
 
@@ -942,7 +945,7 @@
     ): Promise<CanvasSaveResult | null> {
         if (!isCanvasMode && !imageBlob && !isScreenshotMode) return null;
         if (!editorReady) {
-            pushErrMsg('编辑器尚未准备好，请稍后重试');
+            pushErrMsg(t('imageEditor.notReady'));
             return null;
         }
         if (saving) return null;
@@ -953,7 +956,7 @@
             if (isScreenshotMode) {
                 const result = await saveToHistory();
                 if (result) {
-                    pushMsg('图片已保存到历史');
+                    pushMsg(t('imageEditor.savedToHistory'));
                     // Mark as not dirty/saved if possible
                     if (
                         canvasEditorRef &&
@@ -1024,7 +1027,7 @@
                 dataURL = null;
             }
             if (!dataURL) {
-                pushErrMsg('无法导出图片');
+                pushErrMsg(t('imageEditor.exportFailed'));
                 return null;
             }
             // Convert dataURL to blob
@@ -1041,7 +1044,7 @@
                     blob = await reencodeImageBlob(blob, 'webp', { quality: outputQuality });
                 } catch (e) {
                     console.warn('Failed to encode WebP during save:', e);
-                    pushErrMsg('当前客户端无法编码 WebP，已取消保存');
+                    pushErrMsg(t('imageEditor.webpSaveCancelled'));
                     return null;
                 }
             }
@@ -1116,9 +1119,9 @@
             const checkSaved = await getFileBlob(`data/assets/${saveName}`);
             if (!checkSaved || checkSaved.size === 0) {
                 console.warn('saved asset not found after put');
-                pushErrMsg('保存到 assets 失败');
+                pushErrMsg(t('imageEditor.assetsSaveFailed'));
             }
-            pushMsg('图片已保存');
+            pushMsg(t('imageEditor.saveSuccess'));
             // After save, update DOM images referencing the old dataset
             try {
                 // Update img elements where dataset.src equal to current imagePath
@@ -1165,7 +1168,7 @@
             return saveResult;
         } catch (e) {
             console.error(e);
-            pushErrMsg('保存失败');
+            pushErrMsg(t('imageEditor.saveFailed'));
             return null;
         } finally {
             saving = false;
@@ -1326,7 +1329,7 @@
             }
         } catch (error) {
             console.warn('Failed to toggle image editor fullscreen mode', error);
-            pushErrMsg('无法切换全屏模式');
+            pushErrMsg(t('imageEditor.fullscreenFailed'));
         }
     }
 
@@ -1376,10 +1379,10 @@
     }
 
     async function handleToolChange(e: any) {
-        const t = e.detail.tool;
-        activeTool = t;
+        const tool = e.detail.tool;
+        activeTool = tool;
         if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
-            if (t === 'shape') {
+            if (tool === 'shape') {
                 const shapeType = e.detail.shape || 'rect';
                 activeShape = shapeType;
                 const key = `shape-${shapeType}`;
@@ -1389,7 +1392,7 @@
                 const options = { ...savedOptions, shape: shapeType };
                 canvasEditorRef.setTool('shape', options);
                 toolSettings = canvasEditorRef.getToolOptions();
-            } else if (t === 'crop') {
+            } else if (tool === 'crop') {
                 // Delegate crop mode to CanvasEditor
                 canvasEditorRef.setTool(null);
                 pendingCropRequested = true;
@@ -1404,20 +1407,20 @@
                 } catch (err) {
                     console.warn('enterCropMode failed', err);
                     try {
-                        pushErrMsg('进入裁剪模式失败');
+                        pushErrMsg(t('imageEditor.cropFailed'));
                     } catch (e) {}
                 }
-            } else if (t === 'transform') {
+            } else if (tool === 'transform') {
                 // open transform submenu
                 canvasEditorRef.setTool('transform');
                 toolSettings = canvasEditorRef.getToolOptions();
-            } else if (t === 'canvas') {
+            } else if (tool === 'canvas') {
                 const savedOptions =
                     (settings.lastToolSettings && settings.lastToolSettings['canvas']) || {};
                 canvasEditorRef.setTool('canvas', savedOptions);
                 activeTool = 'canvas';
                 toolSettings = canvasEditorRef.getToolOptions();
-            } else if (t === 'image-border') {
+            } else if (tool === 'image-border') {
                 // Try to get stored border settings from the image itself
                 const storedOptions =
                     typeof canvasEditorRef.getStoredBorderOptions === 'function'
@@ -1436,8 +1439,8 @@
             } else {
                 // Get last used settings for this tool
                 const savedOptions =
-                    (settings.lastToolSettings && settings.lastToolSettings[t]) || {};
-                canvasEditorRef.setTool(t, savedOptions);
+                    (settings.lastToolSettings && settings.lastToolSettings[tool]) || {};
+                canvasEditorRef.setTool(tool, savedOptions);
                 toolSettings = canvasEditorRef.getToolOptions();
             }
         }
@@ -1448,22 +1451,22 @@
     {#if canvasLoadError}
         <div class="editor-error-overlay">
             <div class="editor-error-box">
-                <div class="title">图片加载失败</div>
+                <div class="title">{t('imageEditor.loadFailed')}</div>
                 <div class="msg">{canvasLoadError}</div>
-                <div class="msg" style="margin-top:8px;color:#333;font-size:12px">
-                    Path: {imagePath}
+                <div class="msg path">
+                    {t('common.path')}: {imagePath}
                 </div>
                 <div style="margin-top:8px;display:flex;gap:8px;">
                     <button
-                        class="btn"
+                        class="b3-button"
                         on:click={() => {
                             canvasLoadError = null;
                             loadImage();
                         }}
                     >
-                        重试
+                        {t('common.retry')}
                     </button>
-                    <button class="btn" on:click={() => onClose?.(false)}>关闭</button>
+                    <button class="b3-button b3-button--outline" on:click={() => onClose?.(false)}>{t('common.close')}</button>
                 </div>
             </div>
         </div>
@@ -1665,13 +1668,13 @@
                 }}
                 on:loadError={e => {
                     try {
-                        const msg = e.detail?.message || '加载失败';
+                        const msg = e.detail?.message || t('imageEditor.loadError');
                         const url = e.detail?.url || '';
                         canvasLoadError = msg + (url ? ` (${url})` : '');
-                        pushErrMsg(`加载图片失败: ${msg}`);
+                        pushErrMsg(t('common.errorWithDetail', { message: t('imageEditor.loadFailed'), error: msg }));
                         console.error('CanvasEditor loadError', e.detail);
                     } catch (err) {
-                        pushErrMsg('加载图片失败');
+                        pushErrMsg(t('imageEditor.loadFailed'));
                     }
                 }}
                 on:cropApplied={e => {
@@ -1860,15 +1863,15 @@
                 class:resizing={isResizingSidebar}
                 class="tool-sidebar"
                 role="dialog"
-                aria-label="Tool sidebar"
+                aria-label={t('imageEditor.toolSidebar')}
                 bind:this={toolSidebarEl}
                 style={sidebarWidth === null ? undefined : `--sidebar-w: ${sidebarWidth}px`}
             >
                 <button
                     type="button"
                     class="tool-sidebar-resizer"
-                    aria-label="调整工具栏宽度"
-                    title="拖动调整宽度，或使用左右方向键"
+                    aria-label={t('imageEditor.resizeSidebar')}
+                    title={t('imageEditor.resizeSidebarHint')}
                     on:pointerdown={startSidebarResize}
                     on:keydown={resizeSidebarByKeyboard}
                 ></button>
@@ -1877,47 +1880,50 @@
                         {#if activeTool}
                             {#if activeTool === 'shape'}
                                 {activeShape === 'rect'
-                                    ? '矩形设置'
+                                    ? t('imageEditor.toolTitles.rect')
                                     : activeShape === 'circle' || activeShape === 'ellipse'
-                                      ? '椭圆设置'
-                                      : '形状设置'}
+                                      ? t('imageEditor.toolTitles.ellipse')
+                                      : t('imageEditor.toolTitles.shape')}
                             {:else if activeTool === 'arrow'}
-                                箭头设置
+                                {t('imageEditor.toolTitles.arrow')}
                             {:else if activeTool === 'brush'}
-                                画笔设置
+                                {t('imageEditor.toolTitles.brush')}
                             {:else if activeTool === 'eraser'}
-                                橡皮设置
+                                {t('imageEditor.toolTitles.eraser')}
                             {:else if activeTool === 'number-marker'}
-                                序号设置
+                                {t('imageEditor.toolTitles.number-marker')}
                             {:else if activeTool === 'text'}
-                                文本设置
+                                {t('imageEditor.toolTitles.text')}
                             {:else if activeTool === 'transform'}
-                                变换设置
+                                {t('imageEditor.toolTitles.transform')}
                             {:else if activeTool === 'crop'}
-                                裁剪设置
+                                {t('imageEditor.toolTitles.crop')}
                             {:else if activeTool === 'mosaic'}
-                                马赛克设置
+                                {t('imageEditor.toolTitles.mosaic')}
                             {:else if activeTool === 'magnifier'}
-                                放大镜设置
+                                {t('imageEditor.toolTitles.magnifier')}
                             {:else if activeTool === 'image-border'}
-                                图片边框
+                                {t('imageEditor.toolTitles.image-border')}
                             {:else if activeTool === 'align'}
-                                对齐设置
+                                {t('imageEditor.toolTitles.align')}
                             {:else if activeTool === 'canvas'}
-                                画布设置
+                                {t('imageEditor.toolTitles.canvas')}
                             {:else if activeTool === 'image'}
-                                图片工具
+                                {t('imageEditor.toolTitles.image')}
                             {:else if activeTool === 'select'}
-                                选择工具
+                                {t('imageEditor.toolTitles.select')}
                             {:else}
                                 {activeTool}
                             {/if}
                         {:else}
-                            未选择形状工具
+                            {t('imageEditor.noToolSelected')}
                         {/if}
                     </div>
                     <button
                         class="close"
+                        type="button"
+                        title={t('imageEditor.closeSidebar')}
+                        aria-label={t('imageEditor.closeSidebar')}
                         on:click={() => {
                             sidebarVisible = false;
                         }}
@@ -2092,15 +2098,15 @@
         {/if}
     </div>
     {#if isCanvasMode && blockId}
-        <nav class="canvas-navigation" aria-label="当前文档画布导航">
-            <div class="canvas-navigation__label">本文档画布</div>
+        <nav class="canvas-navigation" aria-label={t('imageEditor.canvasNavigation')}>
+            <div class="canvas-navigation__label">{t('imageEditor.documentCanvases')}</div>
             <div class="canvas-navigation__items">
                 {#each canvasItems as item, index (`${item.blockId}:${item.path}`)}
                     <button
                         type="button"
                         class:active={item.path === imagePath && item.blockId === blockId}
                         class="canvas-navigation__item"
-                        title={item.label || item.path.split('/').pop() || `画布 ${index + 1}`}
+                        title={item.label || item.path.split('/').pop() || t('imageEditor.canvasName', { index: String(index + 1) })}
                         aria-current={item.path === imagePath && item.blockId === blockId
                             ? 'page'
                             : undefined}
@@ -2109,22 +2115,22 @@
                         <span class="canvas-navigation__preview">
                             <img
                                 src={getCanvasPreviewPath(item)}
-                                alt={`画布 ${index + 1} 预览`}
+                                alt={t('imageEditor.canvasPreview', { index: String(index + 1) })}
                                 loading="lazy"
                                 draggable="false"
                             />
                         </span>
-                        <span class="canvas-navigation__name">画布 {index + 1}</span>
+                        <span class="canvas-navigation__name">{t('imageEditor.canvasName', { index: String(index + 1) })}</span>
                     </button>
                 {/each}
             </div>
             <button
                 type="button"
                 class="canvas-navigation__create"
-                title="在当前画布图片块后新建相同尺寸的画布"
+                title={t('imageEditor.createCanvasHint')}
                 on:click={handleCreateCanvas}
             >
-                + 新建画布
+                + {t('imageEditor.newCanvas')}
             </button>
         </nav>
     {/if}
@@ -2205,8 +2211,10 @@
     }
     .canvas-navigation__label {
         flex: 0 0 auto;
+        max-width: 120px;
         color: var(--b3-theme-on-surface-light, #666);
         font-size: 12px;
+        line-height: 1.5;
     }
     .canvas-navigation__items {
         flex: 1 1 auto;
@@ -2236,6 +2244,7 @@
         background: var(--b3-theme-primary-lightest, rgba(66, 133, 244, 0.1));
     }
     .canvas-navigation__item {
+        flex: 0 0 92px;
         width: 92px;
         height: 72px;
         padding: 4px;
@@ -2286,6 +2295,20 @@
         min-height: 34px;
         color: var(--b3-theme-primary, #4285f4);
     }
+    .canvas-navigation button:focus-visible,
+    .tool-sidebar .close:focus-visible {
+        outline: 2px solid var(--b3-theme-primary, #4285f4);
+        outline-offset: -2px;
+    }
+    @media (max-width: 640px) {
+        .canvas-navigation {
+            flex-wrap: wrap;
+        }
+        .canvas-navigation__label {
+            flex-basis: 100%;
+            max-width: none;
+        }
+    }
     .tool-sidebar-resizer {
         position: absolute;
         top: 0;
@@ -2327,6 +2350,9 @@
     .tool-sidebar .title {
         font-weight: 600;
         font-size: 13px;
+        line-height: 1.5;
+        min-width: 0;
+        overflow-wrap: anywhere;
     }
     .tool-sidebar .close {
         background: transparent;
@@ -2335,6 +2361,9 @@
         font-size: 18px;
         line-height: 1;
         cursor: pointer;
+        flex: 0 0 28px;
+        height: 28px;
+        border-radius: 4px;
     }
     .tool-sidebar .close:hover {
         background: var(--b3-theme-surface-lighter, rgba(127, 127, 127, 0.12));
@@ -2380,19 +2409,27 @@
         z-index: 3000;
     }
     .editor-error-box {
-        background: white;
+        background: var(--b3-theme-background, #fff);
+        color: var(--b3-theme-on-background, #202124);
         padding: 16px;
         border-radius: 8px;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        width: 400px;
+        width: min(400px, calc(100% - 48px));
+        max-height: calc(100% - 48px);
+        overflow: auto;
     }
     .editor-error-box .title {
         font-weight: bold;
         margin-bottom: 8px;
     }
     .editor-error-box .msg {
-        color: #666;
+        color: var(--b3-theme-on-surface-light, #666);
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+    .editor-error-box .path {
+        margin-top: 8px;
+        font-size: 12px;
     }
 
     /* Legacy TUI Image Editor styles removed; CanvasEditor/Toolbar manage layout and controls now. */
