@@ -13,6 +13,7 @@ export const getDefaultSettings = () => ({
     webpQuality: 100,
     imageCompressionQuality: 92,
     enablePasteImageCompression: false,
+    showPasteImageCompressionNotification: true,
     enableScreenshot: false,
     screenshotLimit: 200,
     screenshotSelectionHistory: [] as Array<{ x: number, y: number, width: number, height: number, ts: number }>,

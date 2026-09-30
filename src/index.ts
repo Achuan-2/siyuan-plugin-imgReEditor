@@ -2005,7 +2005,7 @@ export default class PluginSample extends Plugin {
             }
             if (isActive()) {
                 const { pushMsg, pushErrMsg } = await import('./api');
-                if (compressedCount > 0) {
+                if (compressedCount > 0 && this.settings?.showPasteImageCompressionNotification !== false) {
                     await pushMsg(getAutomaticImageProcessingMessage(
                         compressedCount, convertedCount, originalTotalSize, compressedTotalSize
                     ));

@@ -125,6 +125,14 @@
                         '开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅在压缩结果更小时自动替换图片链接，失败则保留原图。默认关闭。',
                 },
                 {
+                    key: 'showPasteImageCompressionNotification',
+                    value: settings.showPasteImageCompressionNotification,
+                    type: 'checkbox',
+                    title: '粘贴图片压缩提示',
+                    description:
+                        '开启后显示粘贴或拖拽图片自动压缩后的大小变化提示；关闭后在后台静默压缩。默认开启，压缩失败时仍会提示。',
+                },
+                {
                     key: 'compressAllAssets',
                     value: '',
                     type: 'button',
