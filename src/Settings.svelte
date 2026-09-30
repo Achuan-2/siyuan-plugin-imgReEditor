@@ -36,19 +36,8 @@
 
     let groups: ISettingGroup[] = [
         {
-            name: '保存设置',
+            name: '压缩设置',
             items: [
-                {
-                    key: 'storageMode',
-                    value: settings.storageMode,
-                    type: 'select',
-                    title: t('settings.storageMode.title'),
-                    description: t('settings.storageMode.description'),
-                    options: {
-                        embed: t('settings.storageMode.options.embed'),
-                        backup: t('settings.storageMode.options.backup'),
-                    },
-                },
                 {
                     key: 'enableImageCompression',
                     value: settings.enableImageCompression,
@@ -219,6 +208,11 @@
                         },
                     },
                 },
+            ],
+        },
+        {
+            name: '截图设置',
+            items: [
                 {
                     key: 'enableScreenshot',
                     value: settings.enableScreenshot,
@@ -232,6 +226,22 @@
                     type: 'number',
                     title: t('settings.screenshotLimit.title'),
                     description: t('settings.screenshotLimit.description'),
+                },
+            ],
+        },
+        {
+            name: '保存设置',
+            items: [
+                {
+                    key: 'storageMode',
+                    value: settings.storageMode,
+                    type: 'select',
+                    title: t('settings.storageMode.title'),
+                    description: t('settings.storageMode.description'),
+                    options: {
+                        embed: t('settings.storageMode.options.embed'),
+                        backup: t('settings.storageMode.options.backup'),
+                    },
                 },
                 {
                     key: 'openDataFolder',
