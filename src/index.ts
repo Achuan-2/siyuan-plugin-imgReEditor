@@ -12,6 +12,8 @@ import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
+import { observeAssetUploads } from './utils/assetUploadObserver';
+import { generateId } from './utils/uuid';
 import {
     reencodeImageBlob,
     getMimeByFormat,
@@ -52,6 +54,12 @@ interface DocumentCanvasItem {
     path: string;
     blockId: string;
     label: string;
+}
+
+interface UploadedImageReference {
+    image: HTMLImageElement;
+    path: string | null;
+    blockID: string;
 }
 
 function getFileExtension(fileName: string) {
@@ -170,7 +178,7 @@ type CompressionResult =
     }
     | {
         status: 'skipped';
-        reason: 'unsupported' | 'empty' | 'not-smaller' | 'write-failed';
+        reason: 'unsupported' | 'empty' | 'not-smaller' | 'write-failed' | 'canceled';
         originalSize?: number;
         compressedSize?: number;
     }
@@ -228,9 +236,8 @@ export default class PluginSample extends Plugin {
     screenshotManager: ScreenshotManager | null = null;
     private topBarElement: HTMLElement | null = null;
     private screenshotCommandRegistered = false;
-    private originalXhrOpen: any = null;
-    private originalXhrSend: any = null;
-    private originalFetch: any = null;
+    private stopObservingAssetUploads: (() => void) | null = null;
+    private automaticCompressionQueue: Promise<void> = Promise.resolve();
 
     private async resolveDocumentID(blockID?: string | null) {
         if (!blockID) return '';
@@ -923,7 +930,7 @@ export default class PluginSample extends Plugin {
     private async compressImageAsset(
         imageURL: string,
         imageElement?: HTMLImageElement,
-        options: { silent?: boolean } = {}
+        options: { silent?: boolean; createNewAsset?: boolean; isActive?: () => boolean } = {}
     ): Promise<CompressionResult> {
         const imagePath = normalizeAssetPath(imageURL);
         const fileName = imagePath?.split('/').pop() || '';
@@ -951,6 +958,10 @@ export default class PluginSample extends Plugin {
             const outputFormat = getCompressionOutputFormat(this.settings, format);
             let savedFileName =
                 outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
+            if (options.createNewAsset) {
+                const stem = fileName.replace(/\.[^.]+$/, '');
+                savedFileName = `${stem}-compressed-${generateId()}.${getFileExtension(savedFileName)}`;
+            }
             let savedPath = imagePath.replace(/[^/]+$/, savedFileName);
             if (savedPath !== imagePath) {
                 const existingTarget = await getFileBlob(`data/${savedPath}`);
@@ -1019,6 +1030,7 @@ export default class PluginSample extends Plugin {
             const file = new File([compressedBlob], savedFileName, {
                 type: getMimeByFormat(outputFormat),
             });
+            if (options.isActive && !options.isActive()) return { status: 'skipped', reason: 'canceled' };
             await putFile(`data/${savedPath}`, false, file);
 
             if (sidecarText && this.settings?.storageMode === 'backup' && savedPath !== imagePath) {
@@ -1848,251 +1860,163 @@ export default class PluginSample extends Plugin {
     }
 
     private setupNetworkInterceptors() {
-        const self = this;
-        this.originalXhrOpen = XMLHttpRequest.prototype.open;
-        this.originalXhrSend = XMLHttpRequest.prototype.send;
-        this.originalFetch = window.fetch;
-
-        XMLHttpRequest.prototype.open = function(method: string, url: string | URL, ...args: any[]) {
-            (this as any)._url = typeof url === 'string' ? url : url.toString();
-            return self.originalXhrOpen.apply(this, [method, url, ...args]);
-        };
-
-        XMLHttpRequest.prototype.send = function(body?: any) {
-            const xhr = this as any;
-            const url = xhr._url || '';
-
-            if (
-                body instanceof FormData &&
-                url.includes('/upload') &&
-                self.settings?.enablePasteImageCompression === true
-            ) {
-                self.compressFormData(body).then((newBody) => {
-                    self.originalXhrSend.call(xhr, newBody);
-                }).catch((err) => {
-                    console.error('Failed to compress files in XHR interceptor, sending original', err);
-                    self.originalXhrSend.call(xhr, body);
-                });
-                return;
-            }
-
-            return self.originalXhrSend.call(this, body);
-        };
-
-        window.fetch = function(input: any, init?: any) {
-            const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : input?.toString?.() || '');
-
-            if (
-                init &&
-                init.method === 'POST' &&
-                url.includes('/api/asset/insertLocalAssets') &&
-                self.settings?.enablePasteImageCompression === true
-            ) {
-                return self.interceptInsertLocalAssets(init).then((newInit) => {
-                    return self.originalFetch.call(window, input, newInit);
-                }).catch((err) => {
-                    console.error('Failed to intercept local assets, sending original fetch', err);
-                    return self.originalFetch.call(window, input, init);
-                });
-            }
-
-            return self.originalFetch.call(window, input, init);
-        };
+        const isActive = () => this.stopObservingAssetUploads === stop &&
+            this.settings?.enablePasteImageCompression === true;
+        const stop = observeAssetUploads(
+            () => this.settings?.enablePasteImageCompression === true,
+            (paths, docID, previousImages) => this.queueAutomaticImageCompression(paths, docID, isActive, previousImages),
+            () => Array.from(document.querySelectorAll<HTMLImageElement>('.protyle-wysiwyg img'))
+                .map(image => ({
+                    image,
+                    path: normalizeAssetPath(image.dataset.src || image.getAttribute('src')),
+                    blockID: image.closest('[data-node-id]')?.getAttribute('data-node-id') || '',
+                }))
+        );
+        this.stopObservingAssetUploads = stop;
     }
 
     private teardownNetworkInterceptors() {
-        if (this.originalXhrOpen) {
-            XMLHttpRequest.prototype.open = this.originalXhrOpen;
-            this.originalXhrOpen = null;
-        }
-        if (this.originalXhrSend) {
-            XMLHttpRequest.prototype.send = this.originalXhrSend;
-            this.originalXhrSend = null;
-        }
-        if (this.originalFetch) {
-            window.fetch = this.originalFetch;
-            this.originalFetch = null;
-        }
+        this.stopObservingAssetUploads?.();
+        this.stopObservingAssetUploads = null;
     }
 
-    private async compressFormData(formData: FormData): Promise<FormData> {
-        let compressedCount = 0;
-        let convertedCount = 0;
-        let originalTotalSize = 0;
-        let compressedTotalSize = 0;
-
-        const entries = Array.from(formData.entries());
-        const newEntries = await Promise.all(
-            entries.map(async ([key, value]) => {
-                if (
-                    key === 'file[]' &&
-                    value instanceof File &&
-                    (value.type === 'image/png' ||
-                        value.type === 'image/jpeg' ||
-                        value.type === 'image/webp')
-                ) {
-                    const sourceFormat: CompressibleImageFormat =
-                        value.type === 'image/png'
-                            ? 'png'
-                            : value.type === 'image/webp'
-                              ? 'webp'
-                              : 'jpeg';
-                    const outputFormat = getCompressionOutputFormat(this.settings, sourceFormat);
-                    const compressionOptions = getFormatCompressionOptions(
-                        this.settings,
-                        outputFormat
-                    );
-                    try {
-                        const compressedBlob = await this.compressImageBlob(
-                            value,
-                            sourceFormat,
-                            outputFormat,
-                            compressionOptions
-                        );
-                        if (
-                            shouldUseReencodedImage(value.size, compressedBlob.size)
-                        ) {
-                            const originalName =
-                                value.name ||
-                                (sourceFormat === 'png'
-                                    ? 'image.png'
-                                    : sourceFormat === 'webp'
-                                      ? 'image.webp'
-                                      : 'image.jpg');
-                            const fileName =
-                                outputFormat === sourceFormat
-                                    ? originalName
-                                    : replaceFileExtension(originalName, outputFormat);
-                            const compressedFile = new File([compressedBlob], fileName, {
-                                type: getMimeByFormat(outputFormat)
-                            });
-                            compressedCount += 1;
-                            if (outputFormat !== sourceFormat) convertedCount += 1;
-                            originalTotalSize += value.size;
-                            compressedTotalSize += compressedBlob.size;
-                            return [key, compressedFile] as [string, FormDataEntryValue];
-                        }
-                    } catch (error) {
-                        console.warn('Failed to compress file in XHR interceptor:', value.name, error);
-                    }
-                }
-                return [key, value] as [string, FormDataEntryValue];
-            })
+    private async getAutomaticImageReferenceBlocks(imagePath: string, docID: string): Promise<string[]> {
+        const { sql } = await import('./api');
+        const escape = (value: string) => value.replace(/'/g, "''");
+        const references = await sql(
+            `SELECT DISTINCT block_id, path FROM assets WHERE root_id = '${escape(docID)}'`
         );
-
-        const newFormData = new FormData();
-        for (const [key, value] of newEntries) {
-            newFormData.append(key, value as any);
-        }
-
-        if (compressedCount > 0) {
-            const { pushMsg } = await import('./api');
-            await pushMsg(getAutomaticImageProcessingMessage(
-                compressedCount,
-                convertedCount,
-                originalTotalSize,
-                compressedTotalSize
-            ));
-        }
-
-        return newFormData;
+        if (!Array.isArray(references)) throw new Error('Unable to load uploaded image references');
+        // The asset index may retain URL-encoded spaces/Chinese characters.
+        return [...new Set<string>(references
+            .filter(reference => normalizeAssetPath(reference.path) === imagePath)
+            .map(reference => reference.block_id).filter(Boolean))];
     }
 
-    private async interceptInsertLocalAssets(init: any): Promise<any> {
-        try {
-            if (typeof init.body !== 'string') return init;
-            const data = JSON.parse(init.body);
-            if (!data || !Array.isArray(data.assetPaths)) return init;
+    private async waitForAutomaticImageReferences(
+        imagePath: string,
+        docID: string,
+        isActive: () => boolean,
+        previousImages: UploadedImageReference[]
+    ): Promise<string[]> {
+        // Upload completion precedes the editor's insertion transaction. Wait for its
+        // persisted reference so short compression jobs cannot miss the pasted image.
+        const deadline = Date.now() + 10000;
+        const previous = previousImages.filter(reference => reference.path === imagePath);
+        const previousBlockIDs = new Set(previous.map(reference => reference.blockID));
+        while (isActive() && Date.now() < deadline) {
+            const blockIDs = await this.getAutomaticImageReferenceBlocks(imagePath, docID);
+            const newImageInExistingBlock = Array.from(document.querySelectorAll<HTMLImageElement>('.protyle-wysiwyg img'))
+                .some(image => normalizeAssetPath(image.dataset.src || image.getAttribute('src')) === imagePath &&
+                    blockIDs.includes(image.closest('[data-node-id]')?.getAttribute('data-node-id') || '') &&
+                    !previous.some(reference => reference.image === image));
+            if (blockIDs.some(id => !previousBlockIDs.has(id)) || newImageInExistingBlock) return blockIDs;
+            await new Promise(resolve => window.setTimeout(resolve, 250));
+        }
+        return [];
+    }
 
+    private async replaceAutomaticImageReferences(
+        originalPath: string,
+        savedPath: string,
+        blockIDs: string[],
+        isActive: () => boolean
+    ): Promise<number> {
+        const { getBlockDOM, updateBlock } = await import('./api');
+        const pathMap = new Map([[originalPath, savedPath]]);
+        let replaced = 0;
+        for (const blockID of blockIDs) {
+            if (!isActive()) break;
+            const blockDOM = await getBlockDOM(blockID) as any;
+            if (!isActive()) break;
+            const html = typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || '';
+            const liveBlocks = Array.from(document.querySelectorAll('.protyle-wysiwyg [data-node-id]'))
+                .filter(element => element.getAttribute('data-node-id') === blockID);
+            const selectionNode = window.getSelection()?.anchorNode;
+            const liveBlock = liveBlocks.find(block => selectionNode && block.contains(selectionNode)) || liveBlocks[0];
+            // Clone the current block after the async read to preserve text entered
+            // during compression. If the user removed/replaced the image, skip it.
+            const root = liveBlock ? liveBlock.cloneNode(true) as HTMLElement :
+                new DOMParser().parseFromString(html, 'text/html');
+            const changed = this.updateImageElementsWithPathMap(root, pathMap);
+            const block = changed.get(blockID);
+            if (!block) continue;
+            const updated = await updateBlock('dom', block.outerHTML, blockID);
+            if (!updated) throw new Error('Unable to save compressed image reference');
+            replaced += 1;
+            for (const live of liveBlocks) this.updateImageElementsWithPathMap(live, pathMap);
+        }
+        return replaced;
+    }
+
+    private queueAutomaticImageCompression(
+        uploadedPaths: string[],
+        docID: string,
+        isActive: () => boolean,
+        previousImages: UploadedImageReference[] = []
+    ): Promise<void> {
+        // Uploads without a document (for example an image-picker upload) have no
+        // pasted block to update. Do not rewrite unrelated references to that asset.
+        if (!docID) return Promise.resolve();
+        const paths = [...new Set(uploadedPaths.map(path => normalizeAssetPath(path)))]
+            .filter((path): path is string => !!path && !!getCompressibleImageFormat(path));
+        if (paths.length === 0) return Promise.resolve();
+
+        this.automaticCompressionQueue = this.automaticCompressionQueue.then(async () => {
             let compressedCount = 0;
             let convertedCount = 0;
             let originalTotalSize = 0;
             let compressedTotalSize = 0;
-
-            let fs: any, path: any, os: any;
-            try {
-                fs = window.require('fs');
-                path = window.require('path');
-                os = window.require('os');
-            } catch (e) {
-                console.warn('Node modules not available for localFiles compression', e);
-            }
-
-            if (!fs || !path || !os) return init;
-
-            const newAssetPaths = [];
-            for (const assetPath of data.assetPaths) {
-                const ext = assetPath.split('.').pop()?.toLowerCase();
-                if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'webp') {
-                    const sourceFormat: CompressibleImageFormat =
-                        ext === 'png' ? 'png' : ext === 'webp' ? 'webp' : 'jpeg';
-                    const outputFormat = getCompressionOutputFormat(this.settings, sourceFormat);
-                    const compressionOptions = getFormatCompressionOptions(
-                        this.settings,
-                        outputFormat
-                    );
-                    try {
-                        const fileBuffer = fs.readFileSync(assetPath);
-                        const originalSize = fileBuffer.length;
-                        const blob = new Blob([fileBuffer], {
-                            type: getMimeByFormat(sourceFormat),
-                        });
-                        const compressedBlob = await this.compressImageBlob(
-                            blob,
-                            sourceFormat,
-                            outputFormat,
-                            compressionOptions
-                        );
-
-                        if (
-                            shouldUseReencodedImage(originalSize, compressedBlob.size)
-                        ) {
-                            const originalName =
-                                assetPath.split(/[\\/]/).pop() ||
-                                (sourceFormat === 'png'
-                                    ? 'image.png'
-                                    : sourceFormat === 'webp'
-                                      ? 'image.webp'
-                                      : 'image.jpg');
-                            const fileName =
-                                outputFormat === sourceFormat
-                                    ? originalName
-                                    : replaceFileExtension(originalName, outputFormat);
-                            const tempPath = path.join(os.tmpdir(), fileName);
-                            const compressedBuffer = Buffer.from(await compressedBlob.arrayBuffer());
-                            fs.writeFileSync(tempPath, compressedBuffer);
-
-                            newAssetPaths.push(tempPath);
-                            compressedCount += 1;
-                            if (outputFormat !== sourceFormat) convertedCount += 1;
-                            originalTotalSize += originalSize;
-                            compressedTotalSize += compressedBlob.size;
-                            continue;
-                        }
-                    } catch (error) {
-                        console.warn('Failed to compress local asset file during drag and drop:', assetPath, error);
+            let failedCount = 0;
+            for (const path of paths) {
+                if (!isActive()) break;
+                try {
+                    const references = await this.waitForAutomaticImageReferences(path, docID, isActive, previousImages);
+                    if (references.length === 0 || !isActive()) continue;
+                    const result = await this.compressImageAsset(path, undefined, {
+                        silent: true,
+                        createNewAsset: true,
+                        isActive,
+                    });
+                    if (result.status === 'failed') {
+                        failedCount += 1;
+                        continue;
                     }
+                    if (result.status !== 'compressed' || !isActive()) continue;
+                    const currentReferences = await this.getAutomaticImageReferenceBlocks(path, docID);
+                    const replaced = await this.replaceAutomaticImageReferences(
+                        path, result.savedPath, [...new Set([...references, ...currentReferences])], isActive
+                    );
+                    if (replaced === 0) {
+                        await this.removeConvertedSourceIfUnused(result.savedPath);
+                        continue;
+                    }
+                    compressedCount += 1;
+                    if (getCompressibleImageFormat(path) !== getCompressibleImageFormat(result.savedPath)) {
+                        convertedCount += 1;
+                    }
+                    originalTotalSize += result.originalSize;
+                    compressedTotalSize += result.savedSize;
+                    // Keep the original asset available for undo and other documents.
+                } catch (error) {
+                    failedCount += 1;
+                    console.warn('Failed to compress pasted image in background:', path, error);
                 }
-                newAssetPaths.push(assetPath);
             }
-
-            if (compressedCount > 0) {
-                data.assetPaths = newAssetPaths;
-                init.body = JSON.stringify(data);
-
-                const { pushMsg } = await import('./api');
-                await pushMsg(getAutomaticImageProcessingMessage(
-                    compressedCount,
-                    convertedCount,
-                    originalTotalSize,
-                    compressedTotalSize
-                ));
+            if (isActive()) {
+                const { pushMsg, pushErrMsg } = await import('./api');
+                if (compressedCount > 0) {
+                    await pushMsg(getAutomaticImageProcessingMessage(
+                        compressedCount, convertedCount, originalTotalSize, compressedTotalSize
+                    ));
+                }
+                if (failedCount > 0) {
+                    await pushErrMsg(`${failedCount} 张图片后台压缩失败，未完成替换的图片已保留原图`);
+                }
             }
-        } catch (error) {
-            console.error('Failed to intercept local assets insertion:', error);
-        }
-        return init;
+        }).catch(error => {
+            console.error('Automatic image compression queue failed:', error);
+        });
+        return this.automaticCompressionQueue;
     }
-
-
 }

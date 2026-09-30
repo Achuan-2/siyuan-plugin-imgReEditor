@@ -122,7 +122,7 @@
                     type: 'checkbox',
                     title: '粘贴图片自动压缩',
                     description:
-                        '开启后，在编辑器中粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时会先按上述压缩规则自动压缩，再写入 assets；默认关闭。',
+                        '开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅在压缩结果更小时自动替换图片链接，失败则保留原图。默认关闭。',
                 },
                 {
                     key: 'compressAllAssets',
