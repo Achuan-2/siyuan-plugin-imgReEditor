@@ -57,7 +57,7 @@
         },
         "enablePasteImageCompression": {
             "title": "Compress pasted images",
-            "description": "Insert pasted or dropped PNG, JPG/JPEG and WebP images first, then compress them in the background. Replace the image link only when the result is smaller; keep the original on failure. Disabled by default."
+            "description": "Insert pasted or dropped PNG, JPG/JPEG and WebP images first, then compress them in the background. Use only smaller results. Same-format compression preserves the filename and link; WebP conversion changes only the extension and updates the link. Keep the original on failure. Disabled by default."
         },
         "showPasteImageCompressionNotification": {
             "title": "Show paste compression notifications",

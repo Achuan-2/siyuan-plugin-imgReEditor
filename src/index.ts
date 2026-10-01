@@ -13,7 +13,6 @@ import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
 import { observeAssetUploads } from './utils/assetUploadObserver';
-import { generateId } from './utils/uuid';
 import {
     reencodeImageBlob,
     getMimeByFormat,
@@ -930,7 +929,7 @@ export default class PluginSample extends Plugin {
     private async compressImageAsset(
         imageURL: string,
         imageElement?: HTMLImageElement,
-        options: { silent?: boolean; createNewAsset?: boolean; isActive?: () => boolean } = {}
+        options: { silent?: boolean; isActive?: () => boolean } = {}
     ): Promise<CompressionResult> {
         const imagePath = normalizeAssetPath(imageURL);
         const fileName = imagePath?.split('/').pop() || '';
@@ -956,21 +955,9 @@ export default class PluginSample extends Plugin {
             }
 
             const outputFormat = getCompressionOutputFormat(this.settings, format);
-            let savedFileName =
+            const savedFileName =
                 outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
-            if (options.createNewAsset) {
-                const stem = fileName.replace(/\.[^.]+$/, '');
-                savedFileName = `${stem}-compressed-${generateId()}.${getFileExtension(savedFileName)}`;
-            }
-            let savedPath = imagePath.replace(/[^/]+$/, savedFileName);
-            if (savedPath !== imagePath) {
-                const existingTarget = await getFileBlob(`data/${savedPath}`);
-                if (existingTarget && existingTarget.size > 0) {
-                    const stem = savedFileName.replace(/\.[^.]+$/, '');
-                    savedFileName = `${stem}-${Date.now()}.${outputFormat}`;
-                    savedPath = imagePath.replace(/[^/]+$/, savedFileName);
-                }
-            }
+            const savedPath = imagePath.replace(/[^/]+$/, savedFileName);
             const compressionOptions = getFormatCompressionOptions(this.settings, outputFormat);
 
             let sidecarText: string | null = null;
@@ -1059,7 +1046,11 @@ export default class PluginSample extends Plugin {
             }
 
             const saved = await getFileBlob(`data/${savedPath}`);
-            if (!saved || saved.size === 0) {
+            const writeVerified = saved && saved.size > 0 && (savedPath !== imagePath ||
+                (await getBlobFingerprint(saved)) === (await getBlobFingerprint(compressedBlob)));
+            if (!writeVerified) {
+                // 原路径写入失败时恢复源文件，不更新页面中的图片。
+                if (savedPath === imagePath) await putFile(`data/${imagePath}`, false, blob);
                 await notifyErr(t('imageCompression.writeFailed'));
                 return { status: 'skipped', reason: 'write-failed' };
             }
@@ -1980,21 +1971,22 @@ export default class PluginSample extends Plugin {
                     if (references.length === 0 || !isActive()) continue;
                     const result = await this.compressImageAsset(path, undefined, {
                         silent: true,
-                        createNewAsset: true,
                         isActive,
                     });
-                    if (result.status === 'failed') {
+                    if (result.status === 'failed' || (result.status === 'skipped' && result.reason === 'write-failed')) {
                         failedCount += 1;
                         continue;
                     }
                     if (result.status !== 'compressed' || !isActive()) continue;
-                    const currentReferences = await this.getAutomaticImageReferenceBlocks(path, docID);
-                    const replaced = await this.replaceAutomaticImageReferences(
-                        path, result.savedPath, [...new Set([...references, ...currentReferences])], isActive
-                    );
-                    if (replaced === 0) {
-                        await this.removeConvertedSourceIfUnused(result.savedPath);
-                        continue;
+                    if (result.savedPath !== path) {
+                        const currentReferences = await this.getAutomaticImageReferenceBlocks(path, docID);
+                        const replaced = await this.replaceAutomaticImageReferences(
+                            path, result.savedPath, [...new Set([...references, ...currentReferences])], isActive
+                        );
+                        if (replaced === 0) {
+                            await this.removeConvertedSourceIfUnused(result.savedPath);
+                            continue;
+                        }
                     }
                     compressedCount += 1;
                     if (getCompressibleImageFormat(path) !== getCompressibleImageFormat(result.savedPath)) {
@@ -2002,7 +1994,6 @@ export default class PluginSample extends Plugin {
                     }
                     originalTotalSize += result.originalSize;
                     compressedTotalSize += result.savedSize;
-                    // Keep the original asset available for undo and other documents.
                 } catch (error) {
                     failedCount += 1;
                     console.warn('Failed to compress pasted image in background:', path, error);
@@ -2016,7 +2007,7 @@ export default class PluginSample extends Plugin {
                     ));
                 }
                 if (failedCount > 0) {
-                    await pushErrMsg(`${failedCount} 张图片后台压缩失败，未完成替换的图片已保留原图`);
+                    await pushErrMsg(`${failedCount} 张图片后台压缩失败，已保留原图`);
                 }
             }
         }).catch(error => {

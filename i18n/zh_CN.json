@@ -57,7 +57,7 @@
         },
         "enablePasteImageCompression": {
             "title": "粘贴图片自动压缩",
-            "description": "开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅在压缩结果更小时自动替换图片链接，失败则保留原图。默认关闭。"
+            "description": "开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅采用体积更小的结果。同格式压缩保留原文件名和链接；转换为 WebP 时只替换扩展名并更新链接。失败则保留原图。默认关闭。"
         },
         "showPasteImageCompressionNotification": {
             "title": "粘贴图片压缩提示",

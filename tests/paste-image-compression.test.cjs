@@ -150,9 +150,9 @@ class ImageBlock {
 function createPlugin(api, utils = {}) {
     const Plugin = loadSource('src/index.ts', {
         siyuan: { Plugin: class {} }, '@/index.scss': {}, './Settings.svelte': {},
-        './components/ImageEditor.svelte': {}, './defaultSettings': {}, './utils/i18n': {},
+        './components/ImageEditor.svelte': {}, './defaultSettings': {}, './utils/i18n': { t: key => key },
         './ScreenshotManager': {}, './utils/assetUploadObserver': { observeAssetUploads },
-        './utils/uuid': { generateId: () => 'unique-id' }, './utils': utils, './api': api,
+        './utils': utils, './api': api,
     }).default;
     const plugin = new Plugin();
     plugin.settings = { enablePasteImageCompression: true };
@@ -261,28 +261,95 @@ test('a second paste of the same asset during compression gets its own reference
     assert.equal(second.image.dataset.src, 'assets/new-2.webp');
 });
 
-test('automatic compression writes a separate resource only when smaller and keeps the source', async () => {
+test('same-format automatic compression keeps the complete filename and only writes smaller results', async () => {
     setBrowser();
-    const source = new Blob(['original image bytes']);
+    let source = new Blob(['original image bytes']);
     let output = new Blob(['small']);
     const writes = [];
     const plugin = createPlugin({
-        getFileBlob: async path => path === 'data/assets/a.png' ? source :
-            writes.find(write => write.path === path)?.file || null,
-        putFile: async (path, _isDir, file) => { writes.push({ path, file }); },
+        getFileBlob: async path => path === 'data/assets/a.png' ? source : null,
+        putFile: async (path, _isDir, file) => { writes.push({ path, file }); source = file; },
         pushMsg: async () => {}, pushErrMsg: async () => {},
     }, {
-        reencodeImageBlob: async () => output,
+        reencodeImageBlob: async (_blob, format) => { assert.equal(format, 'png'); return output; },
         getMimeByFormat: () => 'image/png', locatePNGtEXt: () => false,
         readWebPMetadata: () => null,
     });
-    const result = await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, createNewAsset: true });
+    global.document = { querySelectorAll: () => [] };
+    const result = await plugin.compressImageAsset('assets/a.png', undefined, { silent: true });
     assert.equal(result.status, 'compressed');
-    assert.equal(result.savedPath, 'assets/a-compressed-unique-id.png');
+    assert.equal(result.savedPath, 'assets/a.png');
     assert.equal(writes.length, 1);
-    assert.notEqual(writes[0].path, 'data/assets/a.png');
+    assert.equal(writes[0].path, 'data/assets/a.png');
+    assert.equal(writes[0].file.name, 'a.png');
     output = new Blob(['x'.repeat(100)]);
-    const skipped = await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, createNewAsset: true });
+    const skipped = await plugin.compressImageAsset('assets/a.png', undefined, { silent: true });
     assert.equal(skipped.reason, 'not-smaller');
     assert.equal(writes.length, 1);
+});
+
+test('WebP conversion changes only the extension even when the target already exists', async () => {
+    setBrowser();
+    const source = new Blob(['original image bytes']);
+    let target = new Blob(['previous WebP bytes']);
+    const writes = [];
+    const plugin = createPlugin({
+        getFileBlob: async path => path === 'data/assets/测试图片-20261001000000-abcdefg.PNG' ? source :
+            path === 'data/assets/测试图片-20261001000000-abcdefg.webp' ? target : null,
+        putFile: async (path, _isDir, file) => { writes.push({ path, file }); target = file; },
+        pushMsg: async () => {}, pushErrMsg: async () => {},
+    }, {
+        reencodeImageBlob: async (_blob, format) => { assert.equal(format, 'webp'); return new Blob(['small']); },
+        getMimeByFormat: () => 'image/webp', locatePNGtEXt: () => false,
+    });
+    plugin.settings.convertToWebP = true;
+    const result = await plugin.compressImageAsset('assets/测试图片-20261001000000-abcdefg.PNG', undefined, { silent: true });
+    assert.equal(result.status, 'compressed');
+    assert.equal(result.savedPath, 'assets/测试图片-20261001000000-abcdefg.webp');
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].path, `data/${result.savedPath}`);
+    assert.equal(writes[0].file.name, '测试图片-20261001000000-abcdefg.webp');
+});
+
+test('same-path background compression does not rewrite blocks or delete the asset', async () => {
+    setBrowser();
+    const live = new ImageBlock('assets/a.png');
+    global.document = { querySelectorAll: selector => selector.endsWith('img') ? [live.image] : [live] };
+    const messages = [];
+    const plugin = createPlugin({
+        sql: async () => [{ block_id: 'block', path: 'assets/a.png' }],
+        updateBlock: async () => { assert.fail('Same-path compression must not save the block'); },
+        pushMsg: async message => { messages.push(message); }, pushErrMsg: async () => {},
+    });
+    plugin.compressImageAsset = async (_path, _image, options) => {
+        assert.equal(options.createNewAsset, undefined);
+        return { status: 'compressed', originalSize: 100, savedSize: 40, savedPath: 'assets/a.png' };
+    };
+    plugin.removeConvertedSourceIfUnused = async () => { assert.fail('The original asset must remain'); };
+    await plugin.queueAutomaticImageCompression(['assets/a.png'], 'doc', () => true);
+    assert.equal(live.image.dataset.src, 'assets/a.png');
+    assert.equal(messages.length, 1);
+});
+
+test('failed same-path write verification restores the source without refreshing the image', async () => {
+    setBrowser();
+    const source = new Blob(['original image bytes']);
+    let stored = source;
+    const writes = [];
+    global.document = { querySelectorAll: () => { assert.fail('Failed writes must not refresh images'); } };
+    const plugin = createPlugin({
+        getFileBlob: async () => stored,
+        putFile: async (_path, _isDir, file) => {
+            writes.push(file);
+            stored = writes.length === 1 ? new Blob(['corrupted']) : file;
+        },
+        pushMsg: async () => {}, pushErrMsg: async () => {},
+    }, {
+        reencodeImageBlob: async () => new Blob(['small']),
+        getMimeByFormat: () => 'image/png', locatePNGtEXt: () => false,
+    });
+    const result = await plugin.compressImageAsset('assets/a.png', undefined, { silent: true });
+    assert.equal(result.reason, 'write-failed');
+    assert.equal(writes.length, 2);
+    assert.equal(await stored.text(), await source.text());
 });
