@@ -123,6 +123,7 @@
         "editImage": "Edit image",
         "createCanvas": "Create canvas (ImgReEditor)",
         "saveSuccess": "Image saved.",
+        "saving": "Saving image…",
         "saveFailed": "Save failed.",
         "unsavedChanges": "The image has unsaved changes. Choose to exit without saving or save and exit.",
         "unsavedChangesTitle": "Unsaved changes",

@@ -7,7 +7,7 @@
     import Toolbar from './editor/Toolbar.svelte';
     import ToolSettings from './editor/ToolSettings.svelte';
     // TUI Image Editor removed; only Fabric (CanvasEditor) is used now
-    import { getFileBlob, putFile, readDir, removeFile } from '../api';
+    import { getFileBlob, getFileSize, putFile, readDir, removeFile } from '../api';
     import {
         readPNGTextChunk,
         insertPNGTextChunk,
@@ -971,6 +971,7 @@
         const sourcePath = imagePath;
         const sourceBlockId = blockId;
         try {
+            await tick();
             if (isScreenshotMode) {
                 const result = await saveToHistory();
                 if (result) {
@@ -1137,8 +1138,8 @@
             const file = new File([newBlob], saveName, { type: outputMime });
             await putFile(`data/assets/${saveName}`, false, file, { throwOnError: true });
             // verify saved asset exists in data/assets
-            const checkSaved = await getFileBlob(`data/assets/${saveName}`);
-            if (!checkSaved || checkSaved.size === 0) {
+            const savedSize = await getFileSize(`data/assets/${saveName}`);
+            if (savedSize === null || savedSize === 0 || savedSize !== newBlob.size) {
                 console.warn('saved asset not found after put');
                 pushErrMsg(t('imageEditor.assetsSaveFailed'));
                 return null;
@@ -1148,12 +1149,13 @@
             try {
                 // Update img elements where dataset.src equal to current imagePath
                 const newDataset = `assets/${saveName}`;
-                await fetch(newDataset, { cache: 'reload' });
+                const refreshedSrc = `${newDataset}?v=${Date.now()}`;
                 document
                     .querySelectorAll(`img[data-src="${imagePath}"]`)
                     .forEach((imageElement: any) => {
                         imageElement.setAttribute('data-src', newDataset);
-                        imageElement.src = newDataset;
+                        // Keep the stored asset path stable; let the image load refresh asynchronously.
+                        imageElement.src = refreshedSrc;
                     });
                 // update local imagePath so subsequent saves reuse updated path
                 imagePath = newDataset;
@@ -1470,6 +1472,12 @@
 </script>
 
 <div class="editor-container" bind:this={editorContainerEl}>
+    {#if saving}
+        <div class="editor-saving-overlay" role="status" aria-live="polite">
+            <span>{t('imageEditor.saving')}</span>
+        </div>
+    {/if}
+    <div class="editor-content" inert={saving ? true : undefined}>
     {#if canvasLoadError}
         <div class="editor-error-overlay">
             <div class="editor-error-box">
@@ -2156,9 +2164,13 @@
             </button>
         </nav>
     {/if}
+    </div>
 </div>
 
 <style>
+    .editor-content {
+        display: contents;
+    }
     .editor-container {
         position: relative;
         width: 100%;
@@ -2172,6 +2184,24 @@
     .editor-container:fullscreen {
         width: 100vw;
         height: 100vh;
+    }
+
+    .editor-saving-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: wait;
+        background: var(--b3-mask-background, rgba(0, 0, 0, 0.3));
+    }
+
+    .editor-saving-overlay span {
+        padding: 12px 20px;
+        border-radius: var(--b3-border-radius, 4px);
+        background: var(--b3-theme-background, #ffffff);
+        color: var(--b3-theme-on-background, #333333);
     }
 
     .editor-main {

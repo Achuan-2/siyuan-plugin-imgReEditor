@@ -501,6 +501,24 @@ export const getFileBlob = async (path: string): Promise<Blob | null> => {
     return data;
 }
 
+/** Verify a saved file without downloading its full contents when a size header is available. */
+export async function getFileSize(path: string): Promise<number | null> {
+    const response = await fetch('/api/file/getFile', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+    });
+    if (!response.ok) return null;
+    const length = response.headers.get('content-length');
+    const encoding = response.headers.get('content-encoding');
+    const size = length === null ? NaN : Number(length);
+    if ((!encoding || encoding === 'identity') && Number.isSafeInteger(size) && size >= 0) {
+        // A cancelled response body is intentional: the successful header is sufficient.
+        await response.body?.cancel();
+        return size;
+    }
+    return (await response.blob()).size;
+}
+
 
 export async function putFile(
     path: string,

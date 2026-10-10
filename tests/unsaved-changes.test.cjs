@@ -114,6 +114,43 @@ test('failed save verification keeps the editor open and dirty', async () => {
     assert.deepEqual(editor.errors, ['imageEditor.assetsSaveFailed']);
 });
 
+test('a mismatched saved file size keeps the editor open', async () => {
+    const editor = loadEditor({ choice: 'save', read: () => new Blob(['wrong size']) });
+    await editor.requestClose();
+    assert.equal(editor.closes.length, 0);
+    assert.equal(editor.isDirty(), true);
+});
+
+test('save completion does not wait for a duplicate asset refresh request', async () => {
+    let fetches = 0;
+    const editor = loadEditor({ choice: 'save', fetchImplementation: () => { fetches++; return new Promise(() => {}); } });
+    await editor.requestClose();
+    assert.equal(fetches, 0);
+    assert.equal(editor.closes[0][0], true);
+});
+
+test('file size verification cancels the body when a reliable length is available', async () => {
+    let cancelled = false;
+    const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '', async () => ({
+        ok: true, headers: new Headers({ 'content-length': '123' }),
+        body: { cancel: async () => { cancelled = true; } },
+        blob: () => { throw new Error('File contents must not be downloaded'); },
+    }));
+    assert.equal(await api.getFileSize('data/assets/example.png'), 123);
+    assert.equal(cancelled, true);
+});
+
+test('file size verification falls back to the decoded body for missing or compressed length headers', async () => {
+    for (const headers of [{}, { 'content-length': '3', 'content-encoding': 'gzip' }]) {
+        const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '', async () => ({
+            ok: true, headers: new Headers(headers), blob: async () => new Blob(['decoded']),
+        }));
+        assert.equal(await api.getFileSize('data/assets/example.png'), 7);
+    }
+    const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '', async () => ({ ok: false }));
+    assert.equal(await api.getFileSize('data/assets/missing.png'), null);
+});
+
 test('write failures keep both image and screenshot editors open for retry', async context => {
     context.mock.method(console, 'error', () => {});
     for (const screenshot of [false, true]) {
@@ -135,43 +172,6 @@ test('screenshot save and exit writes history and then closes', async () => {
     assert.equal(editor.isDirty(), false);
 });
 
-test('strict file writes reject API errors even when an old file exists', async () => {
-    let response = { code: 1, msg: 'Write denied', data: null };
-    const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), {
-        siyuan: { fetchSyncPost: async () => response },
-    });
-    await assert.rejects(api.putFile('data/assets/example.png', false, new Blob(['new']), { throwOnError: true }), /Write denied/);
-    assert.equal(await api.putFile('data/assets/example.png', false, new Blob(['new'])), null);
-    response = { code: 0, data: null };
-    assert.equal(await api.putFile('data/assets/example.png', false, new Blob(['new']), { throwOnError: true }), null);
-});
-
-test('prompt buttons resolve their actions; closing the prompt resolves cancel', async () => {
-    let current;
-    class FakeDialog {
-        constructor(options) {
-            this.options = options;
-            this.nodes = new Map();
-            this.element = { querySelector: selector => {
-                if (!this.nodes.has(selector)) this.nodes.set(selector, { addEventListener: (event, handler) => { this.nodes.get(selector)[event] = handler; } });
-                return this.nodes.get(selector);
-            } };
-            current = this;
-        }
-        destroy() { this.options.destroyCallback(); }
-    }
-    const { unsavedChangesDialog } = evaluate(readFileSync(resolve(__dirname, '../src/libs/dialog.ts'), 'utf8'), {
-        siyuan: { Dialog: FakeDialog },
-    });
-    for (const action of ['discard', 'save', 'cancel']) {
-        const result = unsavedChangesDialog({ title: '未保存的修改', message: '提示', discardLabel: '不保存退出', saveLabel: '保存并退出' });
-        assert.equal(current.nodes.get('[data-action="discard"]').textContent, '不保存退出');
-        assert.equal(current.nodes.get('[data-action="save"]').textContent, '保存并退出');
-        if (action === 'cancel') current.destroy();
-        else current.nodes.get(`[data-action="${action}"]`).click();
-        assert.equal(await result, action);
-    }
-});
 test('switch preparation saves edits without closing or prompting', async () => {
     const editor = loadEditor();
     const result = await editor.saveForSwitch();
@@ -286,4 +286,42 @@ test('reference failures retain the original path for a later retry', async cont
     await tabs.switchToTab();
     assert.equal(updates, 2);
     assert.equal(tabs.opened[0][0], 'assets/example.webp');
+});
+
+test('strict file writes reject API errors even when an old file exists', async () => {
+    let response = { code: 1, msg: 'Write denied', data: null };
+    const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), {
+        siyuan: { fetchSyncPost: async () => response },
+    });
+    await assert.rejects(api.putFile('data/assets/example.png', false, new Blob(['new']), { throwOnError: true }), /Write denied/);
+    assert.equal(await api.putFile('data/assets/example.png', false, new Blob(['new'])), null);
+    response = { code: 0, data: null };
+    assert.equal(await api.putFile('data/assets/example.png', false, new Blob(['new']), { throwOnError: true }), null);
+});
+
+test('prompt buttons resolve their actions; closing the prompt resolves cancel', async () => {
+    let current;
+    class FakeDialog {
+        constructor(options) {
+            this.options = options;
+            this.nodes = new Map();
+            this.element = { querySelector: selector => {
+                if (!this.nodes.has(selector)) this.nodes.set(selector, { addEventListener: (event, handler) => { this.nodes.get(selector)[event] = handler; } });
+                return this.nodes.get(selector);
+            } };
+            current = this;
+        }
+        destroy() { this.options.destroyCallback(); }
+    }
+    const { unsavedChangesDialog } = evaluate(readFileSync(resolve(__dirname, '../src/libs/dialog.ts'), 'utf8'), {
+        siyuan: { Dialog: FakeDialog },
+    });
+    for (const action of ['discard', 'save', 'cancel']) {
+        const result = unsavedChangesDialog({ title: '未保存的修改', message: '提示', discardLabel: '不保存退出', saveLabel: '保存并退出' });
+        assert.equal(current.nodes.get('[data-action="discard"]').textContent, '不保存退出');
+        assert.equal(current.nodes.get('[data-action="save"]').textContent, '保存并退出');
+        if (action === 'cancel') current.destroy();
+        else current.nodes.get(`[data-action="${action}"]`).click();
+        assert.equal(await result, action);
+    }
 });

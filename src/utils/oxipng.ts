@@ -1,5 +1,4 @@
 import { OXIPNG_WASM_BASE64 } from './oxipngWasm';
-import { base64ToBuffer } from './index';
 
 let wasm: any;
 let cachedUint8Memory0: Uint8Array | null = null;
@@ -49,7 +48,9 @@ export async function initOxipng(): Promise<void> {
     if (wasm) return;
     if (!initPromise) {
         initPromise = (async () => {
-            const wasmBytes = base64ToBuffer(OXIPNG_WASM_BASE64);
+            // Keep the engine independent of the UI/Worker client module.
+            const decoded = atob(OXIPNG_WASM_BASE64);
+            const wasmBytes = Uint8Array.from(decoded, character => character.charCodeAt(0));
             const imports = wbgGetImports();
             const { instance } = await WebAssembly.instantiate(wasmBytes, imports);
             wasm = instance.exports;

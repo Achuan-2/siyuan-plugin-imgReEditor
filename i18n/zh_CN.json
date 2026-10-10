@@ -123,6 +123,7 @@
         "editImage": "编辑图片",
         "createCanvas": "创建画布 (ImgReEditor)",
         "saveSuccess": "图片已保存",
+        "saving": "正在保存图片…",
         "saveFailed": "保存失败",
         "unsavedChanges": "图片内容已修改但未保存，请选择不保存退出或保存并退出。",
         "unsavedChangesTitle": "未保存的修改",

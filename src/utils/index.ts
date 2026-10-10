@@ -1,6 +1,5 @@
-import UPNG from 'upng-js';
 import WebPEncoderWorker from './webpEncoder.worker?worker&inline';
-import { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions } from './oxipng';
+import { optimizePNGBlob, optimizePNGData, initOxipng, quantizePNG, type OxipngOptions } from './pngEncoder';
 
 export type CompressibleImageFormat = 'png' | 'jpeg' | 'webp';
 
@@ -128,7 +127,8 @@ export async function reencodeImageBlob(
             try {
                 return await optimizePNGBlob(blob, { level: 2, optimiseAlpha: true });
             } catch (err) {
-                console.warn('Oxipng direct optimization failed, falling back to canvas PNG export:', err);
+                console.warn('PNG worker optimization failed, keeping the original PNG:', err);
+                return blob;
             }
         } else {
             // PNG 有损调色板量化压缩
@@ -148,16 +148,8 @@ export async function reencodeImageBlob(
                         }
                         ctx.drawImage(image, 0, 0);
                         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        const cnum = Math.max(2, Math.min(256, Math.round(quality * 256)));
-                        const pngArrayBuffer = UPNG.encode([imgData.data.buffer], canvas.width, canvas.height, cnum);
                         URL.revokeObjectURL(objectURL);
-
-                        try {
-                            const optimizedBuffer = await optimizePNGData(pngArrayBuffer, { level: 2 });
-                            resolve(new Blob([optimizedBuffer as any], { type: 'image/png' }));
-                        } catch {
-                            resolve(new Blob([pngArrayBuffer], { type: 'image/png' }));
-                        }
+                        resolve(await quantizePNG(imgData, quality));
                     } catch (error) {
                         URL.revokeObjectURL(objectURL);
                         reject(error);
@@ -203,24 +195,6 @@ export async function reencodeImageBlob(
                         },
                         getMimeByFormat(format),
                         quality
-                    );
-                } else if (format === 'png') {
-                    ctx.drawImage(image, 0, 0);
-                    canvas.toBlob(
-                        async outputBlob => {
-                            URL.revokeObjectURL(objectURL);
-                            if (!outputBlob) {
-                                reject(new Error('Failed to encode image'));
-                                return;
-                            }
-                            try {
-                                const optimized = await optimizePNGBlob(outputBlob, { level: 2, optimiseAlpha: true });
-                                resolve(optimized);
-                            } catch {
-                                resolve(outputBlob);
-                            }
-                        },
-                        'image/png'
                     );
                 } else if (format === 'webp') {
                     ctx.drawImage(image, 0, 0);
