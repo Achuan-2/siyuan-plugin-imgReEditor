@@ -128,6 +128,7 @@
         "unsavedChangesTitle": "Unsaved changes",
         "discardAndExit": "Exit without saving",
         "saveAndExit": "Save and exit",
+        "openInTabFailed": "Failed to switch to a tab. Please try again.",
         "confirm": "Confirm",
         "webpUnsupported": "This client cannot encode WebP.",
         "copyFailed": "Copy failed.",

@@ -1412,6 +1412,7 @@ export default class PluginSample extends Plugin {
         }
 
         let canvasNavigationBusy = false;
+        let openingInTab = false;
         const saveCurrentCanvas = async () => {
             const result = await (comp as any).saveForSwitch();
             if (!result) return false;
@@ -1426,7 +1427,7 @@ export default class PluginSample extends Plugin {
             return true;
         };
         const runCanvasNavigation = (action: () => void | Promise<void>) => {
-            if (canvasNavigationBusy) return;
+            if (canvasNavigationBusy || openingInTab) return;
             const run = async () => {
                 canvasNavigationBusy = true;
                 try {
@@ -1501,13 +1502,42 @@ export default class PluginSample extends Plugin {
             }
         });
 
-        comp.$on('openInTab', (e) => {
-            const { imagePath: imgPath, blockId: blkId, isCanvasMode: canvasMode, isScreenshotMode: screenshotMode } = e.detail;
-            // Close the current dialog
-            (dialog as any)._skipDirtyCheck = true;
-            dialog.destroy();
-            // Open in a new tab
-            this.openImageEditorInTab(imgPath, blkId, canvasMode, screenshotMode);
+        let pendingTabSave: { sourcePath: string; newPath: string; blockId: string | null } | null = null;
+        comp.$on('openInTab', async (e) => {
+            if (openingInTab || canvasNavigationBusy) return;
+            openingInTab = true;
+            try {
+                const savedResult = await comp.saveForSwitch();
+                if (!savedResult) return;
+                const result = pendingTabSave && pendingTabSave.blockId === savedResult.blockId
+                    ? { ...savedResult, sourcePath: pendingTabSave.sourcePath }
+                    : savedResult;
+                const { isCanvasMode: canvasMode, isScreenshotMode: screenshotMode } = e.detail;
+                // Saving may convert the asset format; update the note before opening its new path.
+                if (!screenshotMode && result.blockId && result.newPath !== result.sourcePath) {
+                    pendingTabSave = result;
+                    if (onSaveCallback && result.sourcePath === imagePath && result.blockId === blockID) {
+                        await onSaveCallback(result.newPath);
+                    } else {
+                        await this.replaceImageAssetReferenceInBlock(
+                            result.blockId,
+                            result.sourcePath,
+                            result.newPath
+                        );
+                        await this.removeConvertedSourceIfUnused(result.sourcePath);
+                    }
+                    pendingTabSave = null;
+                }
+                await this.openImageEditorInTab(result.newPath, result.blockId, canvasMode, screenshotMode);
+                (dialog as any)._skipDirtyCheck = true;
+                dialog.destroy();
+            } catch (error) {
+                console.error('Failed to switch image editor to tab:', error);
+                const { pushErrMsg } = await import('./api');
+                await pushErrMsg(t('imageEditor.openInTabFailed'));
+            } finally {
+                openingInTab = false;
+            }
         });
         // Intercept dialog destruction (e.g. clicking "X" or Esc)
         const originalDestroy = dialog.destroy.bind(dialog);

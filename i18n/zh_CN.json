@@ -128,6 +128,7 @@
         "unsavedChangesTitle": "未保存的修改",
         "discardAndExit": "不保存退出",
         "saveAndExit": "保存并退出",
+        "openInTabFailed": "切换到标签页失败，请重试",
         "confirm": "确定",
         "webpUnsupported": "当前客户端无法编码 WebP",
         "copyFailed": "复制失败",

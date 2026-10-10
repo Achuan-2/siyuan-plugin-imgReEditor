@@ -125,6 +125,12 @@
     }
 
     export async function saveForSwitch(): Promise<CanvasSaveResult | null> {
+        if (saving || canvasSwitching || closeRequested) return null;
+        // A screenshot may still be a temporary data URL even after copying/saving.
+        if (isScreenshotMode) {
+            if (isDirty() || !screenshotHistoryPath) return handleSave(false);
+            return { sourcePath: imagePath, newPath: screenshotHistoryPath, blockId };
+        }
         if (!isDirty()) {
             return { sourcePath: imagePath, newPath: imagePath, blockId };
         }
@@ -978,7 +984,9 @@
                     }
                     if (closeAfterSave) onClose?.(true, result.path, { sourcePath, blockId: sourceBlockId });
                 }
-                return null;
+                return result
+                    ? { sourcePath, newPath: result.path, blockId: sourceBlockId }
+                    : null;
             }
             // ... original logic continues for standard mode
             // If there is an active or unconfirmed crop rectangle, apply it before saving

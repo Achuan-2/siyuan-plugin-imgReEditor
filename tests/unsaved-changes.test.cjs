@@ -172,3 +172,118 @@ test('prompt buttons resolve their actions; closing the prompt resolves cancel',
         assert.equal(await result, action);
     }
 });
+test('switch preparation saves edits without closing or prompting', async () => {
+    const editor = loadEditor();
+    const result = await editor.saveForSwitch();
+    assert.equal(result.newPath, 'assets/example.png');
+    assert.equal(editor.writes.length, 1);
+    assert.equal(editor.closes.length, 0);
+    assert.equal(editor.prompts(), 0);
+    assert.equal(editor.isDirty(), false);
+    await editor.saveForSwitch();
+    assert.equal(editor.writes.length, 1);
+});
+
+test('switch preparation reuses a screenshot history path after saving', async () => {
+    const editor = loadEditor({ screenshot: true });
+    const first = await editor.saveForSwitch();
+    assert.match(first.newPath, /screenshot_history\/screenshot-\d+\.png$/);
+    const second = await editor.saveForSwitch();
+    assert.equal(second.newPath, first.newPath);
+    assert.equal(editor.writes.length, 1);
+    assert.equal(editor.closes.length, 0);
+});
+
+function loadTabSwitch(editor, { onSaveCallback, openTab, updateReference } = {}) {
+    let listener;
+    const opened = [];
+    const errors = [];
+    const dialog = { destroy: () => editor.closes.push(['dialog']) };
+    const source = readFileSync(resolve(__dirname, '../src/index.ts'), 'utf8')
+        .match(/        let pendingTabSave:[\s\S]*?(?=        \/\/ Intercept dialog destruction)/)[0];
+    const { install } = evaluate(`module.exports.install = function(fixture) {
+        const { comp, dialog, imagePath, blockID, onSaveCallback } = fixture;
+        const t = key => key;
+        let openingInTab = false; let canvasNavigationBusy = false;
+        ${source}
+    };`, { './api': { pushErrMsg: message => errors.push(message) } });
+    install.call({
+        openImageEditorInTab: async (...args) => { opened.push(args); if (openTab) await openTab(...args); },
+        replaceImageAssetReferenceInBlock: async (...args) => { if (updateReference) await updateReference(...args); },
+        removeConvertedSourceIfUnused: async () => {},
+    }, {
+        comp: { ...editor, $on: (event, callback) => { listener = callback; } }, dialog,
+        imagePath: 'assets/example.png', blockID: 'block', onSaveCallback,
+    });
+    return { switchToTab: (screenshot = false) => listener({ detail: { isCanvasMode: false, isScreenshotMode: screenshot } }), opened, errors };
+}
+
+test('tab switching waits for saving and blocks duplicate switches', async () => {
+    let finish;
+    const pendingWrite = new Promise(resolve => { finish = resolve; });
+    const editor = loadEditor({ write: () => pendingWrite });
+    const tabs = loadTabSwitch(editor);
+    const switching = tabs.switchToTab();
+    await new Promise(resolve => setImmediate(resolve));
+    await tabs.switchToTab();
+    assert.equal(tabs.opened.length, 0);
+    assert.equal(editor.closes.length, 0);
+    finish();
+    await switching;
+    assert.equal(editor.writes.length, 1);
+    assert.deepEqual(tabs.opened, [['assets/example.png', null, false, false]]);
+    assert.deepEqual(editor.closes, [['dialog']]);
+});
+
+test('failed saves do not switch to a tab or close the dialog', async () => {
+    const editor = loadEditor({ read: () => null });
+    const tabs = loadTabSwitch(editor);
+    await tabs.switchToTab();
+    assert.equal(tabs.opened.length, 0);
+    assert.equal(editor.closes.length, 0);
+    assert.equal(editor.isDirty(), true);
+});
+
+test('unchanged images switch directly without another save', async () => {
+    const editor = loadEditor({ dirty: false });
+    const tabs = loadTabSwitch(editor);
+    await tabs.switchToTab();
+    assert.equal(editor.writes.length, 0);
+    assert.equal(tabs.opened[0][0], 'assets/example.png');
+    assert.deepEqual(editor.closes, [['dialog']]);
+});
+
+test('screenshots open in a tab from their saved history file', async () => {
+    const editor = loadEditor({ screenshot: true });
+    const tabs = loadTabSwitch(editor);
+    await tabs.switchToTab(true);
+    assert.match(tabs.opened[0][0], /screenshot_history\/screenshot-\d+\.png$/);
+    assert.equal(tabs.opened[0][3], true);
+    assert.deepEqual(editor.closes, [['dialog']]);
+});
+
+test('converted asset references update before opening the new path', async () => {
+    const events = [];
+    const editor = { closes: [], saveForSwitch: async () => ({ sourcePath: 'assets/example.png', newPath: 'assets/example.webp', blockId: 'block' }) };
+    const tabs = loadTabSwitch(editor, {
+        onSaveCallback: async path => events.push(['reference', path]),
+        openTab: async path => events.push(['tab', path]),
+    });
+    await tabs.switchToTab();
+    assert.deepEqual(events, [['reference', 'assets/example.webp'], ['tab', 'assets/example.webp']]);
+    assert.deepEqual(editor.closes, [['dialog']]);
+});
+
+test('reference failures retain the original path for a later retry', async context => {
+    context.mock.method(console, 'error', () => {});
+    let saves = 0;
+    let updates = 0;
+    const editor = { closes: [], saveForSwitch: async () => ({ sourcePath: saves++ ? 'assets/example.webp' : 'assets/example.png', newPath: 'assets/example.webp', blockId: 'block' }) };
+    const tabs = loadTabSwitch(editor, { onSaveCallback: async () => { if (++updates === 1) throw new Error('Reference update failed'); } });
+    await tabs.switchToTab();
+    assert.equal(editor.closes.length, 0);
+    assert.equal(tabs.opened.length, 0);
+    await tabs.switchToTab();
+    assert.equal(updates, 2);
+    assert.equal(tabs.opened[0][0], 'assets/example.webp');
+});
