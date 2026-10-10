@@ -133,7 +133,7 @@
     },
     "imageEditor": {
         "menuCopyImage": "Duplicate image",
-        "menuEditImage": "ImgReEditor Edit",
+        "menuEditImage": "ImgReEditor edit",
         "editImage": "Edit image",
         "createCanvas": "Create canvas (ImgReEditor)",
         "saveSuccess": "Image saved.",
