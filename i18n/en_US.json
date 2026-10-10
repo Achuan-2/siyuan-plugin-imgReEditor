@@ -177,6 +177,13 @@
     },
     "screenshot": {
         "title": "Screenshot Editor",
+        "capture": "Screenshot",
+        "browseHistory": "Browse Screenshot History",
+        "disabled": "Screenshots are disabled. Enable them in the plugin settings.",
+        "unsupported": "Screenshots are not supported in this environment.",
+        "sourceUnavailable": "Unable to access the screen capture source.",
+        "historyEmpty": "No screenshot history yet.",
+        "historyOpenFailed": "Failed to open screenshot history.",
         "captureFailed": "Failed to capture screen",
         "copySuccess": "Saved to history and copied to clipboard.",
         "saveAsSuccess": "Image saved as a new file.",

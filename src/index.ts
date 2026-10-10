@@ -410,7 +410,7 @@ export default class PluginSample extends Plugin {
 
                 menu.addItem({
                     icon: 'iconScreenshot',
-                    label: '截图',
+                    label: t('screenshot.capture'),
                     click: async () => {
                         const result = await screenshotManager.captureWithSelection();
                         if (result) {
@@ -422,7 +422,7 @@ export default class PluginSample extends Plugin {
 
                 menu.addItem({
                     icon: 'iconHistory',
-                    label: '浏览历史截图',
+                    label: t('screenshot.browseHistory'),
                     click: () => {
                         screenshotManager.showHistoryDialog((filePath) => {
                             this.openImageEditorDialog(filePath, null, false, true);

@@ -177,6 +177,13 @@
     },
     "screenshot": {
         "title": "截图编辑",
+        "capture": "截图",
+        "browseHistory": "浏览历史截图",
+        "disabled": "截图功能已禁用，请在插件设置中启用",
+        "unsupported": "当前环境不支持截图功能",
+        "sourceUnavailable": "无法获取屏幕截图源",
+        "historyEmpty": "暂无截图历史",
+        "historyOpenFailed": "打开截图历史失败",
         "captureFailed": "截取屏幕失败",
         "copySuccess": "文件已保存到历史并复制到剪贴板",
         "saveAsSuccess": "另存为成功",

@@ -811,13 +811,13 @@ export class ScreenshotManager {
     public async captureScreen(): Promise<string | null> {
         try {
             if (!this.isScreenshotEnabled()) {
-                pushErrMsg('截图功能已禁用，请在插件设置中启用');
+                pushErrMsg(t('screenshot.disabled'));
                 return null;
             }
 
             const remote = (window as any).require('@electron/remote');
             if (!remote) {
-                pushErrMsg('当前环境不支持截图功能');
+                pushErrMsg(t('screenshot.unsupported'));
                 return null;
             }
 
@@ -838,7 +838,7 @@ export class ScreenshotManager {
             });
 
             if (sources.length === 0) {
-                pushErrMsg('无法获取屏幕截图源');
+                pushErrMsg(t('screenshot.sourceUnavailable'));
                 return null;
             }
 
@@ -859,13 +859,13 @@ export class ScreenshotManager {
         | null
     > {
         if (!this.isScreenshotEnabled()) {
-            pushErrMsg('截图功能已禁用，请在插件设置中启用');
+            pushErrMsg(t('screenshot.disabled'));
             return null;
         }
 
         const remote = (window as any).require('@electron/remote');
         if (!remote) {
-            pushErrMsg('当前环境不支持截图功能');
+            pushErrMsg(t('screenshot.unsupported'));
             return null;
         }
 
@@ -1021,11 +1021,11 @@ export class ScreenshotManager {
     public async registerShortcut() {
         this.plugin.addCommand({
             langKey: "screenshotedit",
-            langText: "截图编辑",
+            langText: t('screenshot.title'),
             hotkey: "⌘`", // Shift+Command+A default
             globalCallback: async () => {
                 if (!this.isScreenshotEnabled()) {
-                    pushErrMsg('截图功能已禁用，请在插件设置中启用');
+                    pushErrMsg(t('screenshot.disabled'));
                     return;
                 }
 
@@ -1047,7 +1047,7 @@ export class ScreenshotManager {
             let files = await readDir(path);
 
             if (!files || files.length === 0) {
-                pushErrMsg('暂无截图历史');
+                pushErrMsg(t('screenshot.historyEmpty'));
                 return;
             }
 
@@ -1261,7 +1261,7 @@ export class ScreenshotManager {
             let selectedFiles: string[] = [];
 
             const dialog = new Dialog({
-                title: '截图历史',
+                title: t('screenshot.history'),
                 content: `<div id="screenshot-history-wrapper">${renderHistory(currentSort)}</div>`,
                 width: '900px'
             });
@@ -1579,7 +1579,7 @@ export class ScreenshotManager {
 
         } catch (error) {
             console.error('Failed to show history:', error);
-            pushErrMsg('打开截图历史失败');
+            pushErrMsg(t('screenshot.historyOpenFailed'));
         }
     }
 
