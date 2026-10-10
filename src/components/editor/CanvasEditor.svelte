@@ -279,6 +279,7 @@
                             }
                         }
                         applyTextRenderingOptions(obj);
+                        autoResizeTextObject(obj);
                     }
                 }
                 obj.setCoords();
@@ -309,6 +310,7 @@
                 });
                 textbox.initDimensions?.();
                 applyTextRenderingOptions(textbox);
+                autoResizeTextObject(textbox);
 
                 canvas.remove(legacyText);
                 canvas.insertAt(Math.max(index, 0), textbox);
@@ -433,7 +435,8 @@
             Number(textObj.calcTextWidth?.()) || 0,
             Number(textObj.minWidth) || 1
         );
-        textObj.set('width', naturalWidth);
+        // Round up with a small margin so subpixel metrics do not wrap the last character.
+        textObj.set('width', Math.ceil(naturalWidth) + 1);
         textObj.initDimensions?.();
         textObj.setCoords?.();
     }
@@ -453,13 +456,18 @@
             );
             if (resizeState) resizeState.mode = activeMode;
             const corner = transform.corner;
+            const applyResize = (handler: any, resizeEvent = eventData) => {
+                const changed = handler ? handler(resizeEvent, transform, x, y) : false;
+                if (changed) target._textAutoWidth = false;
+                return changed;
+            };
 
             if (activeMode === 'layout') {
                 // Textbox's default side controls already use changeWidth. Using it
                 // for corner controls as well keeps the font size unchanged while
                 // still allowing the text box to reflow.
                 if (typeof controlsUtils.changeWidth === 'function') {
-                    return controlsUtils.changeWidth(eventData, transform, x, y);
+                    return applyResize(controlsUtils.changeWidth);
                 }
             }
 
@@ -475,20 +483,18 @@
                             ...eventData,
                             [target.canvas?.uniScaleKey || 'shiftKey']: false,
                         };
-                        return controlsUtils.scalingEqually(uniformEventData, transform, x, y);
+                        return applyResize(controlsUtils.scalingEqually, uniformEventData);
                     }
                 }
                 if (corner === 'ml' || corner === 'mr') {
-                    return controlsUtils.scalingX(eventData, transform, x, y);
+                    return applyResize(controlsUtils.scalingX);
                 }
                 if (corner === 'mt' || corner === 'mb') {
-                    return controlsUtils.scalingY(eventData, transform, x, y);
+                    return applyResize(controlsUtils.scalingY);
                 }
             }
 
-            return originalActionHandler
-                ? originalActionHandler(eventData, transform, x, y)
-                : false;
+            return applyResize(originalActionHandler);
         };
     }
 
@@ -1267,7 +1273,6 @@
 
             const baseMode = getTextResizeMode();
             const mode = getTextResizeModeForEvent(opt?.e, transform, baseMode);
-            target._textAutoWidth = false;
             target.__imgReEditorTextResizeState = {
                 mode,
                 baseMode,
@@ -2002,6 +2007,7 @@
 
                     canvas.add(itext);
                     applyTextRenderingOptions(itext);
+                    autoResizeTextObject(itext);
                     canvas.setActiveObject(itext);
                     canvas.requestRenderAll();
 
