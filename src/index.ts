@@ -863,11 +863,11 @@ export default class PluginSample extends Plugin {
             .filter((imageURL): imageURL is string => !!imageURL && !!getCompressibleImageFormat(imageURL))));
 
         if (uniqueURLs.length === 0) {
-            await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG/WebP 图片');
+            await pushMsg(t('documentImageCompression.noCompressibleImages'));
             return;
         }
 
-        await pushMsg(`开始压缩 ${uniqueURLs.length} 张文档图片...`);
+        await pushMsg(t('documentImageCompression.started', { count: String(uniqueURLs.length) }));
 
         const stats = {
             compressed: 0,
@@ -905,25 +905,40 @@ export default class PluginSample extends Plugin {
                 }
             } catch (error) {
                 console.error('Failed to update converted WebP references in document:', error);
-                await pushErrMsg('图片已转换为 WebP，但更新文档图片引用失败；原图片未删除');
+                await pushErrMsg(t('documentImageCompression.referenceUpdateFailed'));
                 return;
             }
         }
 
         const failedCount = stats.failed + stats.writeFailed;
         const sizeText = stats.compressed > 0
-            ? `，${formatBytes(stats.originalSize)} -> ${formatBytes(stats.savedSize)}`
+            ? t('documentImageCompression.sizeChange', {
+                originalSize: formatBytes(stats.originalSize),
+                savedSize: formatBytes(stats.savedSize),
+            })
             : '';
 
         if (failedCount > 0) {
             await pushErrMsg(
-                `文档图片压缩完成：成功 ${stats.compressed} 张，失败 ${failedCount} 张，跳过 ${stats.skipped} 张${sizeText}`
+                t('documentImageCompression.summaryWithFailures', {
+                    compressed: String(stats.compressed),
+                    failed: String(failedCount),
+                    skipped: String(stats.skipped),
+                    sizeText,
+                })
             );
             return;
         }
 
-        const skippedText = stats.skipped > 0 ? `，跳过 ${stats.skipped} 张` : '';
-        await pushMsg(`文档图片压缩完成：成功 ${stats.compressed}/${uniqueURLs.length} 张${skippedText}${sizeText}`);
+        const skippedText = stats.skipped > 0
+            ? t('documentImageCompression.skipped', { count: String(stats.skipped) })
+            : '';
+        await pushMsg(t('documentImageCompression.summary', {
+            compressed: String(stats.compressed),
+            total: String(uniqueURLs.length),
+            skippedText,
+            sizeText,
+        }));
     }
 
     private async compressImageAsset(
@@ -1137,7 +1152,7 @@ export default class PluginSample extends Plugin {
         menu.addItem({
             id: 'compress-document-images',
             icon: 'iconImage',
-            label: '批量压缩文档图片',
+            label: t('documentImageCompression.title'),
             index: 1,
             click: async () => {
                 const { pushMsg, pushErrMsg } = await import('./api');
@@ -1147,27 +1162,30 @@ export default class PluginSample extends Plugin {
                     const compressibleImageURLs = imageURLs.filter((imageURL) => getCompressibleImageFormat(imageURL));
 
                     if (imageURLs.length === 0) {
-                        await pushMsg('当前文档没有本地图片');
+                        await pushMsg(t('documentImageCompression.noLocalImages'));
                         return;
                     }
 
                     if (compressibleImageURLs.length === 0) {
-                        await pushMsg('当前文档没有可压缩的 PNG/JPG/JPEG/WebP 图片');
+                        await pushMsg(t('documentImageCompression.noCompressibleImages'));
                         return;
                     }
 
                     confirm(
-                        '批量压缩文档图片',
-                        this.settings?.convertToWebP === true
-                            ? `将尝试把文档中的 ${compressibleImageURLs.length} 张图片转换为 WebP；仅采用体积更小的结果，并更新当前文档内的引用；仍被其他位置引用的原资源会保留。继续吗？`
-                            : `将使用当前压缩设置覆盖当前文档中的 ${compressibleImageURLs.length} 张图片，并跳过压缩后不变小的图片。继续吗？`,
+                        t('documentImageCompression.title'),
+                        t(
+                            this.settings?.convertToWebP === true
+                                ? 'documentImageCompression.confirmConvert'
+                                : 'documentImageCompression.confirmOverwrite',
+                            { count: String(compressibleImageURLs.length) }
+                        ),
                         async () => {
                             await this.compressDocumentImageAssets(docID, compressibleImageURLs);
                         }
                     );
                 } catch (error) {
                     console.error('Compress document images failed:', error);
-                    await pushErrMsg('扫描文档图片失败');
+                    await pushErrMsg(t('documentImageCompression.scanFailed'));
                 }
             }
         });

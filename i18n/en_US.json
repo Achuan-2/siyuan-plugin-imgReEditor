@@ -117,6 +117,20 @@
         "failed": "Failed to compress the image.",
         "referenceUpdateFailed": "The image was converted to WebP, but its block reference could not be updated. The original image was kept."
     },
+    "documentImageCompression": {
+        "title": "Compress document images",
+        "noLocalImages": "No local images found in the current document.",
+        "noCompressibleImages": "No compressible PNG, JPG/JPEG or WebP images found in the current document.",
+        "confirmConvert": "Try converting ${count} images in the document to WebP. Use only smaller results and update references in the current document. Keep original assets that are still referenced elsewhere. Continue?",
+        "confirmOverwrite": "Overwrite ${count} images in the current document using the current compression settings. Keep originals if compression does not reduce their size. Continue?",
+        "scanFailed": "Failed to scan document images.",
+        "started": "Compressing ${count} document images...",
+        "referenceUpdateFailed": "Images were converted to WebP, but document references could not be updated. The original images were kept.",
+        "sizeChange": ", ${originalSize} -> ${savedSize}",
+        "skipped": ", ${count} skipped",
+        "summary": "Document image compression complete: ${compressed}/${total} compressed${skippedText}${sizeText}",
+        "summaryWithFailures": "Document image compression complete: ${compressed} compressed, ${failed} failed, ${skipped} skipped${sizeText}"
+    },
     "imageEditor": {
         "menuCopyImage": "Duplicate image",
         "menuEditImage": "ImgReEditor Edit",
