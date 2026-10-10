@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
     const dispatch = createEventDispatcher();
-    import { confirm } from 'siyuan';
+    import { unsavedChangesDialog } from '../libs/dialog';
     import { t } from '../utils/i18n';
     import CanvasEditor from './editor/CanvasEditor.svelte';
     import Toolbar from './editor/Toolbar.svelte';
@@ -43,6 +43,7 @@
     let imageBlob: Blob | null = null;
     let editorReady = false;
     let saving = false;
+    let closeRequested = false;
     let originalFileName = '';
     let originalExt = '';
     let needConvertToPNG = false;
@@ -130,16 +131,27 @@
         return handleSave(false);
     }
 
-    async function handleCancel() {
-        if (isDirty()) {
-            return new Promise<void>(resolve => {
-                confirm(t('imageEditor.confirm'), t('imageEditor.unsavedChanges'), () => {
-                    onClose?.(false);
-                    resolve();
-                });
+    export async function requestClose() {
+        if (closeRequested || saving || canvasSwitching) return;
+        closeRequested = true;
+        try {
+            if (!isDirty()) {
+                onClose?.(false);
+                return;
+            }
+            const action = await unsavedChangesDialog({
+                title: t('imageEditor.unsavedChangesTitle'),
+                message: t('imageEditor.unsavedChanges'),
+                discardLabel: t('imageEditor.discardAndExit'),
+                saveLabel: t('imageEditor.saveAndExit'),
             });
-        } else {
-            onClose?.(false);
+            if (action === 'discard') {
+                onClose?.(false);
+            } else if (action === 'save') {
+                await handleSave(true);
+            }
+        } finally {
+            closeRequested = false;
         }
     }
 
@@ -255,7 +267,7 @@
 
         // Save image to history
         const file = new File([newBlob], filename, { type: outputMime });
-        await putFile(path, false, file);
+        await putFile(path, false, file, { throwOnError: true });
 
         // If backup mode, write separate JSON backup to backup dir
         if (settings.storageMode === 'backup') {
@@ -964,6 +976,7 @@
                     ) {
                         (canvasEditorRef as any).resetDirty();
                     }
+                    if (closeAfterSave) onClose?.(true, result.path, { sourcePath, blockId: sourceBlockId });
                 }
                 return null;
             }
@@ -1114,12 +1127,13 @@
             }
             // create File and upload
             const file = new File([newBlob], saveName, { type: outputMime });
-            await putFile(`data/assets/${saveName}`, false, file);
+            await putFile(`data/assets/${saveName}`, false, file, { throwOnError: true });
             // verify saved asset exists in data/assets
             const checkSaved = await getFileBlob(`data/assets/${saveName}`);
             if (!checkSaved || checkSaved.size === 0) {
                 console.warn('saved asset not found after put');
                 pushErrMsg(t('imageEditor.assetsSaveFailed'));
+                return null;
             }
             pushMsg(t('imageEditor.saveSuccess'));
             // After save, update DOM images referencing the old dataset
@@ -1527,7 +1541,7 @@
         on:history={() => handleHistory()}
         on:fullscreen={() => toggleFullscreen()}
         on:save={() => handleSave(false, true)}
-        on:cancel={() => handleCancel()}
+        on:cancel={() => requestClose()}
     />
 
     <div class="editor-main">

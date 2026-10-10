@@ -502,14 +502,24 @@ export const getFileBlob = async (path: string): Promise<Blob | null> => {
 }
 
 
-export async function putFile(path: string, isDir: boolean, file: any) {
+export async function putFile(
+    path: string,
+    isDir: boolean,
+    file: any,
+    options: { throwOnError?: boolean } = {}
+) {
     let form = new FormData();
     form.append('path', path);
     form.append('isDir', isDir.toString());
     form.append('modTime', Date.now().toString());
     form.append('file', file);
     let url = '/api/file/putFile';
-    return request(url, form);
+    if (!options.throwOnError) return request(url, form);
+    const response: IWebSocketData = await fetchSyncPost(url, form);
+    if (response.code !== 0) {
+        throw new Error(response.msg || `Failed to write file: ${path}`);
+    }
+    return response.data;
 }
 
 export async function removeFile(path: string) {

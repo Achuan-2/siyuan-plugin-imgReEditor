@@ -1512,14 +1512,8 @@ export default class PluginSample extends Plugin {
         // Intercept dialog destruction (e.g. clicking "X" or Esc)
         const originalDestroy = dialog.destroy.bind(dialog);
         dialog.destroy = () => {
-            if (!(dialog as any)._skipDirtyCheck && comp && typeof (comp as any).isDirty === 'function' && (comp as any).isDirty()) {
-                confirm(t('imageEditor.confirm'), t('imageEditor.unsavedChanges'), () => {
-                    (dialog as any)._skipDirtyCheck = true;
-                    try {
-                        comp.$destroy();
-                    } catch (e) { }
-                    originalDestroy();
-                });
+            if (!(dialog as any)._skipDirtyCheck) {
+                void comp.requestClose();
                 return;
             }
             try {

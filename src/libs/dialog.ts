@@ -9,6 +9,40 @@
 import { Dialog } from "siyuan";
 import { type SvelteComponent } from "svelte";
 
+export type UnsavedChangesAction = 'discard' | 'save' | 'cancel';
+
+/** Closing the prompt leaves the editor open; only an explicit choice exits. */
+export const unsavedChangesDialog = (args: {
+    title: string;
+    message: string;
+    discardLabel: string;
+    saveLabel: string;
+}): Promise<UnsavedChangesAction> => {
+    return new Promise(resolve => {
+        const dialog = new Dialog({
+            title: args.title,
+            content: `<div class="b3-dialog__content"><div class="ft__breakword"></div></div>
+<div class="b3-dialog__action">
+    <button class="b3-button b3-button--cancel" data-action="discard"></button><div class="fn__space"></div>
+    <button class="b3-button b3-button--text" data-action="save"></button>
+</div>`,
+            width: '520px',
+            destroyCallback: () => resolve('cancel'),
+        });
+        dialog.element.querySelector('.ft__breakword').textContent = args.message;
+        const discardButton = dialog.element.querySelector<HTMLButtonElement>('[data-action="discard"]');
+        const saveButton = dialog.element.querySelector<HTMLButtonElement>('[data-action="save"]');
+        discardButton.textContent = args.discardLabel;
+        saveButton.textContent = args.saveLabel;
+        const choose = (action: UnsavedChangesAction) => {
+            resolve(action);
+            dialog.destroy();
+        };
+        discardButton.addEventListener('click', () => choose('discard'));
+        saveButton.addEventListener('click', () => choose('save'));
+    });
+};
+
 export const inputDialog = (args: {
     title: string, placeholder?: string, defaultText?: string,
     confirm?: (text: string) => void, cancel?: () => void,
