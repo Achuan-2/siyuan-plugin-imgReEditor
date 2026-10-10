@@ -142,8 +142,8 @@ AGPL v3.0 License
 - The color picker uses [svelte-awesome-color-picker](https://github.com/Ennoriel/svelte-awesome-color-picker).
 - The Fabric.js arrow drawing and shape control implementations reference [oyjt/interactive-whiteboard](https://github.com/oyjt/interactive-whiteboard).
 
-## ❤️ Tips Are Welcome
+## ❤️ Buy me a coffee
 
-If you find this plugin useful, you're welcome to give the repository a star on GitHub or leave a tip. Your support helps me maintain and improve this plugin and develop new ones.
+If you find this plugin useful, you're welcome to buy me a coffee. Your support helps me maintain and improve this plugin and develop new ones.
 
-[Leave a tip](https://pancake.waffo.ai/store/achuan-2-fdbho4ye/product/PROD_3F7Aa7c2NQlz9KmxcgxjQ7?type=onetime&currency=USD)
+[Buy me a coffee](https://pancake.waffo.ai/store/achuan-2-fdbho4ye/product/PROD_3F7Aa7c2NQlz9KmxcgxjQ7?type=onetime&currency=USD)

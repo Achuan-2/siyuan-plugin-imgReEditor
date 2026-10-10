@@ -1,3 +1,5 @@
+[中文](README.md)丨[English](README_en_US.md)
+
 插件 Github 地址：[https://github.com/Achuan-2/siyuan-plugin-image-editor](https://github.com/Achuan-2/siyuan-plugin-image-editor)
 
 <img alt="" src="https://assets.b3logfile.com/siyuan/1610205759005/assets/canvas-20251222150947-bnrki1b.png" />

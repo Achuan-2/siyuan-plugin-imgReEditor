@@ -19,28 +19,42 @@ const functionNames = [
     'autoResizeTextObject', 'isTextObject', 'restoreObjectSelectionStates',
     'normalizeTextResizeMode', 'getTextResizeMode', 'getTextResizeModeForEvent',
     'getTextResizeActionHandler',
+    'applyToolOptionsToSelection',
 ];
 const functions = parsed.statements.filter(node => ts.isFunctionDeclaration(node) && functionNames.includes(node.name.text))
-    .map(node => node.getText(parsed)).join('\n');
+    .map(node => node.getText(parsed).replace(/^export\s+/, '')).join('\n');
 const creation = source.slice(source.indexOf('                    let itext: any = null;'), source.indexOf('                    // try to enter editing mode'));
 const beforeTransform = source.match(/        canvas\.on\('before:transform',[\s\S]*?(?=        \/\/ A newly created textbox)/)[0];
 const compiled = ts.transpileModule(`
     const DEFAULT_TEXT_RESIZE_MODE = 'layout';
+    const activeTool = 'text';
     const activeToolOptions = { textResizeMode: 'layout' };
     let beforeResize;
     let objects = [];
+    let history = [];
     const canvas = {
         on: (event, callback) => { beforeResize = callback; },
         add: object => objects.push(object), getObjects: () => objects,
+        getActiveObjects: () => objects,
         setActiveObject() {}, requestRenderAll() {},
     };
     function applyTextRenderingOptions() {}
+    function applyTextBackgroundRenderer() {}
+    function hasTextBackgroundOption() { return false; }
+    function getTextBackgroundOptions() { return {}; }
+    function getTextStrokeOptions() { return {}; }
+    function schedulePushWithType() {
+        history.push(objects.map(object => object.toObject(['_textAutoWidth'])));
+    }
     ${functions}
     ${beforeTransform}
     return {
         autoResizeTextObject, restoreObjectSelectionStates, beforeResize,
+        applyToolOptionsToSelection,
+        getHistory: () => history,
         setObjects: value => { objects = value; },
-        createText(value) {
+        createText(value, textAlign) {
+            activeToolOptions.textAlign = textAlign;
             const t = () => value;
             const pointer = { x: 30, y: 50 };
             const fontFamily = 'test', fontSize = 24, fill = '#000000';
@@ -94,6 +108,54 @@ test('font changes keep automatic text on one line', () => {
     helpers.autoResizeTextObject(textbox);
     assert.deepEqual(textbox.textLines, ['Text']);
     assert.ok(textbox.width > previousWidth);
+});
+
+test('new text uses the chosen alignment and defaults to left', () => {
+    const helpers = loadTextHelpers();
+    for (const alignment of [undefined, 'left', 'center', 'right']) {
+        const textbox = helpers.createText('Long line\nShort', alignment);
+        assert.equal(textbox.textAlign, alignment || 'left');
+        const remainingWidth = textbox.width - textbox.getLineWidth(1);
+        const expectedOffset = alignment === 'center' ? remainingWidth / 2
+            : alignment === 'right' ? remainingWidth : 0;
+        assert.equal(textbox._getLineLeftOffset(1), expectedOffset);
+    }
+});
+
+test('alignment updates selected text boxes while editing and survives history restoration', () => {
+    const helpers = loadTextHelpers();
+    const editing = helpers.createText('Long line\nShort');
+    // Cursor blinking needs a browser; retain the real editing/layout logic.
+    editing.initDelayedCursor = () => {};
+    editing.isEditing = true;
+    editing.selectionStart = 0;
+    editing.selectionEnd = 4;
+    editing.setSelectionStyles({ fill: '#ff0000', fontWeight: 'bold' });
+    const styles = structuredClone(editing.styles);
+    const fixed = new Textbox('Long line\nShort', {
+        width: 200, fontSize: 24, splitByGrapheme: true, _textAutoWidth: false,
+    });
+    const lines = [...fixed.textLines];
+    helpers.setObjects([editing, fixed]);
+
+    for (const alignment of ['center', 'right', 'left']) {
+        helpers.applyToolOptionsToSelection({ textAlign: alignment });
+        assert.equal(editing.textAlign, alignment);
+        assert.deepEqual(editing.styles, styles);
+        assert.equal(fixed.width, 200);
+        assert.deepEqual(fixed.textLines, lines);
+
+        const snapshot = helpers.getHistory().at(-1);
+        assert.equal(snapshot.length, 2);
+        for (const saved of snapshot) {
+            const { type, ...options } = saved;
+            const restored = new Textbox(saved.text, options);
+            assert.equal(restored.textAlign, alignment);
+            assert.equal(restored.width, saved.width);
+            assert.deepEqual(restored.styles, saved.styles);
+        }
+    }
+    assert.equal(helpers.getHistory().length, 3);
 });
 
 test('restoring automatic text repairs narrow widths but retains manual wrapping', () => {
