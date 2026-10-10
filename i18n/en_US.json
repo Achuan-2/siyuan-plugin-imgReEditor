@@ -283,6 +283,8 @@
         "fontSearch": "Search fonts (space = AND)",
         "detectingFonts": "Detecting fonts...",
         "fontSize": "Font size",
+        "textAlign": "Text alignment",
+        "textAlignCenter": "Align center",
         "resizeBehavior": "Resize behavior",
         "textLayout": "Resize text layout",
         "resizeFont": "Resize font size",

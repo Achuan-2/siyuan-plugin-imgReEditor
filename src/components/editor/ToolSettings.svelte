@@ -550,6 +550,18 @@
         </div>
         <div class="hint">{t('editor.textResizeHint')}</div>
         <div class="row">
+            <label for="text-align">{t('editor.textAlign')}</label>
+            <select
+                id="text-align"
+                value={settings.textAlign || 'left'}
+                on:change={e => emitChange({ textAlign: getValue(e) })}
+            >
+                <option value="left">{t('editor.alignLeft')}</option>
+                <option value="center">{t('editor.textAlignCenter')}</option>
+                <option value="right">{t('editor.alignRight')}</option>
+            </select>
+        </div>
+        <div class="row">
             <span class="label">{t('editor.style')}</span>
             <div style="display:flex;gap:4px;">
                 <button

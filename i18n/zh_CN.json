@@ -283,6 +283,8 @@
         "fontSearch": "搜索字体（空格为 AND）",
         "detectingFonts": "检测字体中...",
         "fontSize": "字号",
+        "textAlign": "文本对齐",
+        "textAlignCenter": "居中对齐",
         "resizeBehavior": "缩放行为",
         "textLayout": "调整文字布局",
         "resizeFont": "调整字体大小",

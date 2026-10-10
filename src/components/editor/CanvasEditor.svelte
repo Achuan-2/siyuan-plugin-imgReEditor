@@ -1884,6 +1884,7 @@
                                 (hit as any).fontFamily || activeToolOptions.family;
                             activeToolOptions.size =
                                 (hit as any).fontSize || activeToolOptions.size;
+                            activeToolOptions.textAlign = (hit as any).textAlign || 'left';
                             activeToolOptions.fill =
                                 typeof hit.fill !== 'undefined' ? hit.fill : activeToolOptions.fill;
                             activeToolOptions.stroke =
@@ -1932,6 +1933,7 @@
                             top: pointer.y,
                             fontFamily,
                             fontSize,
+                            textAlign: activeToolOptions.textAlign || 'left',
                             fill,
                             ...textStrokeOptions,
                             ...textBackgroundOptions,
@@ -1956,6 +1958,7 @@
                                 top: pointer.y,
                                 fontFamily,
                                 fontSize,
+                                textAlign: activeToolOptions.textAlign || 'left',
                                 fill,
                                 ...textStrokeOptions,
                                 ...textBackgroundOptions,
@@ -1979,6 +1982,7 @@
                                 top: pointer.y,
                                 fontFamily,
                                 fontSize,
+                                textAlign: activeToolOptions.textAlign || 'left',
                                 fill,
                                 ...textStrokeOptions,
                                 ...textBackgroundOptions,
@@ -2089,6 +2093,7 @@
                         options: {
                             family: (active as any).fontFamily,
                             size: (active as any).fontSize,
+                            textAlign: (active as any).textAlign || 'left',
                             fill: active.fill,
                             stroke: active.stroke || activeToolOptions.stroke || '#ffffff',
                             strokeWidth: normalizeTextStrokeWidth(
@@ -2271,6 +2276,7 @@
                         options: {
                             family: (representativeObject as any).fontFamily,
                             size: getTextDisplayFontSize(representativeObject),
+                            textAlign: (representativeObject as any).textAlign || 'left',
                             fill: fillVal,
                             stroke: representativeObject.stroke || activeToolOptions.stroke || '#ffffff',
                             strokeWidth: normalizeTextStrokeWidth(
@@ -3060,6 +3066,7 @@
             activeToolOptions.family =
                 activeToolOptions.family || activeToolOptions.fontFamily || 'Microsoft Yahei';
             activeToolOptions.size = activeToolOptions.size || activeToolOptions.fontSize || 24;
+            activeToolOptions.textAlign = activeToolOptions.textAlign || 'left';
             activeToolOptions.fill = activeToolOptions.fill || '#000000';
             activeToolOptions.stroke = activeToolOptions.stroke || '#ffffff';
             activeToolOptions.strokeWidth = normalizeTextStrokeWidth(
@@ -5517,6 +5524,11 @@
                             strokeLineJoin: 'round',
                             strokeMiterLimit: 2,
                         });
+
+                        // Alignment applies to the whole text box, including while editing.
+                        if (typeof options.textAlign !== 'undefined') {
+                            o.set('textAlign', options.textAlign);
+                        }
 
                         if ((o as any).isEditing) {
                             // Apply to selected text range
