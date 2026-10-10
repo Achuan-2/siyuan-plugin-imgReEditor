@@ -4412,20 +4412,6 @@
         canvas.requestRenderAll();
     };
 
-    const handleZoom1to1 = () => {
-        if (!canvas || !canvas.backgroundImage) return;
-        const bg = canvas.backgroundImage;
-        const bounds = getVisualBounds(bg);
-        if (!bounds) return;
-        const cw = canvas.getWidth();
-        const ch = canvas.getHeight();
-        const tx = cw / 2 - bounds.centerX;
-        const ty = ch / 2 - bounds.centerY;
-        canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
-        updateZoomDisplay();
-        canvas.requestRenderAll();
-    };
-
     export function fitImageToViewport() {
         if (!canvas) return;
 
@@ -6972,7 +6958,6 @@
     <div class="zoom-controls">
         <div class="zoom-info">{zoomDisplay}</div>
         <button on:click={() => handleZoom(1)} title={t('editor.zoomIn')}>+</button>
-        <button on:click={() => handleZoom1to1()} title="1:1">1:1</button>
         <button on:click={() => fitImageToViewport()} title={t('editor.fit')}>Fit</button>
         <button on:click={() => handleZoom(-1)} title={t('editor.zoomOut')}>-</button>
     </div>
