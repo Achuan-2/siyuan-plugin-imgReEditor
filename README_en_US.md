@@ -47,14 +47,8 @@ pnpm run dev
 -   Developed based on the [plugin-sample-vite-svelte](https://github.com/siyuan-note/plugin-sample-vite-svelte/) template.
 -   Referenced the Fabric arrow drawing and shape control implementation from [oyjt/interactive-whiteboard](https://github.com/oyjt/interactive-whiteboard).
 
-## ❤️ Powered by Passion
+## ❤️ Tips Are Welcome
 
-If you like my plugin, feel free to give a star on the GitHub repository or send a WeChat appreciation. This will motivate me to continue improving this plugin and developing new ones.
+If you find this plugin useful, you're welcome to leave a tip or give the repository a star on GitHub. Your support helps me maintain and improve this plugin and develop new ones. Thank you for your support!
 
-Maintaining plugins is time-consuming and effort-intensive. Personal time and energy are limited. Open source is about sharing, not about me wasting my time implementing features for users for free.
-
-I will gradually improve features *I* need (appreciations can nudge me along). Some features I think could be improved but aren't currently necessary will require an appreciation to implement (marked with a "sponsor" tag and required amount). Features I don't need or that are very troublesome to implement will have their issues closed and won't be considered.
-
-Friends who have accumulated appreciations totaling 50 RMB and wish to add me on WeChat can send an email to <span data-type="a" data-href="mailto:achuan-2@outlook.com">achuan-2@outlook.com</span> to request a friend add (I will not reply to emails or add friends from those whose appreciations do not reach 50 RMB, as I do not wish to be a free customer service representative).
-
-<img alt="image" src="https://fastly.jsdelivr.net/gh/Achuan-2/PicBed/assets/20241128221208-2024-11-28.png" />
+[Leave a tip](https://pancake.waffo.ai/store/achuan-2-fdbho4ye/product/PROD_3F7Aa7c2NQlz9KmxcgxjQ7?type=onetime&currency=USD)
