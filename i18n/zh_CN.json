@@ -180,7 +180,13 @@
         "captureFailed": "截取屏幕失败",
         "copySuccess": "文件已保存到历史并复制到剪贴板",
         "saveAsSuccess": "另存为成功",
-        "history": "截图历史"
+        "history": "截图历史",
+        "selection": {
+            "defaultHint": "默认全屏，直接回车确认；拖拽可重新框选；按 R / Shift+R 回顾历史范围；按 ， / 。 回顾历史截图",
+            "rangeHint": "R 回顾更早的框选范围；Shift+R 返回更新的范围；回车确认当前范围；拖拽可微调",
+            "historyHint": "回车复用当前历史截图；按 。 返回更新的截图；拖拽任意位置回到实时截图重新框选",
+            "rangeLabel": "范围"
+        }
     },
     "common": {
         "copy": "复制",

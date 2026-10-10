@@ -1,6 +1,7 @@
 import { Plugin } from "siyuan";
 import { getFileBlob, pushErrMsg, readDir, removeFile, pushMsg, putFile } from "./api";
 import { confirm } from "siyuan";
+import { t } from './utils/i18n';
 import {
     Dialog,
 } from "siyuan";
@@ -272,7 +273,19 @@ export class ScreenshotManager {
         return this.selectionWin;
     }
 
+    private getSelectionWindowTexts() {
+        return {
+            defaultHint: t('screenshot.selection.defaultHint'),
+            rangeHint: t('screenshot.selection.rangeHint'),
+            historyHint: t('screenshot.selection.historyHint'),
+            historyLabel: t('common.history'),
+            rangeLabel: t('screenshot.selection.rangeLabel'),
+        };
+    }
+
     private getSelectionWindowContent(): string {
+        // The selection window is a separate renderer; pass localized text as safe script data.
+        const selectionTexts = JSON.stringify(this.getSelectionWindowTexts()).replace(/</g, '\\u003c');
         return `
             <html>
             <head>
@@ -398,10 +411,11 @@ export class ScreenshotManager {
                     <div class="resize-handle edge vertical handle-w"></div>
                 </div>
                 <div id="info"></div>
-                <div class="hint" id="hint">默认全屏，直接回车确认；拖拽可重新框选；按 R / Shift+R 回顾历史范围；按 ， / 。 回顾历史截图</div>
+                <div class="hint" id="hint"></div>
                 <div class="history-badge" id="history-badge"></div>
                 <div class="range-badge" id="range-badge"></div>
                 <script>
+                    let selectionTexts = ${selectionTexts};
                     const { ipcRenderer } = require('electron');
                     const fs = require('fs');
                     const selection = document.getElementById('selection');
@@ -426,6 +440,7 @@ export class ScreenshotManager {
                     function setHintText(text) {
                         if (hint) hint.textContent = text;
                     }
+                    setHintText(selectionTexts.defaultHint);
 
                     function updateHistoryBadge() {
                         if (!historyBadge) return;
@@ -435,7 +450,7 @@ export class ScreenshotManager {
                         }
                         const item = historyEntries[historyCursor];
                         historyBadge.style.display = 'block';
-                        historyBadge.textContent = '历史 ' + (historyCursor + 1) + '/' + historyEntries.length + '  ' + item.name;
+                        historyBadge.textContent = selectionTexts.historyLabel + ' ' + (historyCursor + 1) + '/' + historyEntries.length + '  ' + item.name;
                     }
 
                     function updateRangeBadge() {
@@ -446,7 +461,7 @@ export class ScreenshotManager {
                         }
                         const item = rangeEntries[rangeCursor];
                         rangeBadge.style.display = 'block';
-                        rangeBadge.textContent = '范围 ' + (rangeCursor + 1) + '/' + rangeEntries.length + '  ' + Math.round(item.width * window.innerWidth) + ' x ' + Math.round(item.height * window.innerHeight);
+                        rangeBadge.textContent = selectionTexts.rangeLabel + ' ' + (rangeCursor + 1) + '/' + rangeEntries.length + '  ' + Math.round(item.width * window.innerWidth) + ' x ' + Math.round(item.height * window.innerHeight);
                     }
 
                     function clearRangePreview() {
@@ -490,7 +505,7 @@ export class ScreenshotManager {
                         historyCursor = -1;
                         background.src = liveDataURL || '';
                         updateHistoryBadge();
-                        setHintText('默认全屏，直接回车确认；拖拽可重新框选；按 R / Shift+R 回顾历史范围；按 ， / 。 回顾历史截图');
+                        setHintText(selectionTexts.defaultHint);
                         if (resetSelection) {
                             resetState();
                         }
@@ -533,7 +548,7 @@ export class ScreenshotManager {
                         const height = Math.max(10, Math.min(window.innerHeight - top, Math.round(item.height * window.innerHeight)));
                         applySelectionRect(left, top, width, height);
                         updateRangeBadge();
-                        setHintText('R 回顾更早的框选范围；Shift+R 返回更新的范围；回车确认当前范围；拖拽可微调');
+                        setHintText(selectionTexts.rangeHint);
                     }
 
                     function previewHistory(index) {
@@ -549,11 +564,12 @@ export class ScreenshotManager {
                         clearRangePreview();
                         applyNormalizedRect(item.normalizedRect);
                         updateHistoryBadge();
-                        setHintText('回车复用当前历史截图；按 。 返回更新的截图；拖拽任意位置回到实时截图重新框选');
+                        setHintText(selectionTexts.historyHint);
                     }
 
                     ipcRenderer.on('imgreeditor-selection-init', (_e, payload) => {
                         if (!payload) return;
+                        if (payload.selectionTexts) selectionTexts = payload.selectionTexts;
                         currentSessionId = payload.sessionId || '';
                         liveDataURL = payload.dataURL || '';
                         historyEntries = Array.isArray(payload.historyEntries) ? payload.historyEntries : [];
@@ -983,6 +999,7 @@ export class ScreenshotManager {
                         return;
                     }
                     win.webContents.send('imgreeditor-selection-init', {
+                        selectionTexts: this.getSelectionWindowTexts(),
                         sessionId,
                         dataURL,
                         historyEntries,

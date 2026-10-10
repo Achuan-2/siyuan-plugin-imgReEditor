@@ -180,7 +180,13 @@
         "captureFailed": "Failed to capture screen",
         "copySuccess": "Saved to history and copied to clipboard.",
         "saveAsSuccess": "Image saved as a new file.",
-        "history": "Screenshot History"
+        "history": "Screenshot History",
+        "selection": {
+            "defaultHint": "Full screen by default. Press Enter to confirm; drag to select an area. R / Shift+R: previous / next saved area. , / .: previous / next screenshot.",
+            "rangeHint": "R: older saved area. Shift+R: newer saved area. Enter: confirm this area. Drag to adjust.",
+            "historyHint": "Press Enter to reuse this screenshot; press . for a newer screenshot. Drag anywhere to return to the current capture and select an area.",
+            "rangeLabel": "Area"
+        }
     },
     "common": {
         "copy": "Copy",
