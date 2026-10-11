@@ -3,7 +3,8 @@ import {
     Dialog,
     Menu,
     confirm,
-    openTab
+    openTab,
+    showMessage
 } from "siyuan";
 import "@/index.scss";
 
@@ -237,6 +238,9 @@ export default class PluginSample extends Plugin {
     private screenshotCommandRegistered = false;
     private stopObservingAssetUploads: (() => void) | null = null;
     private automaticCompressionQueue: Promise<void> = Promise.resolve();
+    private assetCompressionTask: Promise<void> | null = null;
+    private assetCompressionController: AbortController | null = null;
+    private assetCompressionStatus: HTMLElement | null = null;
 
     private async resolveDocumentID(blockID?: string | null) {
         if (!blockID) return '';
@@ -357,6 +361,10 @@ export default class PluginSample extends Plugin {
         // 加载设置
         this.settings = await this.loadSettings();
 
+        this.assetCompressionStatus = document.createElement('span');
+        this.assetCompressionStatus.className = 'fn__none';
+        this.addStatusBar({ element: this.assetCompressionStatus });
+
         // 监听图片菜单打开事件, 在右键图片菜单中加入 编辑 菜单项
         this._openMenuImageHandler = this.openMenuImageHandler.bind(this);
         this.eventBus.on('open-menu-image', this._openMenuImageHandler);
@@ -467,6 +475,9 @@ export default class PluginSample extends Plugin {
     }
 
     async onunload() {
+        this.assetCompressionController?.abort();
+        this.assetCompressionStatus?.remove();
+        this.assetCompressionStatus = null;
         // 移除所有已注册的事件监听
         try {
             this.teardownNetworkInterceptors();
@@ -677,12 +688,13 @@ export default class PluginSample extends Plugin {
         return detail?.data?.rootID || detail?.data?.id || detail?.protyle?.block?.rootID || detail?.protyle?.block?.id || '';
     }
 
-    private async listCompressibleAssetImages(): Promise<AssetImageEntry[]> {
+    private async listCompressibleAssetImages(signal?: AbortSignal): Promise<AssetImageEntry[]> {
         const { readDir } = await import('./api');
         const directories = ['data/assets'];
         const images: AssetImageEntry[] = [];
 
         while (directories.length > 0) {
+            if (signal?.aborted) break;
             const directory = directories.shift()!;
             const entries = await readDir(directory);
             if (!Array.isArray(entries)) {
@@ -726,15 +738,82 @@ export default class PluginSample extends Plugin {
         };
     }
 
+    /** Start a plugin-owned task so closing settings does not stop compression. */
+    startAssetImageCompression(): void {
+        if (this.assetCompressionTask) {
+            showMessage(t('settings.compressAllAssets.alreadyRunning'));
+            return;
+        }
+
+        const controller = new AbortController();
+        this.assetCompressionController = controller;
+        const updateStatus = (message: string, title: string = message) => {
+            if (!this.assetCompressionStatus || controller.signal.aborted) return;
+            this.assetCompressionStatus.textContent = message;
+            this.assetCompressionStatus.title = title;
+            this.assetCompressionStatus.classList.remove('fn__none');
+        };
+        updateStatus(t('settings.compressAllAssets.scanning'));
+        showMessage(t('settings.compressAllAssets.backgroundStarted'));
+
+        this.assetCompressionTask = (async () => {
+            try {
+                const { pushMsg, pushErrMsg } = await import('./api');
+                const result = await this.compressAllAssetImages(({ current, total, fileName }) => {
+                    updateStatus(
+                        t('settings.compressAllAssets.progress', {
+                            current: String(current), total: String(total),
+                        }),
+                        t('settings.compressAllAssets.processing', {
+                            current: String(current), total: String(total), fileName,
+                        })
+                    );
+                }, controller.signal);
+                if (controller.signal.aborted) return;
+                if (result.total === 0) {
+                    await pushMsg(t('settings.compressAllAssets.empty'));
+                    return;
+                }
+                const savedText = result.compressed > 0
+                    ? t('settings.compressAllAssets.savedSpace', {
+                        size: formatBytes(Math.max(0, result.originalSize - result.savedSize)),
+                    }) : '';
+                const summary = t('settings.compressAllAssets.summary', {
+                    compressed: String(result.compressed), remembered: String(result.remembered),
+                    notSmaller: String(result.notSmaller), failed: String(result.failed),
+                    sourceChanged: String(result.sourceChanged), savedText,
+                });
+                await (result.failed > 0 ? pushErrMsg(summary, 10000) : pushMsg(summary, 10000));
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    console.error('Background asset compression failed:', error);
+                    const { pushErrMsg } = await import('./api');
+                    await pushErrMsg(t('common.errorWithDetail', {
+                        message: t('settings.compressAllAssets.failed'),
+                        error: String(error?.message || error),
+                    }), 10000);
+                }
+            } finally {
+                this.assetCompressionStatus?.classList.add('fn__none');
+                this.assetCompressionController = null;
+                this.assetCompressionTask = null;
+            }
+        })().catch(error => {
+            console.error('Failed to report background asset compression result:', error);
+        });
+    }
+
     /**
      * Recursively compress PNG/JPG/WebP files in data/assets in place.
      * Files keep their extensions so document references never need to be rewritten.
      */
     async compressAllAssetImages(
-        onProgress?: (progress: { current: number; total: number; fileName: string }) => void
+        onProgress?: (progress: { current: number; total: number; fileName: string }) => void,
+        signal?: AbortSignal
     ) {
         const { getFileBlob, putFile } = await import('./api');
-        const images = await this.listCompressibleAssetImages();
+        const compressionSettings = { ...this.settings };
+        const images = await this.listCompressibleAssetImages(signal);
         const history = await this.loadAssetCompressionHistory();
         const currentPaths = new Set(images.map(image => image.path));
         const historyEntries = Object.fromEntries(
@@ -747,6 +826,7 @@ export default class PluginSample extends Plugin {
             remembered: 0,
             notSmaller: 0,
             failed: 0,
+            sourceChanged: 0,
             originalSize: 0,
             savedSize: 0,
         };
@@ -761,6 +841,9 @@ export default class PluginSample extends Plugin {
         };
 
         for (let index = 0; index < images.length; index++) {
+            // Give note input/rendering a turn between files, including remembered ones.
+            await new Promise<void>(resolve => setTimeout(resolve, 0));
+            if (signal?.aborted) return stats;
             const image = images[index];
             const fileName = image.path.split('/').pop() || image.path;
             onProgress?.({ current: index + 1, total: images.length, fileName });
@@ -772,7 +855,7 @@ export default class PluginSample extends Plugin {
                     continue;
                 }
 
-                const profile = getAssetCompressionProfile(this.settings, image.format);
+                const profile = getAssetCompressionProfile(compressionSettings, image.format);
                 const sourceFingerprint = await getBlobFingerprint(sourceBlob);
                 const previous = historyEntries[image.path];
                 if (
@@ -787,7 +870,7 @@ export default class PluginSample extends Plugin {
                     sourceBlob,
                     image.format,
                     image.format,
-                    getFormatCompressionOptions(this.settings, image.format)
+                    getFormatCompressionOptions(compressionSettings, image.format)
                 );
 
                 if (!compressedBlob || compressedBlob.size === 0) {
@@ -800,6 +883,12 @@ export default class PluginSample extends Plugin {
                         type: getMimeByFormat(image.format),
                     });
                     const compressedFingerprint = await getBlobFingerprint(compressedBlob);
+                    const currentBlob = await getFileBlob(image.path);
+                    if (!currentBlob || (await getBlobFingerprint(currentBlob)) !== sourceFingerprint) {
+                        stats.sourceChanged += 1;
+                        continue;
+                    }
+                    if (signal?.aborted) return stats;
                     await putFile(image.path, false, file);
 
                     const savedBlob = await getFileBlob(image.path);
@@ -838,6 +927,7 @@ export default class PluginSample extends Plugin {
             }
         }
 
+        if (signal?.aborted) return stats;
         await saveHistory();
 
         if (changedAssetPaths.size > 0) {
@@ -1106,7 +1196,7 @@ export default class PluginSample extends Plugin {
         }
     }
 
-    /** 压缩或转换图片 Blob，并在 PNG/WebP 中保留编辑器工程数据。 */
+    /** 保留并验证编辑器工程数据；任何失败都向调用方抛出，阻止覆盖源文件。 */
     private async compressImageBlob(
         blob: Blob,
         sourceFormat: CompressibleImageFormat,
@@ -1116,32 +1206,34 @@ export default class PluginSample extends Plugin {
     ): Promise<Blob> {
         const effectiveOptions =
             options || getFormatCompressionOptions(this.settings, outputFormat);
-        let compressedBlob = await reencodeImageBlob(blob, outputFormat, effectiveOptions);
-
-        try {
+        let metadata = metadataOverride ?? null;
+        if (metadata === null && (sourceFormat === 'png' || sourceFormat === 'webp')) {
             const originalBuffer = new Uint8Array(await blob.arrayBuffer());
-            let metadata = metadataOverride || null;
-            if (!metadata && sourceFormat === 'png' && locatePNGtEXt(originalBuffer)) {
-                metadata = readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY);
-            } else if (!metadata && sourceFormat === 'webp') {
-                metadata = readWebPMetadata(originalBuffer, EDITOR_METADATA_KEY);
-            }
-
-            if (metadata && (outputFormat === 'png' || outputFormat === 'webp')) {
-                const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
-                const newBuffer =
-                    outputFormat === 'webp'
-                        ? insertWebPMetadata(compressedBuffer, EDITOR_METADATA_KEY, metadata)
-                        : insertPNGTextChunk(compressedBuffer, EDITOR_METADATA_KEY, metadata);
-                compressedBlob = new Blob([newBuffer as any], {
-                    type: getMimeByFormat(outputFormat),
-                });
-            }
-        } catch (error) {
-            console.warn('Failed to preserve editor metadata during image compression', error);
+            metadata = sourceFormat === 'png'
+                ? locatePNGtEXt(originalBuffer)
+                    ? readPNGTextChunk(originalBuffer, EDITOR_METADATA_KEY)
+                    : null
+                : readWebPMetadata(originalBuffer, EDITOR_METADATA_KEY);
         }
 
-        return compressedBlob;
+        const compressedBlob = await reencodeImageBlob(blob, outputFormat, effectiveOptions);
+        if (metadata === null) return compressedBlob;
+        if (outputFormat !== 'png' && outputFormat !== 'webp') {
+            throw new Error('Output format cannot preserve editor metadata');
+        }
+
+        const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
+        const newBuffer = outputFormat === 'webp'
+            ? insertWebPMetadata(compressedBuffer, EDITOR_METADATA_KEY, metadata)
+            : insertPNGTextChunk(compressedBuffer, EDITOR_METADATA_KEY, metadata);
+        const preservedMetadata = outputFormat === 'webp'
+            ? readWebPMetadata(newBuffer, EDITOR_METADATA_KEY)
+            : readPNGTextChunk(newBuffer, EDITOR_METADATA_KEY);
+        // Compare the full stored text, including canvasJSON and backup pointers.
+        if (preservedMetadata !== metadata) {
+            throw new Error('Editor metadata verification failed; keeping the original image');
+        }
+        return new Blob([newBuffer as any], { type: getMimeByFormat(outputFormat) });
     }
 
     async openEditorTitleIconHandler({ detail }) {

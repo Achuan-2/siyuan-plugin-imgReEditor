@@ -38,6 +38,10 @@
     import initControlsRotate from './custom/initControlsRotate';
     import { pushErrMsg } from '../../api';
     import { generateId } from '../../utils/uuid';
+    import {
+        applyRectangleCornerRadius,
+        getRectangleCornerRadiusPercent,
+    } from './rectangleCornerRadius';
 
     // Register custom properties globally on FabricObject so they are serialized and deserialized
     (FabricObject as any).customProperties = [
@@ -61,6 +65,7 @@
         '_borderShadowColor',
         '_borderShadowOpacity',
         '_cornerRadius',
+        '_rectCornerRadiusPercent',
         '_isCanvasBackground',
         '_textAutoWidth',
         'lockMovementX',
@@ -156,6 +161,7 @@
         '_borderShadowColor',
         '_borderShadowOpacity',
         '_cornerRadius',
+        '_rectCornerRadiusPercent',
         '_isCanvasBackground',
         '_textAutoWidth',
         'lockMovementX',
@@ -348,11 +354,6 @@
             return { r, g, b };
         }
         return null;
-    }
-
-    function normalizeRectangleCornerRadius(value: any): number {
-        const radius = Number(value);
-        return Number.isFinite(radius) ? Math.max(0, radius) : 0;
     }
 
     function colorWithOpacity(color: string | null | undefined, opacity: number | undefined) {
@@ -1274,6 +1275,7 @@
         canvas.on('before:transform', (opt: any) => {
             const transform = opt?.transform;
             const target = transform?.target;
+            if (target?.type === 'rect') applyRectangleCornerRadius(target);
             if (!isTextObject(target) || !transform?.corner || transform.corner === 'mtr') return;
 
             const baseMode = getTextResizeMode();
@@ -1309,6 +1311,7 @@
         canvas.on('object:modified', (opt: any) => {
             const target = opt.target;
             if (target && (target as any)._isCanvasBackground) return;
+            if (target?.type === 'rect') applyRectangleCornerRadius(target);
             if (isTextObject(target)) {
                 const resizeResult = finishTextResize(target);
                 if (resizeResult) {
@@ -1590,14 +1593,11 @@
                           : 0
                 );
                 if (shapeType === 'rect') {
-                    const cornerRadius = normalizeRectangleCornerRadius(activeToolOptions.cornerRadius);
                     tempShape = new Rect({
                         left: pointer.x,
                         top: pointer.y,
                         width: 0,
                         height: 0,
-                        rx: cornerRadius,
-                        ry: cornerRadius,
                         fill:
                             typeof computedFill !== 'undefined' && computedFill !== null
                                 ? computedFill
@@ -1611,6 +1611,7 @@
                         erasable: true,
                         strokeUniform: true, // 控制边框是否随大小放大加粗
                     });
+                    applyRectangleCornerRadius(tempShape, activeToolOptions.cornerRadiusPercent ?? 0);
                 } else {
                     // use ellipse for circle-like drawing
                     tempShape = new Ellipse({
@@ -2095,7 +2096,9 @@
                             fillOpacity: fp,
                             ...(active.type === 'rect'
                                 ? {
-                                      cornerRadius: normalizeRectangleCornerRadius((active as Rect).rx),
+                                      cornerRadiusPercent: getRectangleCornerRadiusPercent(
+                                          active as Rect
+                                      ),
                                   }
                                 : {}),
                         },
@@ -2209,8 +2212,8 @@
                             fillOpacity: fp,
                             ...(targetType === 'rect'
                                 ? {
-                                      cornerRadius: normalizeRectangleCornerRadius(
-                                          (representativeObject as Rect).rx
+                                      cornerRadiusPercent: getRectangleCornerRadiusPercent(
+                                          representativeObject as Rect
                                       ),
                                   }
                                 : {}),
@@ -2461,6 +2464,8 @@
             const target = opt.target;
             if (target && target.type === 'image') {
                 applyImageCornerRadius(target, (target as any)._cornerRadius || 0);
+            } else if (target?.type === 'rect') {
+                applyRectangleCornerRadius(target);
             } else if (isTextObject(target)) {
                 // Update size in the tool options for real-time UI feel
                 if (activeTool === 'text') {
@@ -2769,6 +2774,7 @@
                 const top = dy < 0 ? sy - height : sy;
                 if (tempShape.type === 'rect') {
                     tempShape.set({ left, top, width, height });
+                    applyRectangleCornerRadius(tempShape);
                 } else if (tempShape.type === 'ellipse') {
                     tempShape.set({ left, top, rx: width / 2, ry: height / 2 });
                 }
@@ -5633,9 +5639,8 @@
                         o.setCoords && o.setCoords();
                     } else {
                         // shapes and other objects
-                        if (o.type === 'rect' && typeof options.cornerRadius !== 'undefined') {
-                            const radius = normalizeRectangleCornerRadius(options.cornerRadius);
-                            o.set({ rx: radius, ry: radius });
+                        if (o.type === 'rect' && typeof options.cornerRadiusPercent !== 'undefined') {
+                            applyRectangleCornerRadius(o, options.cornerRadiusPercent);
                         }
                         if (typeof options.stroke !== 'undefined') o.set('stroke', options.stroke);
                         if (typeof options.strokeWidth !== 'undefined')

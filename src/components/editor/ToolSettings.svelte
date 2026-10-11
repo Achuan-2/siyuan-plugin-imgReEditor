@@ -21,6 +21,12 @@
         return (e.target as HTMLInputElement).checked;
     }
 
+    const textAlignmentOptions = [
+        { value: 'left', label: 'editor.alignLeft', path: 'M3 5H21 M3 10H15 M3 15H21 M3 20H15' },
+        { value: 'center', label: 'editor.textAlignCenter', path: 'M3 5H21 M6 10H18 M3 15H21 M6 20H18' },
+        { value: 'right', label: 'editor.alignRight', path: 'M3 5H21 M9 10H21 M3 15H21 M9 20H21' },
+    ];
+
     // font list state
     let fonts: { family: string; fullName: string }[] = [];
     let loadingFonts = true;
@@ -305,12 +311,13 @@
                     id="rect-corner-radius"
                     type="number"
                     min="0"
+                    max="100"
                     step="1"
-                    value={settings.cornerRadius ?? 0}
-                    on:input={e => emitChange({ cornerRadius: Math.max(0, +getValue(e)) })}
+                    value={Math.round(settings.cornerRadiusPercent ?? 0)}
+                    on:input={e => emitChange({ cornerRadiusPercent: Math.min(100, Math.max(0, +getValue(e))) })}
                     style="width: 72px;"
                 />
-                <span class="val">px</span>
+                <span class="val">%</span>
             </div>
         {/if}
         <div class="row">
@@ -564,17 +571,26 @@
             </select>
         </div>
         <div class="hint">{t('editor.textResizeHint')}</div>
-        <div class="row">
-            <label for="text-align">{t('editor.textAlign')}</label>
-            <select
-                id="text-align"
-                value={settings.textAlign || 'left'}
-                on:change={e => emitChange({ textAlign: getValue(e) })}
-            >
-                <option value="left">{t('editor.alignLeft')}</option>
-                <option value="center">{t('editor.textAlignCenter')}</option>
-                <option value="right">{t('editor.alignRight')}</option>
-            </select>
+        <div class="row text-align-row">
+            <span class="label" id="text-align-label">{t('editor.textAlign')}</span>
+            <div class="text-align-buttons" role="group" aria-labelledby="text-align-label">
+                {#each textAlignmentOptions as alignment (alignment.value)}
+                    <button
+                        type="button"
+                        class="icon-btn text-align-btn"
+                        class:active={(settings.textAlign || 'left') === alignment.value}
+                        aria-pressed={(settings.textAlign || 'left') === alignment.value}
+                        aria-label={t(alignment.label)}
+                        title={t(alignment.label)}
+                        on:mousedown={e => e.preventDefault()}
+                        on:click={() => emitChange({ textAlign: alignment.value })}
+                    >
+                        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                            <path d={alignment.path} />
+                        </svg>
+                    </button>
+                {/each}
+            </div>
         </div>
         <div class="row">
             <span class="label">{t('editor.style')}</span>
@@ -1781,6 +1797,27 @@
         fill: none;
         stroke: currentColor;
         stroke-width: 1;
+    }
+    .text-align-row > .label {
+        flex: 0 0 var(--label-w);
+    }
+    .text-align-buttons {
+        display: flex;
+        gap: 4px;
+    }
+    .icon-btn.text-align-btn {
+        width: 32px;
+        height: 30px;
+        padding: 4px;
+        flex-shrink: 0;
+        border-radius: 4px;
+    }
+    .text-align-btn svg {
+        stroke-width: 1.8;
+    }
+    .text-align-btn:focus-visible {
+        outline: 2px solid var(--b3-theme-primary, #1976d2);
+        outline-offset: 2px;
     }
     button.active {
         background: var(--b3-theme-primary-lightest, #e3f2fd);

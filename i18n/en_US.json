@@ -65,16 +65,19 @@
         },
         "compressAllAssets": {
             "title": "Compress all asset images",
-            "description": "Recursively compress PNG, JPG/JPEG and WebP images in data/assets. Preserve formats, filenames and note references even when WebP conversion is enabled. Skip unchanged images already processed with the same settings.",
+            "description": "Compress PNG, JPG/JPEG and WebP images in data/assets in the background. Close settings and keep editing notes. Preserve formats, filenames, note references and project data. Skip unchanged images already processed with the same settings.",
             "label": "Compress all images",
             "confirmMessage": "Overwrite compressible images in data/assets using the current PNG, JPG/JPEG and WebP settings. Formats and filenames are preserved to keep note references valid. Continue?",
             "dialogTitle": "Compress asset images",
             "scanning": "Scanning asset images...",
+            "backgroundStarted": "Asset compression is running in the background. Close settings and keep editing notes; progress appears in the status bar.",
+            "alreadyRunning": "Asset compression is already running in the background.",
+            "progress": "Image compression ${current}/${total}",
             "unsupported": "This plugin instance does not support batch compression.",
             "empty": "No compressible PNG, JPG/JPEG or WebP images found in assets.",
             "processing": "Processing ${current}/${total}: ${fileName}",
             "savedSpace": ", saved ${size}",
-            "summary": "Asset compression complete: ${compressed} compressed, ${remembered} previously processed, ${notSmaller} kept unchanged, ${failed} failed${savedText}",
+            "summary": "Asset compression complete: ${compressed} compressed, ${remembered} previously processed, ${notSmaller} kept unchanged, ${sourceChanged} skipped after file changes, ${failed} failed${savedText}",
             "failed": "Failed to compress asset images"
         },
         "enableScreenshot": {

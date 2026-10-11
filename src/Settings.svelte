@@ -19,12 +19,6 @@
         }
     };
 
-    function formatBytes(bytes: number) {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-    }
-
     // 使用动态默认设置
     let settings = { ...getDefaultSettings() };
 
@@ -279,84 +273,8 @@
                             confirm(
                                 t('settings.compressAllAssets.title'),
                                 t('settings.compressAllAssets.confirmMessage'),
-                                async () => {
-                                    let loadingDialog: any = null;
-                                    let loadingComponent: any = null;
-                                    try {
-                                        loadingDialog = new Dialog({
-                                            title: t('settings.compressAllAssets.dialogTitle'),
-                                            content: `<div id="loadingDialogContent"></div>`,
-                                            width: '360px',
-                                            height: '170px',
-                                            disableClose: true,
-                                        });
-                                        loadingComponent = new LoadingDialog({
-                                            target: loadingDialog.element.querySelector(
-                                                '#loadingDialogContent'
-                                            ),
-                                            props: { message: t('settings.compressAllAssets.scanning') },
-                                        });
-
-                                        if (
-                                            typeof plugin.compressAllAssetImages !== 'function'
-                                        ) {
-                                            throw new Error(t('settings.compressAllAssets.unsupported'));
-                                        }
-
-                                        const result = await plugin.compressAllAssetImages(
-                                            ({ current, total, fileName }) => {
-                                                loadingComponent?.$set({
-                                                    message: t('settings.compressAllAssets.processing', {
-                                                        current: String(current),
-                                                        total: String(total),
-                                                        fileName,
-                                                    }),
-                                                });
-                                            }
-                                        );
-
-                                        if (result.total === 0) {
-                                            await pushMsg(
-                                                t('settings.compressAllAssets.empty')
-                                            );
-                                            return;
-                                        }
-
-                                        const savedBytes = Math.max(
-                                            0,
-                                            result.originalSize - result.savedSize
-                                        );
-                                        const savedText =
-                                            result.compressed > 0
-                                                ? t('settings.compressAllAssets.savedSpace', { size: formatBytes(savedBytes) })
-                                                : '';
-                                        const summary =
-                                            t('settings.compressAllAssets.summary', {
-                                                compressed: String(result.compressed),
-                                                remembered: String(result.remembered),
-                                                notSmaller: String(result.notSmaller),
-                                                failed: String(result.failed),
-                                                savedText,
-                                            });
-
-                                        if (result.failed > 0) {
-                                            await pushErrMsg(summary, 10000);
-                                        } else {
-                                            await pushMsg(summary, 10000);
-                                        }
-                                    } catch (err) {
-                                        console.error('Compress all assets failed:', err);
-                                        await pushErrMsg(
-                                            t('common.errorWithDetail', {
-                                                message: t('settings.compressAllAssets.failed'),
-                                                error: String(err?.message || err),
-                                            }),
-                                            10000
-                                        );
-                                    } finally {
-                                        loadingComponent?.$destroy();
-                                        loadingDialog?.destroy();
-                                    }
+                                () => {
+                                    plugin.startAssetImageCompression();
                                 },
                                 () => {}
                             );

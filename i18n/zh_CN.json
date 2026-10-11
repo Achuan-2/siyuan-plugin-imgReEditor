@@ -65,16 +65,19 @@
         },
         "compressAllAssets": {
             "title": "压缩 assets 全部图片",
-            "description": "递归压缩 data/assets 中的 PNG、JPG/JPEG、WebP 图片。即使开启 WebP 转换，也会保留原格式、文件名和笔记引用；未修改且已按相同参数处理的图片会自动跳过。",
+            "description": "在后台递归压缩 data/assets 中的 PNG、JPG/JPEG、WebP 图片，可关闭设置继续编辑笔记。保留原格式、文件名、笔记引用和编辑数据；未修改且已按相同参数处理的图片会自动跳过。",
             "label": "压缩全部图片",
             "confirmMessage": "将按当前 PNG、JPG/JPEG、WebP 压缩参数覆盖 data/assets 中可压缩的原文件。为避免笔记引用失效，此入口不会转换格式，并会保留原文件名。确认继续吗？",
             "dialogTitle": "压缩 assets 图片",
             "scanning": "正在扫描 assets 图片...",
+            "backgroundStarted": "已开始在后台压缩 assets 图片，可关闭设置继续编辑笔记；进度显示在状态栏。",
+            "alreadyRunning": "assets 图片正在后台压缩，请勿重复启动。",
+            "progress": "图片压缩 ${current}/${total}",
             "unsupported": "当前插件实例不支持批量压缩",
             "empty": "assets 中没有可压缩的 PNG、JPG/JPEG、WebP 图片",
             "processing": "正在处理 ${current}/${total}：${fileName}",
             "savedSpace": "，节省 ${size}",
-            "summary": "assets 图片压缩完成：压缩 ${compressed} 张，记忆跳过 ${remembered} 张，无需覆盖 ${notSmaller} 张，失败 ${failed} 张${savedText}",
+            "summary": "assets 图片压缩完成：压缩 ${compressed} 张，记忆跳过 ${remembered} 张，无需覆盖 ${notSmaller} 张，文件变动跳过 ${sourceChanged} 张，失败 ${failed} 张${savedText}",
             "failed": "压缩 assets 图片失败"
         },
         "enableScreenshot": {
