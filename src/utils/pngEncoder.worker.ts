@@ -19,7 +19,7 @@ workerScope.onmessage = async (event: MessageEvent<PNGEncodeRequest>) => {
             const colors = Math.max(2, Math.min(256, Math.round(request.quality * 256)));
             const quantized = UPNG.encode([request.buffer], request.width, request.height, colors);
             try {
-                encoded = await optimizePNGData(quantized, { level: 2 });
+                encoded = await optimizePNGData(quantized, { level: 2, ...request.options });
             } catch {
                 // Quantization succeeded; lossless post-optimization is optional.
                 encoded = new Uint8Array(quantized);

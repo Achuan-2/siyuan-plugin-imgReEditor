@@ -91,6 +91,22 @@ test('lossless compression failures keep the PNG without main-thread encoding', 
     assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless' }), input);
 });
 
+test('PNG effort selects a faster lossless search without changing quality or retaining larger output', async () => {
+    const calls = [];
+    const small = new Blob(['small'], { type: 'image/png' });
+    let result = small;
+    const utils = evaluate(compile('src/utils/index.ts'), {
+        './webpEncoder.worker?worker&inline': {},
+        './pngEncoder': { optimizePNGBlob: async (_input, options) => { calls.push(options); return result; } },
+    });
+    const input = new Blob(['large original PNG'], { type: 'image/png' });
+    assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless', effort: 'fast' }), small);
+    assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless' }), small);
+    assert.deepEqual(calls.map(options => options.level), [0, 2]);
+    result = new Blob([new Uint8Array(input.size + 1)], { type: 'image/png' });
+    assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless', effort: 'fast' }), input);
+});
+
 test('real PNG worker preserves pixels and keeps the main-thread timer responsive', async context => {
     const modules = {
         './oxipng': compile('src/utils/oxipng.ts'),
@@ -128,9 +144,14 @@ test('real PNG worker preserves pixels and keeps the main-thread timer responsiv
     nodeWorker.on('error', error => { for (const pending of responses.values()) pending.reject(error); });
     const request = data => new Promise((resolve, reject) => {
         responses.set(data.id, { resolve, reject });
-        nodeWorker.postMessage(data, [data.buffer]);
+        nodeWorker.postMessage(data, data.buffer ? [data.buffer] : []);
     });
     try {
+        // Exclude Worker startup/WASM initialization from the effort comparison.
+        await request({ id: 0, type: 'init' });
+        const warmup = UPNG.encode([new Uint8Array(32 * 24 * 4).fill(255).buffer], 32, 24, 0);
+        await request({ id: 4, type: 'optimize', buffer: warmup, options: { level: 2 } });
+        heartbeats = 0;
         const width = 1024, height = 768;
         const pixels = new Uint8Array(width * height * 4);
         let seed = 42;
@@ -143,7 +164,7 @@ test('real PNG worker preserves pixels and keeps the main-thread timer responsiv
         }
         const input = UPNG.encode([pixels.buffer], width, height, 0);
         const begin = performance.now();
-        const result = await request({ id: 1, type: 'optimize', buffer: input, options: { level: 2, optimiseAlpha: true } });
+        const result = await request({ id: 1, type: 'optimize', buffer: input.slice(0), options: { level: 2, optimiseAlpha: true } });
         const elapsed = performance.now() - begin;
         const decoded = UPNG.decode(result);
         assert.equal(decoded.width, width);
@@ -151,6 +172,12 @@ test('real PNG worker preserves pixels and keeps the main-thread timer responsiv
         assert.deepEqual(new Uint8Array(UPNG.toRGBA8(decoded)[0]), pixels);
         assert.ok(heartbeats > 0, 'The timer must fire while the worker is processing');
         context.diagnostic(`1024×768 lossless PNG: ${elapsed.toFixed(0)} ms; 10 ms timer fired ${heartbeats} times during worker processing`);
+        const fastBegin = performance.now();
+        const fast = await request({ id: 3, type: 'optimize', buffer: input.slice(0), options: { level: 0, optimiseAlpha: true } });
+        const fastElapsed = performance.now() - fastBegin;
+        assert.deepEqual(new Uint8Array(UPNG.toRGBA8(UPNG.decode(fast))[0]), pixels);
+        context.diagnostic(`Same fixture, fast PNG: ${fastElapsed.toFixed(0)} ms vs balanced ${elapsed.toFixed(0)} ms; ` +
+            `sizes ${fast.byteLength} vs ${result.byteLength} bytes. Startup excluded; encoding time, not SiYuan save time.`);
         const smallPixels = new Uint8Array(32 * 24 * 4).fill(255);
         const quantized = await request({ id: 2, type: 'quantize', buffer: smallPixels.buffer, width: 32, height: 24, quality: 0.92 });
         assert.equal(UPNG.decode(quantized).width, 32);

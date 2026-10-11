@@ -6,7 +6,7 @@ export type { OxipngOptions } from './oxipng';
 export type PNGEncodeRequest =
     | { id: number; type: 'init' }
     | { id: number; type: 'optimize'; buffer: ArrayBuffer; options: OxipngOptions }
-    | { id: number; type: 'quantize'; buffer: ArrayBuffer; width: number; height: number; quality: number };
+    | { id: number; type: 'quantize'; buffer: ArrayBuffer; width: number; height: number; quality: number; options?: OxipngOptions };
 
 interface PNGEncodeResponse {
     id: number;
@@ -93,11 +93,11 @@ export async function optimizePNGBlob(blob: Blob, options: OxipngOptions = {}): 
     return new Blob([encoded as BlobPart], { type: 'image/png' });
 }
 
-export async function quantizePNG(imageData: ImageData, quality: number): Promise<Blob> {
+export async function quantizePNG(imageData: ImageData, quality: number, options: OxipngOptions = {}): Promise<Blob> {
     const buffer = imageData.data.buffer as ArrayBuffer;
     const encoded = requirePNGData(await requestEncoding({
         id: nextRequestID++, type: 'quantize', buffer,
-        width: imageData.width, height: imageData.height, quality,
+        width: imageData.width, height: imageData.height, quality, options,
     }));
     return new Blob([encoded as BlobPart], { type: 'image/png' });
 }

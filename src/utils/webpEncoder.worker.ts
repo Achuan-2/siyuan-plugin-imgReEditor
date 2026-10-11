@@ -9,6 +9,7 @@ interface WebPEncodeRequest {
     width: number;
     height: number;
     quality: number;
+    effort?: 'fast' | 'balanced';
 }
 
 interface WebPEncodeSuccess {
@@ -33,7 +34,7 @@ function getEncoderModule(): Promise<WebPModule> {
 const workerScope = self as unknown as Worker;
 
 workerScope.onmessage = async (event: MessageEvent<WebPEncodeRequest>) => {
-    const { id, pixels, width, height, quality } = event.data;
+    const { id, pixels, width, height, quality, effort } = event.data;
 
     try {
         const encoder = await getEncoderModule();
@@ -46,9 +47,8 @@ workerScope.onmessage = async (event: MessageEvent<WebPEncodeRequest>) => {
                 ...defaultWebPOptions,
                 lossless: isLossless ? 1 : 0,
                 quality: isLossless ? 100 : Math.min(100, Math.max(0, quality * 100)),
-                // method 6 only saves around 1% for ordinary photos but can take
-                // several times longer. method 4 is libwebp's balanced default.
-                method: 4,
+                // Interactive saves favor speed; batch compression keeps method 4.
+                method: effort === 'fast' ? 1 : 4,
                 exact: isLossless ? 1 : 0,
                 near_lossless: 100,
                 alpha_quality: 100,

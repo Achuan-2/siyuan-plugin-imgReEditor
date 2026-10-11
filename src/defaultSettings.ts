@@ -6,6 +6,7 @@ export const getDefaultSettings = () => ({
     recentColors: {} as Record<string, string[]>,
     // Last used tool settings, keyed by tool name
     enableImageCompression: true,
+    saveCompressionSpeed: 'fast' as 'fast' | 'balanced',
     pngCompressionMode: 'lossless' as 'lossless' | 'lossy',
     pngQuality: 92,
     jpegQuality: 92,

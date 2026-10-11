@@ -42,6 +42,39 @@
         applyRectangleCornerRadius,
         getRectangleCornerRadiusPercent,
     } from './rectangleCornerRadius';
+    import {
+        applyTextShadow,
+        getTextShadowOptions,
+        hasTextShadowOption,
+        normalizeTextShadowOptions,
+    } from './textStylePresets';
+    import { getTextBackgroundRadiusPercent, getTextBackgroundPixelRadius } from './textBackgroundRadius';
+    import {
+        applyImageCornerRadius, getImageCornerRadiusPercent,
+        getImageBorderSourceSize, getImageBorderRadiusOptions,
+        cornerRadiusPercentToPixels, cornerRadiusPixelsToPercent,
+    } from './imageCornerRadius';
+    import { createMaterialSnapshot, restoreMaterialObjects, walkMaterialObjects } from './materialObjects';
+    import type { MaterialSnapshot } from './materialLibrary';
+    import { hasTextRange, getTextSelectionOptions, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer } from './textRangeStyles';
+    import { createSelectionTracker, getSelectionType, getSelectionTool } from './selectionSettings';
+
+    const selectionTracker = createSelectionTracker();
+    let refreshSelectionHandler: (() => void) | null = null;
+
+    function dispatchSelection(detail: any) {
+        const objects = (canvas?.getActiveObjects() || []).filter((object: any) => !object._isCanvasBackground);
+        const metadata = selectionTracker.update(objects);
+        dispatch('selection', {
+            ...detail,
+            ...metadata,
+            options: detail.options ? { ...detail.options, ...metadata } : null,
+        });
+    }
+
+    export function refreshSelectionSettings() {
+        refreshSelectionHandler?.();
+    }
 
     // Register custom properties globally on FabricObject so they are serialized and deserialized
     (FabricObject as any).customProperties = [
@@ -58,13 +91,16 @@
         '_appliedMargin',
         '_unborderedSrc',
         '_outerRadius',
+        '_outerRadiusPercent',
         '_borderEnabled',
         '_borderFill',
         '_borderRadius',
+        '_borderRadiusPercent',
         '_borderShadowBlur',
         '_borderShadowColor',
         '_borderShadowOpacity',
         '_cornerRadius',
+        '_imageCornerRadiusPercent',
         '_rectCornerRadiusPercent',
         '_isCanvasBackground',
         '_textAutoWidth',
@@ -78,6 +114,7 @@
         'textBackgroundFill',
         'textBackgroundOpacity',
         'textBackgroundRadius',
+        'textBackgroundRadiusPercent',
         'textBackgroundPadding',
         'textBackgroundStrokeEnabled',
         'textBackgroundStrokeWidth',
@@ -154,13 +191,16 @@
         '_appliedMargin',
         '_unborderedSrc',
         '_outerRadius',
+        '_outerRadiusPercent',
         '_borderEnabled',
         '_borderFill',
         '_borderRadius',
+        '_borderRadiusPercent',
         '_borderShadowBlur',
         '_borderShadowColor',
         '_borderShadowOpacity',
         '_cornerRadius',
+        '_imageCornerRadiusPercent',
         '_rectCornerRadiusPercent',
         '_isCanvasBackground',
         '_textAutoWidth',
@@ -174,6 +214,7 @@
         'textBackgroundFill',
         'textBackgroundOpacity',
         'textBackgroundRadius',
+        'textBackgroundRadiusPercent',
         'textBackgroundPadding',
         'textBackgroundStrokeEnabled',
         'textBackgroundStroke',
@@ -258,6 +299,9 @@
                 } else {
                     obj.selectable = true;
                     obj.evented = true;
+                    if (obj.type === 'image' && (obj._cornerRadius !== undefined || obj._imageCornerRadiusPercent !== undefined)) {
+                        applyImageCornerRadius(obj);
+                    }
                     // Ensure text objects only scale proportionally and have correct effective font size
                     if (isTextObject(obj)) {
                         obj.set('lockUniScaling', true);
@@ -289,6 +333,7 @@
                     }
                 }
                 obj.setCoords();
+                if (obj.type === 'group') applyTextBackgroundRenderer(obj);
             });
             if (canvas.backgroundImage) {
                 canvas.backgroundImage.setCoords();
@@ -587,6 +632,7 @@
         'textBackgroundFill',
         'textBackgroundOpacity',
         'textBackgroundRadius',
+        'textBackgroundRadiusPercent',
         'textBackgroundPadding',
         'textBackgroundStrokeEnabled',
         'textBackgroundStroke',
@@ -609,6 +655,7 @@
             textBackgroundFill: options.textBackgroundFill || '#ffffff',
             textBackgroundOpacity: clampNumber(options.textBackgroundOpacity, 0.8, 0, 1),
             textBackgroundRadius: clampNumber(options.textBackgroundRadius, 4, 0, 120),
+            textBackgroundRadiusPercent: getTextBackgroundRadiusPercent(options),
             textBackgroundPadding: clampNumber(options.textBackgroundPadding, 6, 0, 120),
             textBackgroundStrokeEnabled: !!options.textBackgroundStrokeEnabled,
             textBackgroundStroke:
@@ -666,11 +713,12 @@
         const rectTop = -height / 2 - padding;
         const rectWidth = width + padding * 2;
         const rectHeight = height + padding * 2;
+        const radius = getTextBackgroundPixelRadius({ ...opts, width, height });
         const fill = colorWithOpacity(opts.textBackgroundFill, opts.textBackgroundOpacity);
 
         ctx.save();
         if (!isTransparentColor(fill)) {
-            drawRoundRectPath(ctx, rectLeft, rectTop, rectWidth, rectHeight, opts.textBackgroundRadius);
+            drawRoundRectPath(ctx, rectLeft, rectTop, rectWidth, rectHeight, radius);
             ctx.fillStyle = fill as string;
             ctx.fill();
         }
@@ -682,7 +730,7 @@
                 rectTop + 0.5,
                 rectWidth - 1,
                 rectHeight - 1,
-                opts.textBackgroundRadius
+                radius
             );
             ctx.strokeStyle = opts.textBackgroundStroke;
             ctx.lineWidth = 1;
@@ -692,7 +740,12 @@
     }
 
     function applyTextBackgroundRenderer(textObj: any) {
+        if (textObj?.getObjects) {
+            textObj.getObjects().forEach(applyTextBackgroundRenderer);
+            return;
+        }
         if (!textObj || !['i-text', 'textbox', 'text'].includes(textObj.type)) return;
+        installTextRangeRenderer(textObj);
 
         if (!textObj.__imgReEditorOriginalRender && typeof textObj._render === 'function') {
             textObj.__imgReEditorOriginalRender = textObj._render;
@@ -712,6 +765,11 @@
 
     function applyTextRenderingOptions(textObj: any) {
         if (!textObj || !['i-text', 'textbox', 'text'].includes(textObj.type)) return;
+        // Convert old pixel radii once geometry exists, preserving the current shape.
+        const backgroundRadiusPercent = getTextBackgroundRadiusPercent(textObj);
+        if (backgroundRadiusPercent !== undefined) {
+            textObj.set('textBackgroundRadiusPercent', backgroundRadiusPercent);
+        }
         textObj.set(
             getTextStrokeOptions(textObj.stroke, textObj.strokeWidth, textObj.fontSize, '#ffffff')
         );
@@ -794,7 +852,9 @@
                 json.backgroundImage._borderEnabled = actual?._borderEnabled ?? bg._borderEnabled;
                 json.backgroundImage._borderFill = actual?._borderFill ?? bg._borderFill;
                 json.backgroundImage._borderRadius = actual?._borderRadius ?? bg._borderRadius;
+                json.backgroundImage._borderRadiusPercent = actual?._borderRadiusPercent ?? bg._borderRadiusPercent;
                 json.backgroundImage._outerRadius = actual?._outerRadius ?? bg._outerRadius;
+                json.backgroundImage._outerRadiusPercent = actual?._outerRadiusPercent ?? bg._outerRadiusPercent;
                 json.backgroundImage._borderShadowBlur =
                     actual?._borderShadowBlur ?? bg._borderShadowBlur;
                 json.backgroundImage._borderShadowColor =
@@ -1027,6 +1087,7 @@
                         (o as any)._cropOffset = data._cropOffset;
                     }
 
+                    applyTextBackgroundRenderer(o);
                     canvas.add(o);
                     added.push(o);
                 });
@@ -1126,7 +1187,7 @@
             selection: true,
             preserveObjectStacking: true,
             renderOnAddRemove: true,
-            selectionKey: 'ctrlKey',
+            selectionKey: ['shiftKey', 'ctrlKey', 'metaKey'],
             backgroundColor: 'transparent',
             fireRightClick: true,
             stopContextMenu: true,
@@ -1276,6 +1337,7 @@
             const transform = opt?.transform;
             const target = transform?.target;
             if (target?.type === 'rect') applyRectangleCornerRadius(target);
+            if (target?.type === 'image') applyImageCornerRadius(target);
             if (!isTextObject(target) || !transform?.corner || transform.corner === 'mtr') return;
 
             const baseMode = getTextResizeMode();
@@ -1298,7 +1360,8 @@
         // takes over.
         canvas.on('text:changed', (opt: any) => {
             const target = opt?.target;
-            if (!target || target.type !== 'textbox') return;
+            if (!isTextObject(target)) return;
+            applyTextRenderingOptions(target);
             autoResizeTextObject(target);
             canvas?.requestRenderAll();
         });
@@ -1312,6 +1375,7 @@
             const target = opt.target;
             if (target && (target as any)._isCanvasBackground) return;
             if (target?.type === 'rect') applyRectangleCornerRadius(target);
+            if (target?.type === 'image') applyImageCornerRadius(target);
             if (isTextObject(target)) {
                 const resizeResult = finishTextResize(target);
                 if (resizeResult) {
@@ -1473,11 +1537,12 @@
                 }
             }
 
-            // ignore when typing in input or textarea
+            // Keep native form controls separate from canvas shortcuts.
             if (
                 el &&
                 (el.tagName === 'INPUT' ||
                     el.tagName === 'TEXTAREA' ||
+                    el.tagName === 'SELECT' ||
                     (el as any).isContentEditable)
             )
                 return;
@@ -1539,6 +1604,11 @@
             }
 
             const pointer = canvas.getPointer(opt.e);
+
+            // Fabric has already toggled the clicked object in the selection.
+            // Keep drawing-tool handlers from replacing it with a single object.
+            // Empty-space Shift drawing and Shift text selection remain available.
+            if (opt.e.shiftKey && opt.target?.selectable && !opt.target.isEditing) return;
 
             // If shape tool active, start drawing on mouse down
             if (activeTool === 'shape') {
@@ -1908,6 +1978,7 @@
                                       )
                                     : activeToolOptions.strokeWidth;
                             Object.assign(activeToolOptions, getTextBackgroundOptions(hit));
+                            Object.assign(activeToolOptions, getTextShadowOptions(hit));
                             applyTextRenderingOptions(hit);
                             canvas.requestRenderAll();
                         } catch (e) {
@@ -2019,6 +2090,7 @@
                     }
 
                     canvas.add(itext);
+                    applyTextShadow(itext, activeToolOptions);
                     applyTextRenderingOptions(itext);
                     autoResizeTextObject(itext);
                     canvas.setActiveObject(itext);
@@ -2057,7 +2129,7 @@
                 }
 
                 if (!active) {
-                    dispatch('selection', { options: null });
+                    dispatchSelection({ options: null });
                     return;
                 }
                 // When shape tool is active, only allow selecting shape objects
@@ -2067,7 +2139,7 @@
                         canvas.discardActiveObject();
                         canvas.requestRenderAll();
                     } catch (e) {}
-                    dispatch('selection', { options: null });
+                    dispatchSelection({ options: null });
                     return;
                 }
 
@@ -2088,7 +2160,7 @@
                             fillVal = '#' + new Color(fillVal).toHex();
                         } catch (e) {}
                     }
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             stroke: active.stroke,
                             strokeWidth: active.strokeWidth,
@@ -2105,7 +2177,7 @@
                         type: active.type,
                     });
                 } else if (['i-text', 'textbox', 'text'].includes(active.type)) {
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             family: (active as any).fontFamily,
                             size: (active as any).fontSize,
@@ -2117,6 +2189,11 @@
                                 (active as any).fontSize
                             ),
                             ...getTextBackgroundOptions(active),
+                            ...getTextShadowOptions(active),
+                            bold: (active as any).fontWeight === 'bold',
+                            italic: (active as any).fontStyle === 'italic',
+                            underline: !!(active as any).underline,
+                            ...getTextSelectionOptions(active),
                             textResizeMode: getTextResizeMode(),
                             textResizeModeVersion: activeToolOptions.textResizeModeVersion,
                         },
@@ -2132,7 +2209,7 @@
                             fillVal = '#' + new Color(fillVal).toHex();
                         } catch (e) {}
                     }
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             fill: fillVal,
                             count: (active as any).count,
@@ -2140,7 +2217,7 @@
                         type: 'number-marker',
                     });
                 } else {
-                    dispatch('selection', { options: null, type: active.type });
+                    dispatchSelection({ options: null, type: active.type });
                 }
             } catch (e) {}
         };
@@ -2167,24 +2244,26 @@
                 }
 
                 if (!active) {
-                    dispatch('selection', { options: null, type: null });
-                    return;
-                }
-
-                if (active.type === 'activeSelection') {
-                    dispatch('selection', {
-                        options: {
-                            isSelection: false,
-                            isMixedSelection: true, // Treat all multi-selection as mixed for simplicity in UI
-                            selectionType: null,
-                        },
-                        type: 'activeSelection',
-                    });
+                    dispatchSelection({ options: null, type: null });
                     return;
                 }
 
                 let targetType = active.type;
                 let representativeObject = active;
+
+                if (active.type.toLowerCase() === 'activeselection') {
+                    const objects = active.getObjects();
+                    const selectionType = getSelectionType(objects[0]);
+                    if (!getSelectionTool(selectionType) || !objects.every(object => getSelectionType(object) === selectionType)) {
+                        dispatchSelection({
+                            options: { isSelection: false, isMixedSelection: true, selectionType: null },
+                            type: 'activeSelection',
+                        });
+                        return;
+                    }
+                    representativeObject = objects[0];
+                    targetType = selectionType;
+                }
 
                 const allowedShapeTypes = ['rect', 'ellipse', 'circle'];
                 if (allowedShapeTypes.includes(targetType) || targetType === 'path') {
@@ -2204,7 +2283,7 @@
                             fillVal = '#' + new Color(fillVal).toHex();
                         } catch (e) {}
                     }
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             stroke: representativeObject.stroke,
                             strokeWidth: representativeObject.strokeWidth,
@@ -2227,7 +2306,7 @@
                     (targetType === 'line' && (representativeObject as any).arrowHead)
                 ) {
                     // Custom Arrow class (extends Line with arrowHead property)
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             stroke: representativeObject.stroke,
                             strokeWidth: Math.round(
@@ -2267,7 +2346,7 @@
                                 const dot = hdx * dx + hdy * dy;
                                 arrowHead = dot > 0 ? 'right' : 'left';
                             }
-                            dispatch('selection', {
+                            dispatchSelection({
                                 options: {
                                     stroke: line.stroke,
                                     strokeWidth: line.strokeWidth,
@@ -2280,7 +2359,7 @@
                             return;
                         }
                     } catch (e) {}
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             isSelection: false,
                             isMixedSelection: true,
@@ -2295,7 +2374,7 @@
                             fillVal = '#' + new Color(fillVal).toHex();
                         } catch (e) {}
                     }
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             family: (representativeObject as any).fontFamily,
                             size: getTextDisplayFontSize(representativeObject),
@@ -2307,9 +2386,11 @@
                                 (representativeObject as any).fontSize
                             ),
                             ...getTextBackgroundOptions(representativeObject),
+                            ...getTextShadowOptions(representativeObject),
                             bold: (representativeObject as any).fontWeight === 'bold',
                             italic: (representativeObject as any).fontStyle === 'italic',
                             underline: !!(representativeObject as any).underline,
+                            ...getTextSelectionOptions(representativeObject),
                             textResizeMode: getTextResizeMode(),
                             textResizeModeVersion: activeToolOptions.textResizeModeVersion,
                             isSelection: true,
@@ -2324,7 +2405,7 @@
                             fillVal = '#' + new Color(fillVal).toHex();
                         } catch (e) {}
                     }
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             fill: fillVal,
                             count: (representativeObject as any).count,
@@ -2336,7 +2417,7 @@
                         type: 'number-marker',
                     });
                 } else if (targetType === 'mosaic-rect') {
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             blockSize: (representativeObject as any).blockSize || 15,
                             isSelection: true,
@@ -2375,7 +2456,7 @@
                         }
                     }
 
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             magnification: (representativeObject as any).magnification || 2,
                             stroke: representativeObject.stroke,
@@ -2425,24 +2506,24 @@
                             options.strokeWidth = viewObj.strokeWidth;
                         }
                     }
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: options,
                         type: 'magnifier-rect', // Treat as magnifier-rect for settings UI
                     });
                 } else if (targetType === 'image') {
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             width: Math.round(representativeObject.getScaledWidth()),
                             height: Math.round(representativeObject.getScaledHeight()),
                             lockAspectRatio: (representativeObject as any).lockUniScaling !== false,
-                            cornerRadius: (representativeObject as any)._cornerRadius || 0,
+                            cornerRadiusPercent: getImageCornerRadiusPercent(representativeObject),
                             isSelection: true,
                             selectionType: 'image',
                         },
                         type: 'image',
                     });
                 } else {
-                    dispatch('selection', {
+                    dispatchSelection({
                         // For unknown types or unhandled activeSelection/groups, do NOT enable selection settings
                         options: { isSelection: false, selectionType: null },
                         type: targetType,
@@ -2458,12 +2539,14 @@
         canvas.on('selection:created', handleSelectionChangeWithType);
         canvas.on('selection:updated', handleSelectionChangeWithType);
         canvas.on('selection:cleared', handleSelectionChangeWithType);
+        canvas.on('text:selection:changed', handleSelectionChangeWithType);
+        refreshSelectionHandler = handleSelectionChangeWithType;
 
         // Real-time font size calculation during scaling
         canvas.on('object:scaling', (opt: any) => {
             const target = opt.target;
             if (target && target.type === 'image') {
-                applyImageCornerRadius(target, (target as any)._cornerRadius || 0);
+                applyImageCornerRadius(target);
             } else if (target?.type === 'rect') {
                 applyRectangleCornerRadius(target);
             } else if (isTextObject(target)) {
@@ -2472,7 +2555,7 @@
                     const effectiveSize = getTextDisplayFontSize(target);
                     activeToolOptions.size = effectiveSize;
                     // Only dispatch if necessary to avoid flooding
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: { ...activeToolOptions, size: effectiveSize },
                         type: target.type,
                     });
@@ -2483,7 +2566,7 @@
                     const effectiveSize = (target as any).getEffectiveFontSize();
                     activeToolOptions.fontSize = effectiveSize;
                     // Only dispatch if necessary to avoid flooding
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: { ...activeToolOptions, fontSize: effectiveSize },
                         type: target.type,
                     });
@@ -2508,7 +2591,7 @@
 
                             if (activeTool === 'magnifier') {
                                 activeToolOptions.magnification = newMag;
-                                dispatch('selection', {
+                                dispatchSelection({
                                     options: { ...activeToolOptions, magnification: newMag },
                                     type: target.type,
                                 });
@@ -2527,7 +2610,7 @@
             if (activeTool !== 'text' || !isTextObject(target)) return;
             const effectiveSize = getTextDisplayFontSize(target);
             activeToolOptions.size = effectiveSize;
-            dispatch('selection', {
+            dispatchSelection({
                 options: { ...activeToolOptions, size: effectiveSize },
                 type: target.type,
             });
@@ -2598,7 +2681,7 @@
                         obj.dirty = true;
 
                         // Update settings UI dynamically
-                        dispatch('selection', {
+                        dispatchSelection({
                             options: {
                                 ...activeToolOptions,
                                 magnification: finalMag,
@@ -2931,7 +3014,7 @@
 
                     // Manually dispatch selection to ensure UI gets correct initial settings
                     // This bypasses potential timing issues in the generic selection handler
-                    dispatch('selection', {
+                    dispatchSelection({
                         options: {
                             magnification: mag,
                             stroke: viewStroke,
@@ -3019,6 +3102,7 @@
     }
 
     onDestroy(() => {
+        refreshSelectionHandler = null;
         try {
             canvas?.dispose();
         } catch (e) {
@@ -3111,6 +3195,7 @@
                 activeToolOptions.textResizeMode
             );
             Object.assign(activeToolOptions, getTextBackgroundOptions(activeToolOptions));
+            Object.assign(activeToolOptions, normalizeTextShadowOptions(activeToolOptions));
             activeToolOptions.bold = !!activeToolOptions.bold;
             activeToolOptions.italic = !!activeToolOptions.italic;
             activeToolOptions.underline = !!activeToolOptions.underline;
@@ -3127,14 +3212,15 @@
             activeToolOptions.connectionStrokeWidth = activeToolOptions.connectionStrokeWidth ?? 1;
         }
         if (tool === 'image-border') {
+            const sourceSize = getImageBorderSourceSize(canvas?.backgroundImage);
             const opts = {
                 fill: options.fill || '#f3f4f6',
                 margin: options.margin ?? 40,
-                radius: options.radius ?? 12,
                 shadowBlur: options.shadowBlur ?? 20,
                 shadowColor: options.shadowColor || '#000000',
                 shadowOpacity: options.shadowOpacity ?? 0.2,
                 ...options,
+                ...getImageBorderRadiusOptions(options, sourceSize.width, sourceSize.height),
             };
             activeToolOptions = opts;
             // No await here to keep setTool sync, updateImageBorder handles its own async if needed
@@ -3785,7 +3871,7 @@
             originY: active.originY,
             element: active._element,
             cropOffset: { ...cropOffset },
-            cornerRadius: active._cornerRadius || 0,
+            cornerRadiusPercent: getImageCornerRadiusPercent(active),
         };
 
         // Load the original full image
@@ -4012,7 +4098,7 @@
                 scaleX: currentScaleX, // Restore the scale!
                 scaleY: currentScaleY,
             });
-            applyImageCornerRadius(newImg, imageCropBackup.cornerRadius || 0);
+            applyImageCornerRadius(newImg, imageCropBackup.cornerRadiusPercent ?? 0);
             newImg.setCoords();
 
             canvas.add(newImg);
@@ -4039,7 +4125,7 @@
             if (targetImageToCrop && imageCropBackup) {
                 applyImageCornerRadius(
                     targetImageToCrop,
-                    imageCropBackup.cornerRadius || 0
+                    imageCropBackup.cornerRadiusPercent ?? 0
                 );
                 canvas?.requestRenderAll();
             }
@@ -4063,7 +4149,7 @@
                 originY: imageCropBackup.originY,
             });
             targetImageToCrop.setElement(imageCropBackup.element);
-            applyImageCornerRadius(targetImageToCrop, imageCropBackup.cornerRadius || 0);
+            applyImageCornerRadius(targetImageToCrop, imageCropBackup.cornerRadiusPercent ?? 0);
             targetImageToCrop.setCoords();
         }
 
@@ -4534,8 +4620,6 @@
 
         const enabled = options.enabled !== false;
         const margin = enabled ? Number(options.margin ?? 40) : 0;
-        const radius = Number(options.radius ?? 0);
-        const outerRadius = Number(options.outerRadius ?? 0);
         const fill = options.fill ?? '#f3f4f6';
         const shadowBlur = Number(options.shadowBlur ?? 20);
         const shadowColor = options.shadowColor ?? '#000000';
@@ -4556,6 +4640,9 @@
         const sh = Math.round(br.height);
         const tw = sw + margin * 2;
         const th = sh + margin * 2;
+        const radiusOptions = getImageBorderRadiusOptions(options, sw, sh);
+        const radius = cornerRadiusPercentToPixels(radiusOptions.radiusPercent, sw, sh);
+        const outerRadius = cornerRadiusPercentToPixels(radiusOptions.outerRadiusPercent, tw, th);
 
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = tw;
@@ -4575,7 +4662,6 @@
             ctx.clip();
             applyFill(ctx, fill, tw, th);
             ctx.fillRect(0, 0, tw, th);
-            ctx.restore();
         } else {
             applyFill(ctx, fill, tw, th);
             ctx.fillRect(0, 0, tw, th);
@@ -4619,6 +4705,8 @@
         ctx.translate(-br.left, -br.top);
         mainImage.render(ctx);
         ctx.restore();
+        // The outer rounding clips the complete result, including image content and shadows.
+        if (outerRadius > 0) ctx.restore();
 
         // 3. Update Canvas
         const oldMargin = bg._appliedMargin || 0;
@@ -4654,9 +4742,11 @@
             ? mainImage.toDataURL()
             : mainImage.src;
         (newImg as any)._outerRadius = outerRadius;
+        (newImg as any)._outerRadiusPercent = radiusOptions.outerRadiusPercent;
         (newImg as any)._borderEnabled = enabled;
         (newImg as any)._borderFill = fill;
         (newImg as any)._borderRadius = radius;
+        (newImg as any)._borderRadiusPercent = radiusOptions.radiusPercent;
         (newImg as any)._borderShadowBlur = shadowBlur;
         (newImg as any)._borderShadowColor = shadowColor;
         (newImg as any)._borderShadowOpacity = shadowOpacity;
@@ -4711,7 +4801,9 @@
                 json.backgroundImage._borderEnabled = actual?._borderEnabled ?? bg._borderEnabled;
                 json.backgroundImage._borderFill = actual?._borderFill ?? bg._borderFill;
                 json.backgroundImage._borderRadius = actual?._borderRadius ?? bg._borderRadius;
+                json.backgroundImage._borderRadiusPercent = actual?._borderRadiusPercent ?? bg._borderRadiusPercent;
                 json.backgroundImage._outerRadius = actual?._outerRadius ?? bg._outerRadius;
+                json.backgroundImage._outerRadiusPercent = actual?._outerRadiusPercent ?? bg._outerRadiusPercent;
                 json.backgroundImage._borderShadowBlur =
                     actual?._borderShadowBlur ?? bg._borderShadowBlur;
                 json.backgroundImage._borderShadowColor =
@@ -4896,9 +4988,11 @@
                     actual._appliedMargin = json.backgroundImage._appliedMargin;
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
                     actual._outerRadius = json.backgroundImage._outerRadius;
+                    actual._outerRadiusPercent = json.backgroundImage._outerRadiusPercent;
                     actual._borderEnabled = json.backgroundImage._borderEnabled;
                     actual._borderFill = json.backgroundImage._borderFill;
                     actual._borderRadius = json.backgroundImage._borderRadius;
+                    actual._borderRadiusPercent = json.backgroundImage._borderRadiusPercent;
                     actual._borderShadowBlur = json.backgroundImage._borderShadowBlur;
                     actual._borderShadowColor = json.backgroundImage._borderShadowColor;
                     actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
@@ -4908,9 +5002,11 @@
                 bg._appliedMargin = json.backgroundImage._appliedMargin;
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;
                 bg._outerRadius = json.backgroundImage._outerRadius;
+                bg._outerRadiusPercent = json.backgroundImage._outerRadiusPercent;
                 bg._borderEnabled = json.backgroundImage._borderEnabled;
                 bg._borderFill = json.backgroundImage._borderFill;
                 bg._borderRadius = json.backgroundImage._borderRadius;
+                bg._borderRadiusPercent = json.backgroundImage._borderRadiusPercent;
                 bg._borderShadowBlur = json.backgroundImage._borderShadowBlur;
                 bg._borderShadowColor = json.backgroundImage._borderShadowColor;
                 bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
@@ -5031,9 +5127,11 @@
                     actual._appliedMargin = json.backgroundImage._appliedMargin;
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
                     actual._outerRadius = json.backgroundImage._outerRadius;
+                    actual._outerRadiusPercent = json.backgroundImage._outerRadiusPercent;
                     actual._borderEnabled = json.backgroundImage._borderEnabled;
                     actual._borderFill = json.backgroundImage._borderFill;
                     actual._borderRadius = json.backgroundImage._borderRadius;
+                    actual._borderRadiusPercent = json.backgroundImage._borderRadiusPercent;
                     actual._borderShadowBlur = json.backgroundImage._borderShadowBlur;
                     actual._borderShadowColor = json.backgroundImage._borderShadowColor;
                     actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
@@ -5043,9 +5141,11 @@
                 bg._appliedMargin = json.backgroundImage._appliedMargin;
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;
                 bg._outerRadius = json.backgroundImage._outerRadius;
+                bg._outerRadiusPercent = json.backgroundImage._outerRadiusPercent;
                 bg._borderEnabled = json.backgroundImage._borderEnabled;
                 bg._borderFill = json.backgroundImage._borderFill;
                 bg._borderRadius = json.backgroundImage._borderRadius;
+                bg._borderRadiusPercent = json.backgroundImage._borderRadiusPercent;
                 bg._borderShadowBlur = json.backgroundImage._borderShadowBlur;
                 bg._borderShadowColor = json.backgroundImage._borderShadowColor;
                 bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
@@ -5140,6 +5240,7 @@
         if (!canvas || !canvas.backgroundImage) return null;
         const bg = canvas.backgroundImage as any;
         if (bg._appliedMargin === undefined && bg._borderEnabled === undefined) return null;
+        const sourceSize = getImageBorderSourceSize(bg);
 
         return {
             enabled: bg._borderEnabled !== false,
@@ -5147,6 +5248,13 @@
             margin: bg._appliedMargin,
             radius: bg._borderRadius,
             outerRadius: bg._outerRadius,
+            ...getImageBorderRadiusOptions({
+                margin: bg._appliedMargin,
+                radius: bg._borderRadius ?? 0,
+                outerRadius: bg._outerRadius ?? 0,
+                radiusPercent: bg._borderRadiusPercent,
+                outerRadiusPercent: bg._outerRadiusPercent,
+            }, sourceSize.width, sourceSize.height),
             shadowBlur: bg._borderShadowBlur,
             shadowColor: bg._borderShadowColor,
             shadowOpacity: bg._borderShadowOpacity,
@@ -5207,7 +5315,7 @@
                     opts.width = Math.round(activeObject.getScaledWidth());
                     opts.height = Math.round(activeObject.getScaledHeight());
                     opts.lockAspectRatio = (activeObject as any).lockUniScaling;
-                    opts.cornerRadius = (activeObject as any)._cornerRadius || 0;
+                    opts.cornerRadiusPercent = getImageCornerRadiusPercent(activeObject);
                 }
             }
             return opts;
@@ -5563,8 +5671,17 @@
                         if (typeof options.textAlign !== 'undefined') {
                             o.set('textAlign', options.textAlign);
                         }
+                        const applyToRange = hasTextRange(o);
+                        if (hasTextShadowOption(options)) {
+                            const shadowOptions = { ...getTextShadowOptions(o), ...options };
+                            if (applyToRange) setRangeTextShadow(o, shadowOptions);
+                            else {
+                                clearRangeTextShadows(o);
+                                applyTextShadow(o, shadowOptions);
+                            }
+                        }
 
-                        if ((o as any).isEditing) {
+                        if (applyToRange) {
                             // Apply to selected text range
                             const styles: any = {};
                             if (typeof options.family !== 'undefined')
@@ -5577,7 +5694,10 @@
                                 styles.strokeWidth = textStrokeOptions.strokeWidth;
                             }
                             if (shouldUpdateBackground) {
-                                o.set(textBackgroundOptions);
+                                if (options.textStylePreset) {
+                                    styles.textBackgroundColor = textBackgroundOptions.textBackgroundEnabled
+                                        ? colorWithOpacity(textBackgroundOptions.textBackgroundFill, textBackgroundOptions.textBackgroundOpacity) : '';
+                                } else o.set(textBackgroundOptions);
                             }
                             if (typeof options.bold !== 'undefined')
                                 styles.fontWeight = options.bold ? 'bold' : 'normal';
@@ -5619,6 +5739,7 @@
                             }
                             if (shouldUpdateBackground) {
                                 o.set(textBackgroundOptions);
+                                if (options.textStylePreset) cleanStyle('textBackgroundColor');
                             }
                             if (typeof options.bold !== 'undefined') {
                                 o.set('fontWeight', options.bold ? 'bold' : 'normal');
@@ -5637,6 +5758,11 @@
                         autoResizeTextObject(o);
                         o.dirty = true;
                         o.setCoords && o.setCoords();
+                        if (o.isEditing) {
+                            o._updateTextarea?.();
+                            o.hiddenTextarea?.focus();
+                            o.initDelayedCursor?.();
+                        }
                     } else {
                         // shapes and other objects
                         if (o.type === 'rect' && typeof options.cornerRadiusPercent !== 'undefined') {
@@ -5742,6 +5868,7 @@
                                 const curH = o.getScaledHeight();
                                 const ratio = curW / curH;
                                 const lock = options.lockAspectRatio !== false;
+                                const cornerRadiusPercent = getImageCornerRadiusPercent(o);
 
                                 let newW =
                                     typeof options.width !== 'undefined' ? options.width : curW;
@@ -5767,14 +5894,14 @@
                                     scaleY: newH / (o.height || 1),
                                     lockUniScaling: lock,
                                 });
-                                applyImageCornerRadius(o, (o as any)._cornerRadius || 0);
+                                applyImageCornerRadius(o, cornerRadiusPercent);
                                 o.setCoords();
 
                                 // Update tool options to reflect new state
                                 activeToolOptions.width = Math.round(newW);
                                 activeToolOptions.height = Math.round(newH);
                                 setTimeout(() => {
-                                    dispatch('selection', {
+                                    dispatchSelection({
                                         options: { ...activeToolOptions },
                                         type: 'image',
                                     });
@@ -5784,115 +5911,81 @@
                                 o.set('lockAspectRatio', options.lockAspectRatio);
                                 o.set('lockUniScaling', options.lockAspectRatio);
                             }
-                            if (typeof options.cornerRadius !== 'undefined') {
-                                applyImageCornerRadius(o, options.cornerRadius);
-                                activeToolOptions.cornerRadius = (o as any)._cornerRadius;
+                            if (typeof options.cornerRadiusPercent !== 'undefined') {
+                                applyImageCornerRadius(o, options.cornerRadiusPercent);
+                                activeToolOptions.cornerRadiusPercent = getImageCornerRadiusPercent(o);
                             }
                         }
                     }
                     o.setCoords && o.setCoords();
                 } catch (e) {}
             });
+            const selection = canvas.getActiveObject?.();
+            if (selection?.type.toLowerCase() === 'activeselection') {
+                selection.triggerLayout?.();
+                selection.setCoords();
+            }
             canvas.requestRenderAll();
             // push to history (treat as modification)
             schedulePushWithType('modified');
         } catch (e) {}
     }
 
-    export function toDataURL(
-        options: { format?: string; quality?: number } = { format: 'png', quality: 1 }
-    ) {
+    function createExportCanvas(): HTMLCanvasElement | null {
         if (!canvas) return null;
-
         if (!isCanvasMode && !canvas.backgroundImage) return null;
-
         const bg = canvas.backgroundImage;
-
-        // Since we now use destructive cropping (baking),
-        // the backgroundImage on the canvas always represents the exact visible area.
-        // The complicated clipPath logic is no longer needed.
-
-        // Standard export logic follows:
-
-        // 1. Save current state
-        const currentVPT = canvas.viewportTransform ? ([...canvas.viewportTransform] as any) : null;
+        const boundary = canvas.getObjects().find((object: any) => object._isCanvasBackground);
+        const currentVPT = [...canvas.viewportTransform] as typeof canvas.viewportTransform;
         const currentW = canvas.getWidth();
         const currentH = canvas.getHeight();
-
+        const currentBgColor = canvas.backgroundColor;
+        const boundaryWasVisible = boundary?.visible;
+        const currentRetina = canvas.enableRetinaScaling;
+        const currentSkipControls = canvas.skipControlsDrawing;
         try {
-            // 1. Reset scale to 1:1 to measure natural size
+            // Render once into an independent canvas. Exporting must not resize
+            // the editor's DOM canvas or redraw the live view several times.
             canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            canvas.renderAll(); // Ensure coords are updated
-
-            let imgW, imgH, tx, ty;
-
-            if (isCanvasMode && !bg) {
-                // Export based on the boundary rectangle (project size)
-                const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
-                if (boundary) {
-                    imgW = boundary.width;
-                    imgH = boundary.height;
-                    tx = -boundary.left;
-                    ty = -boundary.top;
-                } else {
-                    imgW = canvas.getWidth();
-                    imgH = canvas.getHeight();
-                    tx = 0;
-                    ty = 0;
-                }
-            } else {
-                // 2. Measure background at 100% scale
-                let exportRect = bg.getBoundingRect();
-
-                imgW = exportRect.width;
-                imgH = exportRect.height;
-
-                // 4. Align image/border to top-left (0,0) of the export canvas
-                tx = -exportRect.left;
-                ty = -exportRect.top;
+            const bounds = bg ? bg.getBoundingRect() : {
+                left: boundary?.left || 0, top: boundary?.top || 0,
+                width: boundary?.width || currentW, height: boundary?.height || currentH,
+            };
+            if (boundary) {
+                boundary.set('visible', false);
+                if (boundary.fill) canvas.backgroundColor = boundary.fill;
             }
-
-            // 3. Resize canvas to fit full image
-            canvas.setDimensions({ width: imgW, height: imgH });
-
-            canvas.setViewportTransform([1, 0, 0, 1, tx, ty]);
-
-            // Temporarily hide boundary rectangle for export
-            const boundaryRect = canvas.getObjects().find((o: any) => o._isCanvasBackground);
-            const boundaryWasVisible = boundaryRect?.visible;
-            if (boundaryRect) {
-                boundaryRect.set('visible', false);
-            }
-
-            // Set background color to boundary fill to avoid transparent blanks
-            const currentBgColor = canvas.backgroundColor;
-            if (boundaryRect && boundaryRect.fill) {
-                canvas.backgroundColor = boundaryRect.fill;
-            }
-
-            canvas.renderAll();
-
-            // 5. Export
-            const result = canvas.toDataURL({
-                format: options.format as any,
-                quality: options.quality,
-                multiplier: isCanvasMode ? 3 : 1,
-                enableRetinaScaling: false,
+            return canvas.toCanvasElement(isCanvasMode ? 3 : 1, {
+                left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height,
             });
-
-            // Restore boundary visibility and background color
-            if (boundaryRect && boundaryWasVisible) {
-                boundaryRect.set('visible', true);
-            }
-            canvas.backgroundColor = currentBgColor;
-
-            return result;
         } finally {
-            // Restore state
-            canvas.setDimensions({ width: currentW, height: currentH });
-            if (currentVPT) (canvas as any).setViewportTransform(currentVPT);
-            canvas.renderAll();
+            // Also restore Fabric's temporary render state if rendering throws.
+            if (boundary) boundary.set('visible', boundaryWasVisible);
+            canvas.backgroundColor = currentBgColor;
+            canvas.width = currentW;
+            canvas.height = currentH;
+            canvas.enableRetinaScaling = currentRetina;
+            canvas.skipControlsDrawing = currentSkipControls;
+            canvas.setViewportTransform(currentVPT);
         }
+    }
+
+    export function toDataURL(options: { format?: string; quality?: number } = {}) {
+        const rendered = createExportCanvas();
+        if (!rendered) return null;
+        try {
+            return rendered.toDataURL(`image/${options.format || 'png'}`, options.quality ?? 1);
+        } finally { rendered.width = rendered.height = 0; }
+    }
+
+    export async function toBlob(options: { format?: string; quality?: number } = {}): Promise<Blob | null> {
+        const rendered = createExportCanvas();
+        if (!rendered) return null;
+        try {
+            return await new Promise<Blob | null>(resolve => {
+                rendered.toBlob(resolve, `image/${options.format || 'png'}`, options.quality ?? 1);
+            });
+        } finally { rendered.width = rendered.height = 0; }
     }
 
     export async function toJSON() {
@@ -5974,9 +6067,11 @@
             json.backgroundImage._appliedMargin = bg._appliedMargin;
             json.backgroundImage._unborderedSrc = bg._unborderedSrc;
             json.backgroundImage._outerRadius = bg._outerRadius;
+            json.backgroundImage._outerRadiusPercent = bg._outerRadiusPercent;
             json.backgroundImage._borderEnabled = bg._borderEnabled;
             json.backgroundImage._borderFill = bg._borderFill;
             json.backgroundImage._borderRadius = bg._borderRadius;
+            json.backgroundImage._borderRadiusPercent = bg._borderRadiusPercent;
             json.backgroundImage._borderShadowBlur = bg._borderShadowBlur;
             json.backgroundImage._borderShadowColor = bg._borderShadowColor;
             json.backgroundImage._borderShadowOpacity = bg._borderShadowOpacity;
@@ -6091,9 +6186,11 @@
                     actual._appliedMargin = json.backgroundImage._appliedMargin;
                     actual._unborderedSrc = json.backgroundImage._unborderedSrc;
                     actual._outerRadius = json.backgroundImage._outerRadius;
+                    actual._outerRadiusPercent = json.backgroundImage._outerRadiusPercent;
                     actual._borderEnabled = json.backgroundImage._borderEnabled;
                     actual._borderFill = json.backgroundImage._borderFill;
                     actual._borderRadius = json.backgroundImage._borderRadius;
+                    actual._borderRadiusPercent = json.backgroundImage._borderRadiusPercent;
                     actual._borderShadowBlur = json.backgroundImage._borderShadowBlur;
                     actual._borderShadowColor = json.backgroundImage._borderShadowColor;
                     actual._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
@@ -6103,9 +6200,11 @@
                 bg._appliedMargin = json.backgroundImage._appliedMargin;
                 bg._unborderedSrc = json.backgroundImage._unborderedSrc;
                 bg._outerRadius = json.backgroundImage._outerRadius;
+                bg._outerRadiusPercent = json.backgroundImage._outerRadiusPercent;
                 bg._borderEnabled = json.backgroundImage._borderEnabled;
                 bg._borderFill = json.backgroundImage._borderFill;
                 bg._borderRadius = json.backgroundImage._borderRadius;
+                bg._borderRadiusPercent = json.backgroundImage._borderRadiusPercent;
                 bg._borderShadowBlur = json.backgroundImage._borderShadowBlur;
                 bg._borderShadowColor = json.backgroundImage._borderShadowColor;
                 bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
@@ -6719,36 +6818,6 @@
         canvas.requestRenderAll();
     }
 
-    function applyImageCornerRadius(image: any, radius: number) {
-        if (!image || image.type !== 'image') return;
-
-        const scaledWidth = Math.max(0, image.getScaledWidth?.() || 0);
-        const scaledHeight = Math.max(0, image.getScaledHeight?.() || 0);
-        const maxRadius = Math.min(scaledWidth, scaledHeight) / 2;
-        const normalizedRadius = Math.min(maxRadius, Math.max(0, Number(radius) || 0));
-        image._cornerRadius = normalizedRadius;
-
-        if (normalizedRadius === 0) {
-            image.set('clipPath', null);
-        } else {
-            const scaleX = Math.abs(image.scaleX || 1);
-            const scaleY = Math.abs(image.scaleY || 1);
-            image.set(
-                'clipPath',
-                new Rect({
-                    width: image.width || scaledWidth / scaleX,
-                    height: image.height || scaledHeight / scaleY,
-                    rx: normalizedRadius / scaleX,
-                    ry: normalizedRadius / scaleY,
-                    originX: 'center',
-                    originY: 'center',
-                    left: 0,
-                    top: 0,
-                })
-            );
-        }
-        image.dirty = true;
-    }
 
     // Help to add a fabric image from a URL/File
     function addFabricImageFromURL(url: string) {
@@ -6772,7 +6841,10 @@
                 const scale = Math.min(maxW / fImg.width!, maxH / fImg.height!);
                 fImg.scale(scale);
             }
-            applyImageCornerRadius(fImg, activeToolOptions.cornerRadius || 0);
+            const cornerRadiusPercent = activeToolOptions.cornerRadiusPercent ?? cornerRadiusPixelsToPercent(
+                activeToolOptions.cornerRadius || 0, fImg.getScaledWidth(), fImg.getScaledHeight()
+            );
+            applyImageCornerRadius(fImg, cornerRadiusPercent);
 
             canvas!.add(fImg);
             canvas!.setActiveObject(fImg);
@@ -6802,6 +6874,72 @@
     }
 
     // Context menu functions
+    function prepareMaterialObject(object: any) {
+        walkMaterialObjects(object, child => {
+            if (isTextObject(child)) {
+                applyTextRenderingOptions(child);
+                autoResizeTextObject(child);
+            } else if (child.type === 'image' && (child._cornerRadius !== undefined || child._imageCornerRadiusPercent !== undefined)) {
+                applyImageCornerRadius(child);
+            } else if (child.type === 'rect') applyRectangleCornerRadius(child);
+        });
+    }
+
+    async function saveObjectAsMaterial(target: any) {
+        if (!canvas || !target) return;
+        try {
+            const roots: any[] = target.type === 'activeselection' ? target.getObjects() : [target];
+            const included = new Set(roots);
+            // Save linked magnifier components together so their references can be remapped on insertion.
+            const relatedIds = new Set<string>();
+            roots.forEach(object => {
+                if (object.type.startsWith('magnifier-')) {
+                    [object.id, object.sourceId, object.viewId].filter(Boolean).forEach(id => relatedIds.add(id));
+                }
+            });
+            canvas.getObjects().forEach((object: any) => {
+                if (object.type.startsWith('magnifier-') &&
+                    [object.id, object.sourceId, object.viewId].some(id => relatedIds.has(id))) included.add(object);
+            });
+            const objects = canvas.getObjects().filter(object => included.has(object));
+            if (!objects.length) return;
+            const suggestedName = isTextObject(target) ? String(target.text).trim().slice(0, 40) : '';
+            const snapshot = await createMaterialSnapshot(objects, [...HISTORY_PROPS, 'id', 'sourceId', 'viewId'], prepareMaterialObject);
+            dispatch('saveMaterial', { snapshot, suggestedName });
+        } catch (error) {
+            console.error('Saving object as material failed', error);
+            pushErrMsg(t('materials.captureFailed'));
+        }
+    }
+
+    export async function insertMaterial(snapshot: MaterialSnapshot) {
+        if (!canvas) throw new Error('Canvas is not ready');
+        const destinationCanvas = canvas;
+        const objects = await restoreMaterialObjects(snapshot, prepareMaterialObject);
+        if (canvas !== destinationCanvas) { objects.forEach(object => object.dispose()); throw new Error('Canvas is not ready'); }
+        // Place the saved arrangement at the center of the visible canvas without changing its size.
+        const bounds = objects.map(object => object.getBoundingRect());
+        const left = Math.min(...bounds.map(rect => rect.left));
+        const top = Math.min(...bounds.map(rect => rect.top));
+        const right = Math.max(...bounds.map(rect => rect.left + rect.width));
+        const bottom = Math.max(...bounds.map(rect => rect.top + rect.height));
+        const center = canvas.getVpCenter();
+        const dx = center.x - (left + right) / 2;
+        const dy = center.y - (top + bottom) / 2;
+        objects.forEach(object => {
+            object.set({ left: object.left + dx, top: object.top + dy });
+            object.setCoords();
+        });
+        canvas.discardActiveObject();
+        canvas.add(...objects);
+        const selectable = objects.filter(object => object.selectable);
+        if (selectable.length === 1) canvas.setActiveObject(selectable[0]);
+        else if (selectable.length > 1) canvas.setActiveObject(new ActiveSelection(selectable, { canvas }));
+        canvas.requestRenderAll();
+        updateCurrentNumberFromCanvas();
+        schedulePushWithType('added');
+    }
+
     function isEditableObject(obj: any): boolean {
         if (!obj) return false;
         // Allow context menu for shapes, arrows, text, mosaic, number markers, and images
@@ -6819,6 +6957,11 @@
             'number-marker',
             'image',
             'path',
+            'triangle',
+            'polygon',
+            'polyline',
+            'magnifier-rect',
+            'magnifier-source-rect',
         ];
         if (!editableTypes.includes(obj.type)) return false;
         // Exclude special objects
@@ -6846,6 +6989,9 @@
         );
 
         const menuItems: any[] = [];
+        const materialTarget = canGroup && activeObjs.includes(target) ? canvas?.getActiveObject() : target;
+        menuItems.push({ label: t('materials.saveObject'), action: () => saveObjectAsMaterial(materialTarget) });
+        menuItems.push({ label: '---', action: null });
 
         // Group / Ungroup options
         if (canGroup) {

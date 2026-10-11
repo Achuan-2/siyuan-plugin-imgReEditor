@@ -220,6 +220,19 @@
             <path d="M21 15l-5-5L5 21" />
         </svg>
     </button>
+    <button
+        class="b3-button"
+        class:active={active === 'materials'}
+        class:b3-button--outline={active !== 'materials'}
+        on:click={() => emit('tool', { tool: 'materials' })}
+        title={t('materials.title')}
+        aria-label={t('materials.title')}
+    >
+        <svg class="icon" viewBox="0 0 24 24">
+            <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+            <path d="M8 12h8M12 8v8" />
+        </svg>
+    </button>
     {#if isCanvasMode}
         <button
             class="b3-button"

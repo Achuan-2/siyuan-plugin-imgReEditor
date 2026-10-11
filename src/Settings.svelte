@@ -186,6 +186,17 @@
                         t('settings.enableImageCompression.description'),
                 },
                 {
+                    key: 'saveCompressionSpeed',
+                    value: settings.saveCompressionSpeed || 'fast',
+                    type: 'select',
+                    title: t('settings.saveCompressionSpeed.title'),
+                    description: t('settings.saveCompressionSpeed.description'),
+                    options: {
+                        fast: t('settings.saveCompressionSpeed.options.fast'),
+                        balanced: t('settings.saveCompressionSpeed.options.balanced'),
+                    },
+                },
+                {
                     key: 'convertToWebP',
                     value: settings.convertToWebP,
                     type: 'checkbox',

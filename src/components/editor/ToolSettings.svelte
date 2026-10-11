@@ -3,10 +3,18 @@
     import { createEventDispatcher, onMount } from 'svelte';
     import ColorPicker from './ColorPicker.svelte';
     import GradientDesigner from './GradientDesigner.svelte';
+    import TextTemplates from './TextTemplates.svelte';
+    import {
+        DEFAULT_TEXT_BACKGROUND_RADIUS_PERCENT,
+        normalizeTextBackgroundRadiusPercent,
+    } from './textBackgroundRadius';
+    import { normalizeCornerRadiusPercent } from './imageCornerRadius';
+    import { getSelectionTool } from './selectionSettings';
     export let tool: string | null = null;
     export let settings: any = {};
     export let recentColors: Record<string, string[]> = {};
     export let savedGradients: string[] = [];
+    export let customTextTemplates: unknown = [];
     export let selectCanvasSizeMode: boolean = false;
     const dispatch = createEventDispatcher();
 
@@ -26,6 +34,11 @@
         { value: 'center', label: 'editor.textAlignCenter', path: 'M3 5H21 M6 10H18 M3 15H21 M6 20H18' },
         { value: 'right', label: 'editor.alignRight', path: 'M3 5H21 M9 10H21 M3 15H21 M9 20H21' },
     ];
+    const textShadowFields = [
+        { key: 'textShadowBlur', label: 'editor.textShadowBlur', fallback: 2, min: 0 },
+        { key: 'textShadowOffsetX', label: 'editor.textShadowOffsetX', fallback: 1, min: undefined },
+        { key: 'textShadowOffsetY', label: 'editor.textShadowOffsetY', fallback: 2, min: undefined },
+    ];
 
     // font list state
     let fonts: { family: string; fullName: string }[] = [];
@@ -35,9 +48,15 @@
     let fontSearch: string = '';
     let showFontDropdown = false;
     let highlightedIndex = -1;
-    let fontInputFocused = false;
     let showGradientDesigner = false;
     let showCanvasGradientDesigner = false;
+    let selectionPanelTool: string | null = null;
+    let selectionPanelRevision: number | undefined;
+
+    $: if (tool !== 'select' || settings.selectionRevision !== selectionPanelRevision) {
+        selectionPanelTool = null;
+        selectionPanelRevision = settings.selectionRevision;
+    }
 
     $: isGradient =
         typeof settings.fill === 'string' && settings.fill.startsWith('linear-gradient');
@@ -53,8 +72,15 @@
 
     function selectFont(f: { family: string; fullName: string }) {
         emitChange({ family: f.family });
-        fontSearch = f.fullName || f.family;
+        fontSearch = '';
         showFontDropdown = false;
+        highlightedIndex = -1;
+    }
+
+    function openFontDropdown() {
+        if (showFontDropdown) return;
+        fontSearch = '';
+        showFontDropdown = true;
         highlightedIndex = -1;
     }
 
@@ -91,17 +117,10 @@
         return keys[type] ? t('editor.' + keys[type]) : type;
     }
 
-    // keep fontSearch in sync when settings.family changes externally
-    // but avoid overwriting while the user is typing (input focused)
-    $: if (!fontInputFocused) {
-        if (settings.family) {
-            const matched = fonts.find(f => f.family === settings.family);
-            fontSearch = matched ? matched.fullName || matched.family : settings.family;
-        } else if (!settings.family) {
-            // if no family set, clear only when not focused
-            fontSearch = '';
-        }
-    }
+    // The selected font is a display value, not a search filter.
+    $: selectedFontFamily = settings.family || settings.fontFamily || '';
+    $: selectedFont = fonts.find(f => f.family === selectedFontFamily);
+    $: selectedFontName = selectedFont?.fullName || selectedFontFamily;
 
     // When focus is inside the tool settings, block propagation of
     // various events to avoid affecting the canvas — unless Ctrl is held.
@@ -492,6 +511,8 @@
             </select>
         </div>
     {:else if tool === 'text'}
+        <TextTemplates {settings} customTemplates={customTextTemplates} on:change on:updateCustomTemplates />
+        <div class="hint">{t('editor.textTemplateHint')}</div>
         <div class="row">
             <label for="font-family">{t('editor.font')}</label>
             <div style="position:relative; width:60%;">
@@ -499,21 +520,17 @@
                     id="font-family"
                     type="text"
                     placeholder={t('editor.fontSearch')}
-                    value={fontSearch}
+                    value={showFontDropdown ? fontSearch : selectedFontName}
                     on:input={e => {
                         fontSearch = getValue(e);
                         showFontDropdown = true;
                         highlightedIndex = -1;
                     }}
-                    on:focus={() => {
-                        showFontDropdown = true;
-                        highlightedIndex = -1;
-                        fontInputFocused = true;
-                    }}
+                    on:focus={openFontDropdown}
+                    on:click={openFontDropdown}
                     on:blur={() => {
                         showFontDropdown = false;
                         highlightedIndex = -1;
-                        fontInputFocused = false;
                     }}
                     on:keydown={handleFontKeydown}
                     disabled={loadingFonts}
@@ -656,86 +673,55 @@
             <span class="val">{settings.strokeWidth ?? 0}px</span>
         </div>
         <div class="row">
-            <label for="text-bg-enabled">{t('editor.background')}</label>
+            <label for="text-shadow-enabled">{t('editor.textShadow')}</label>
             <input
-                id="text-bg-enabled"
+                id="text-shadow-enabled"
                 type="checkbox"
-                checked={!!settings.textBackgroundEnabled}
-                on:change={e =>
-                    emitChange({
-                        textBackgroundEnabled: getChecked(e),
-                        textBackgroundFill: settings.textBackgroundFill || '#ffffff',
-                        textBackgroundOpacity: settings.textBackgroundOpacity ?? 0.8,
-                        textBackgroundRadius: settings.textBackgroundRadius ?? 4,
-                        textBackgroundPadding: settings.textBackgroundPadding ?? 6,
-                        textBackgroundStrokeEnabled: settings.textBackgroundStrokeEnabled ?? false,
-                        textBackgroundStroke:
-                            settings.textBackgroundStroke ||
-                            settings.textBackgroundFill ||
-                            '#ffffff',
-                    })}
+                checked={!!settings.textShadowEnabled}
+                on:change={e => emitChange({ textShadowEnabled: getChecked(e) })}
             />
         </div>
-        {#if settings.textBackgroundEnabled}
+        {#if settings.textShadowEnabled}
             <div class="row">
-                <label for="text-bg-fill">{t('editor.backgroundColor')}</label>
+                <label for="text-shadow-color">{t('editor.shadowColor')}</label>
                 <ColorPicker
-                    colorKey="text-background-fill"
-                    value={settings.textBackgroundFill || '#ffffff'}
+                    colorKey="text-shadow-color"
+                    value={settings.textShadowColor || '#000000'}
                     {recentColors}
-                    on:change={e => emitChange({ textBackgroundFill: e.detail })}
+                    on:change={e => emitChange({ textShadowColor: e.detail })}
                     on:recentUpdate
                 />
             </div>
-            <div class="row">
-                <label for="text-bg-opacity">{t('editor.backgroundOpacity')}</label>
+            {#each textShadowFields as field (field.key)}
+                <div class="row">
+                    <label for={field.key}>{t(field.label)}</label>
+                    <input
+                        id={field.key}
+                        type="number"
+                        min={field.min}
+                        step="0.5"
+                        value={settings[field.key] ?? field.fallback}
+                        on:input={e => emitChange({ [field.key]: +getValue(e) })}
+                    />
+                    <span class="val">px</span>
+                </div>
+            {/each}
+        {/if}
+        <section class="text-background-group" aria-labelledby="text-background-label">
+            <div class="row text-background-header">
+                <label id="text-background-label" for="text-bg-enabled">{t('editor.background')}</label>
                 <input
-                    id="text-bg-opacity"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}
-                    on:input={e => emitChange({ textBackgroundOpacity: +getValue(e) / 100 })}
-                />
-                <span class="val">{Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}%</span>
-            </div>
-            <div class="row">
-                <label for="text-bg-radius">{t('editor.cornerRadius')}</label>
-                <input
-                    id="text-bg-radius"
-                    type="number"
-                    min="0"
-                    max="120"
-                    step="1"
-                    value={settings.textBackgroundRadius ?? 4}
-                    on:input={e => emitChange({ textBackgroundRadius: +getValue(e) })}
-                    style="width: 72px;"
-                />
-                <span class="val">px</span>
-            </div>
-            <div class="row">
-                <label for="text-bg-padding">{t('editor.padding')}</label>
-                <input
-                    id="text-bg-padding"
-                    type="number"
-                    min="0"
-                    max="120"
-                    step="1"
-                    value={settings.textBackgroundPadding ?? 6}
-                    on:input={e => emitChange({ textBackgroundPadding: +getValue(e) })}
-                    style="width: 72px;"
-                />
-                <span class="val">px</span>
-            </div>
-            <div class="row">
-                <label for="text-bg-stroke-enabled">{t('editor.border')}</label>
-                <input
-                    id="text-bg-stroke-enabled"
+                    id="text-bg-enabled"
                     type="checkbox"
-                    checked={!!settings.textBackgroundStrokeEnabled}
+                    checked={!!settings.textBackgroundEnabled}
                     on:change={e =>
                         emitChange({
-                            textBackgroundStrokeEnabled: getChecked(e),
+                            textBackgroundEnabled: getChecked(e),
+                            textBackgroundFill: settings.textBackgroundFill || '#ffffff',
+                            textBackgroundOpacity: settings.textBackgroundOpacity ?? 0.8,
+                            textBackgroundRadiusPercent: settings.textBackgroundRadiusPercent ?? DEFAULT_TEXT_BACKGROUND_RADIUS_PERCENT,
+                            textBackgroundPadding: settings.textBackgroundPadding ?? 6,
+                            textBackgroundStrokeEnabled: settings.textBackgroundStrokeEnabled ?? false,
                             textBackgroundStroke:
                                 settings.textBackgroundStroke ||
                                 settings.textBackgroundFill ||
@@ -743,19 +729,89 @@
                         })}
                 />
             </div>
-            {#if settings.textBackgroundStrokeEnabled}
-                <div class="row">
-                    <label for="text-bg-stroke">{t('editor.borderColor')}</label>
-                    <ColorPicker
-                        colorKey="text-background-stroke"
-                        value={settings.textBackgroundStroke || settings.textBackgroundFill || '#ffffff'}
-                        {recentColors}
-                        on:change={e => emitChange({ textBackgroundStroke: e.detail })}
-                        on:recentUpdate
-                    />
+            {#if settings.textBackgroundEnabled}
+                <div class="text-background-options">
+                    <div class="row">
+                        <label for="text-bg-fill">{t('editor.backgroundColor')}</label>
+                        <ColorPicker
+                            colorKey="text-background-fill"
+                            value={settings.textBackgroundFill || '#ffffff'}
+                            {recentColors}
+                            on:change={e => emitChange({ textBackgroundFill: e.detail })}
+                            on:recentUpdate
+                        />
+                    </div>
+                    <div class="row">
+                        <label for="text-bg-opacity">{t('editor.backgroundOpacity')}</label>
+                        <input
+                            id="text-bg-opacity"
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}
+                            on:input={e => emitChange({ textBackgroundOpacity: +getValue(e) / 100 })}
+                        />
+                        <span class="val">{Math.round((settings.textBackgroundOpacity ?? 0.8) * 100)}%</span>
+                    </div>
+                    <div class="row">
+                        <label for="text-bg-radius">{t('editor.cornerRadius')}</label>
+                        <input
+                            id="text-bg-radius"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={Math.round(settings.textBackgroundRadiusPercent ?? DEFAULT_TEXT_BACKGROUND_RADIUS_PERCENT)}
+                            on:input={e => emitChange({ textBackgroundRadiusPercent: normalizeTextBackgroundRadiusPercent(getValue(e)) })}
+                            style="width: 72px;"
+                        />
+                        <span class="val">%</span>
+                    </div>
+                    <div class="row">
+                        <label for="text-bg-padding">{t('editor.padding')}</label>
+                        <input
+                            id="text-bg-padding"
+                            type="number"
+                            min="0"
+                            max="120"
+                            step="1"
+                            value={settings.textBackgroundPadding ?? 6}
+                            on:input={e => emitChange({ textBackgroundPadding: +getValue(e) })}
+                            style="width: 72px;"
+                        />
+                        <span class="val">px</span>
+                    </div>
+                    <div class="row">
+                        <label for="text-bg-stroke-enabled">{t('editor.border')}</label>
+                        <input
+                            id="text-bg-stroke-enabled"
+                            type="checkbox"
+                            checked={!!settings.textBackgroundStrokeEnabled}
+                            on:change={e =>
+                                emitChange({
+                                    textBackgroundStrokeEnabled: getChecked(e),
+                                    textBackgroundStroke:
+                                        settings.textBackgroundStroke ||
+                                        settings.textBackgroundFill ||
+                                        '#ffffff',
+                                })}
+                        />
+                    </div>
+                    {#if settings.textBackgroundStrokeEnabled}
+                        <div class="row">
+                            <label for="text-bg-stroke">{t('editor.borderColor')}</label>
+                            <ColorPicker
+                                colorKey="text-background-stroke"
+                                value={settings.textBackgroundStroke || settings.textBackgroundFill || '#ffffff'}
+                                {recentColors}
+                                on:change={e => emitChange({ textBackgroundStroke: e.detail })}
+                                on:recentUpdate
+                            />
+                        </div>
+                    {/if}
                 </div>
             {/if}
-        {/if}
+        </section>
     {:else if tool === 'number-marker'}
         <div class="row">
             <label for="num-bg-color">{t('editor.bgColor')}</label>
@@ -948,10 +1004,10 @@
                 type="range"
                 min="0"
                 max="100"
-                value={settings.radius || 0}
-                on:input={e => emitChange({ radius: +getValue(e) })}
+                value={settings.radiusPercent ?? 0}
+                on:input={e => emitChange({ radiusPercent: normalizeCornerRadiusPercent(getValue(e)) })}
             />
-            <span class="val">{settings.radius || 0}</span>
+            <span class="val">{Math.round(settings.radiusPercent ?? 0)}%</span>
         </div>
         <div class="row">
             <label for="border-outer-radius">{t('editor.borderRadius')}</label>
@@ -960,10 +1016,10 @@
                 type="range"
                 min="0"
                 max="100"
-                value={settings.outerRadius || 0}
-                on:input={e => emitChange({ outerRadius: +getValue(e) })}
+                value={settings.outerRadiusPercent ?? 0}
+                on:input={e => emitChange({ outerRadiusPercent: normalizeCornerRadiusPercent(getValue(e)) })}
             />
-            <span class="val">{settings.outerRadius || 0}</span>
+            <span class="val">{Math.round(settings.outerRadiusPercent ?? 0)}%</span>
         </div>
         <div class="row">
             <label for="border-shadow">{t('editor.shadowSize')}</label>
@@ -1156,16 +1212,11 @@
                     id="img-corner-radius"
                     type="range"
                     min="0"
-                    max={Math.max(
-                        0,
-                        Math.floor(
-                            Math.min(settings.width || 200, settings.height || 200) / 2
-                        )
-                    )}
-                    value={settings.cornerRadius || 0}
-                    on:input={e => emitChange({ cornerRadius: +getValue(e) })}
+                    max="100"
+                    value={settings.cornerRadiusPercent ?? 0}
+                    on:input={e => emitChange({ cornerRadiusPercent: normalizeCornerRadiusPercent(getValue(e)) })}
                 />
-                <span class="val">{Math.round(settings.cornerRadius || 0)}</span>
+                <span class="val">{Math.round(settings.cornerRadiusPercent ?? 0)}%</span>
             </div>
             <div class="row">
                 <button
@@ -1661,11 +1712,11 @@
             <div class="row" style="margin-bottom: 12px;">
                 <button
                     class="b3-button b3-button--outline"
-                    on:click={() =>
-                        dispatch('action', {
-                            action: 'activateSelectionTool',
-                            type: settings.selectionType,
-                        })}
+                    class:active={selectionPanelTool === getSelectionTool(settings.selectionType)}
+                    type="button"
+                    aria-pressed={selectionPanelTool === getSelectionTool(settings.selectionType)}
+                    on:mousedown={e => e.preventDefault()}
+                    on:click={() => selectionPanelTool = getSelectionTool(settings.selectionType)}
                     style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px;"
                 >
                     <svg
@@ -1681,13 +1732,37 @@
                     {t('editor.activateSelection', { type: getSelectionLabel(settings.selectionType) })}
                 </button>
             </div>
-            <div class="empty" style="font-size: 12px; opacity: 0.8;">
-                {t('editor.selectedHint', { type: getSelectionLabel(settings.selectionType) })}
-            </div>
+            {#if !selectionPanelTool}
+                <div class="empty" style="font-size: 12px; opacity: 0.8;">
+                    {t('editor.selectedHint', { type: getSelectionLabel(settings.selectionType) })}
+                </div>
+            {/if}
         {:else if settings.isMixedSelection === true || settings.selectionType === 'activeSelection'}
             <div class="empty">{t('editor.mixedSelection')}</div>
         {:else}
             <div class="empty">{t('editor.selectShape')}</div>
+        {/if}
+        {#if settings.selectionCount > 1}
+            <div class="row" style="margin: 12px 0;">
+                <button
+                    type="button"
+                    class="b3-button b3-button--outline"
+                    class:active={selectionPanelTool === 'align'}
+                    aria-pressed={selectionPanelTool === 'align'}
+                    on:mousedown={e => e.preventDefault()}
+                    on:click={() => selectionPanelTool = 'align'}
+                    style="width: 100%; padding: 8px;"
+                >{t('editor.activateSelection', { type: t('editor.alignDistribute') })}</button>
+            </div>
+        {/if}
+        {#if selectionPanelTool}
+            <svelte:self
+                tool={selectionPanelTool}
+                {settings} {recentColors} {savedGradients} {customTextTemplates}
+                {selectCanvasSizeMode} {defaultsMigrated}
+                on:change on:action on:recentUpdate on:updateCustomTemplates
+                on:initDefaults on:updateSavedGradients
+            />
         {/if}
     {:else}
         <div class="empty">{t('editor.noSettings')}</div>
@@ -1798,8 +1873,27 @@
         stroke: currentColor;
         stroke-width: 1;
     }
+    .row > input[type='checkbox'] {
+        flex: 0 0 auto;
+        width: 14px;
+        height: 14px;
+        margin: 0;
+    }
     .text-align-row > .label {
         flex: 0 0 var(--label-w);
+    }
+    .text-background-group {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--b3-border-color, #ddd);
+    }
+    .text-background-header label {
+        font-weight: 600;
+    }
+    .text-background-options {
+        margin-left: 8px;
+        padding-left: 12px;
+        border-left: 2px solid var(--b3-border-color, #ddd);
     }
     .text-align-buttons {
         display: flex;

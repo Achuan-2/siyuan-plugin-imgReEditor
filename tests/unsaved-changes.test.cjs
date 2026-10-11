@@ -19,10 +19,12 @@ function evaluate(source, imports, suffix = '', fetchImplementation = async () =
     return module.exports;
 }
 
-function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write, read, fetchImplementation } = {}) {
+function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write, read, fetchImplementation,
+    compression = false, effort, blobExporter } = {}) {
     const closes = [];
     const writes = [];
     const errors = [];
+    const encodes = [];
     let prompts = 0;
     const source = readFileSync(resolve(__dirname, '../src/components/ImageEditor.svelte'), 'utf8')
         .match(/<script lang="ts">([\s\S]*?)<\/script>/)[1].replace(/\bexport\s+/g, '');
@@ -33,6 +35,8 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
         './editor/CanvasEditor.svelte': {},
         './editor/Toolbar.svelte': {},
         './editor/ToolSettings.svelte': {},
+        './editor/MaterialPanel.svelte': {},
+        './editor/MaterialSaveDialog.svelte': {},
         '../api': {
             putFile: async (...args) => { writes.push(args); if (write) await write(...args); },
             getFileBlob: async () => read ? read() : new Blob(['saved']),
@@ -40,22 +44,24 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
             readDir: async () => [], removeFile: async () => {},
             pushMsg() {}, pushErrMsg: message => errors.push(message),
         },
-        '../utils': { insertPNGTextChunk: buffer => buffer },
+        '../utils': { insertPNGTextChunk: buffer => buffer,
+            reencodeImageBlob: async (blob, format, options) => { encodes.push({ blob, format, options }); return blob; } },
     }, `
         module.exports = { requestClose, isDirty, saveForSwitch, configure(fixture) {
             imagePath = 'assets/example.png'; originalFileName = 'example.png';
             imageBlob = new Blob(['original']); editorReady = true;
-            settings = { storageMode: 'metadata', enableImageCompression: false };
+            settings = { storageMode: 'metadata', enableImageCompression: fixture.compression, saveCompressionSpeed: fixture.effort };
             isScreenshotMode = fixture.screenshot; onClose = fixture.onClose;
             canvasEditorRef = {
                 getHistoryIndex: () => fixture.dirty ? 1 : 0,
                 toJSON: async () => ({}),
                 toDataURL: async () => 'data:image/png;base64,cGl4ZWxz',
             };
+            if (fixture.blobExporter) canvasEditorRef.toBlob = fixture.blobExporter;
         } };
     `, fetchImplementation);
-    editor.configure({ dirty, screenshot, onClose: (...args) => closes.push(args) });
-    return { ...editor, closes, writes, errors, prompts: () => prompts };
+    editor.configure({ dirty, screenshot, compression, effort, blobExporter, onClose: (...args) => closes.push(args) });
+    return { ...editor, closes, writes, errors, encodes, prompts: () => prompts };
 }
 
 test('discard exits without writing; cancelling the prompt preserves edits', async () => {
@@ -67,6 +73,33 @@ test('discard exits without writing; cancelling the prompt preserves edits', asy
     await cancel.requestClose();
     assert.equal(cancel.closes.length, 0);
     assert.equal(cancel.isDirty(), true);
+});
+
+test('edited image and screenshot saves use Blob export and default to fast compression', async () => {
+    for (const screenshot of [false, true]) {
+        const raster = new Blob(['direct raster'], { type: 'image/png' });
+        const exports = [];
+        const editor = loadEditor({ choice: 'save', screenshot, compression: true,
+            blobExporter: async options => { exports.push(options); return raster; } });
+        await editor.requestClose();
+        assert.deepEqual(exports, [{ format: 'png', quality: 1 }]);
+        assert.equal(editor.encodes[0].blob, raster);
+        assert.equal(editor.encodes[0].options.effort, 'fast');
+        assert.equal(editor.encodes[0].options.pngMode, 'lossless');
+        assert.equal(editor.closes[0][0], true);
+    }
+});
+
+test('balanced save compression is honored and failed Blob export keeps the editor open', async () => {
+    const editor = loadEditor({ choice: 'save', compression: true, effort: 'balanced',
+        blobExporter: async () => new Blob(['raster']) });
+    await editor.requestClose();
+    assert.equal(editor.encodes[0].options.effort, 'balanced');
+    const failed = loadEditor({ choice: 'save', blobExporter: async () => null });
+    await failed.requestClose();
+    assert.equal(failed.writes.length, 0);
+    assert.equal(failed.closes.length, 0);
+    assert.equal(failed.isDirty(), true);
 });
 
 test('unchanged images exit directly without a prompt', async () => {

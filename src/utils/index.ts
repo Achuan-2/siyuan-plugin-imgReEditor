@@ -8,6 +8,7 @@ export { optimizePNGBlob, optimizePNGData, initOxipng, type OxipngOptions };
 export interface ReencodeOptions {
     pngMode?: 'lossless' | 'lossy';
     quality?: number; // 0.01 ~ 1.0
+    effort?: 'fast' | 'balanced'; // Encoding effort, independent of visual quality.
 }
 
 export function getMimeByFormat(format: CompressibleImageFormat): string {
@@ -71,7 +72,7 @@ function getWebPEncoderWorker(): Worker {
     return worker;
 }
 
-async function encodeWebP(imageData: ImageData, quality: number): Promise<Blob> {
+async function encodeWebP(imageData: ImageData, quality: number, effort: ReencodeOptions['effort'] = 'balanced'): Promise<Blob> {
     const worker = getWebPEncoderWorker();
     const id = nextWebPEncodeID++;
     const pixels = imageData.data.buffer as ArrayBuffer;
@@ -90,6 +91,7 @@ async function encodeWebP(imageData: ImageData, quality: number): Promise<Blob> 
                     width: imageData.width,
                     height: imageData.height,
                     quality,
+                    effort,
                 },
                 [pixels]
             );
@@ -125,7 +127,8 @@ export async function reencodeImageBlob(
     if (format === 'png') {
         if (pngMode === 'lossless') {
             try {
-                return await optimizePNGBlob(blob, { level: 2, optimiseAlpha: true });
+                const optimized = await optimizePNGBlob(blob, { level: options.effort === 'fast' ? 0 : 2, optimiseAlpha: true });
+                return optimized.size > 0 && optimized.size < blob.size ? optimized : blob;
             } catch (err) {
                 console.warn('PNG worker optimization failed, keeping the original PNG:', err);
                 return blob;
@@ -149,7 +152,7 @@ export async function reencodeImageBlob(
                         ctx.drawImage(image, 0, 0);
                         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                         URL.revokeObjectURL(objectURL);
-                        resolve(await quantizePNG(imgData, quality));
+                        resolve(await quantizePNG(imgData, quality, { level: options.effort === 'fast' ? 0 : 2 }));
                     } catch (error) {
                         URL.revokeObjectURL(objectURL);
                         reject(error);
@@ -200,7 +203,7 @@ export async function reencodeImageBlob(
                     ctx.drawImage(image, 0, 0);
                     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                     URL.revokeObjectURL(objectURL);
-                    void encodeWebP(imageData, quality).then(resolve, error => {
+                    void encodeWebP(imageData, quality, options.effort).then(resolve, error => {
                         // Some older Electron builds or strict CSP configurations may
                         // reject inline workers. Keep the fallback asynchronous and
                         // never run libwebp synchronously on SiYuan's UI thread.

@@ -1,11 +1,14 @@
 <script lang="ts">
     import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
     const dispatch = createEventDispatcher();
-    import { unsavedChangesDialog } from '../libs/dialog';
+    import { unsavedChangesDialog, svelteDialog } from '../libs/dialog';
     import { t } from '../utils/i18n';
     import CanvasEditor from './editor/CanvasEditor.svelte';
     import Toolbar from './editor/Toolbar.svelte';
     import ToolSettings from './editor/ToolSettings.svelte';
+    import MaterialPanel from './editor/MaterialPanel.svelte';
+    import MaterialSaveDialog from './editor/MaterialSaveDialog.svelte';
+    import type { MaterialSnapshot } from './editor/materialLibrary';
     // TUI Image Editor removed; only Fabric (CanvasEditor) is used now
     import { getFileBlob, getFileSize, putFile, readDir, removeFile } from '../api';
     import {
@@ -52,6 +55,21 @@
     let isBlankCanvasScaffold = false;
     // Fabric mode (new editor)
     let canvasEditorRef: any = null;
+    let materialSaveDialog: ReturnType<typeof svelteDialog> | null = null;
+
+    function openMaterialSaveDialog(detail: { snapshot: MaterialSnapshot; suggestedName: string }) {
+        materialSaveDialog?.close();
+        const dialog = svelteDialog({
+            title: t('materials.saveObject'),
+            width: '420px',
+            constructor: target => new MaterialSaveDialog({ target, props: {
+                ...detail,
+                onClose: () => dialog.close(),
+            } }),
+            callback: () => { if (materialSaveDialog === dialog) materialSaveDialog = null; },
+        });
+        materialSaveDialog = dialog;
+    }
     let canvasInstanceKey = 0;
     let canvasSwitching = false;
     let canvasRevealTimer: ReturnType<typeof setTimeout> | null = null;
@@ -190,11 +208,11 @@
 
     async function saveToHistory() {
         // Export current canvas as PNG and save to screenshot history according to storageMode
-        if (!canvasEditorRef || typeof canvasEditorRef.toDataURL !== 'function') return null;
+        if (!canvasEditorRef) return null;
 
         const canvasJSON = canvasEditorRef.toJSON ? await canvasEditorRef.toJSON() : null;
-        const dataURL = await canvasEditorRef.toDataURL();
-        if (!dataURL) return null;
+        const rawBlob = await exportRasterBlob();
+        if (!rawBlob) return null;
 
         // Determine filename (reuse existing when possible)
         let filename: string;
@@ -214,8 +232,7 @@
         }
         const path = `${SCREENSHOT_HISTORY_DIR}/${filename}`;
 
-        // Convert dataURL to blob and insert metadata depending on mode
-        const rawBlob = dataURLToBlob(dataURL);
+        // Insert metadata only after raster compression has finished.
         const outputFormat = getOutputFormatByFileName(filename);
         const outputMime = getOutputMime(outputFormat);
         let compressedBlob = rawBlob;
@@ -223,6 +240,7 @@
             try {
                 compressedBlob = await reencodeImageBlob(rawBlob, 'webp', {
                     quality: getExportQuality('webp'),
+                    effort: getSaveCompressionEffort(),
                 });
             } catch (e) {
                 console.warn('Failed to encode history screenshot as WebP:', e);
@@ -235,6 +253,7 @@
                 compressedBlob = await reencodeImageBlob(rawBlob, 'png', {
                     pngMode,
                     quality: getExportQuality('png'),
+                    effort: getSaveCompressionEffort(),
                 });
             } catch (e) {
                 console.warn('Failed to compress history screenshot:', e);
@@ -306,7 +325,7 @@
         // Cleanup old screenshots
         cleanupScreenshotHistory();
 
-        return { path, blob: newBlob, dataURL };
+        return { path, blob: newBlob };
     }
 
     async function cleanupScreenshotHistory() {
@@ -467,7 +486,7 @@
             } catch (ex) {
                 // As a last resort, fallback to dataURL (may lose metadata)
                 const a = document.createElement('a');
-                a.href = history.dataURL;
+                a.href = await blobToDataURL(history.blob);
                 a.download = replaceFileExtension(historyName, 'png');
                 a.click();
             }
@@ -494,7 +513,7 @@
 
         if (!result) return;
 
-        dispatch('pin', { dataURL: result.dataURL });
+        dispatch('pin', { dataURL: result.dataURL || await blobToDataURL(result.blob) });
         onClose?.(false);
     }
 
@@ -517,6 +536,8 @@
 
         // Avoid saving certain transient or UI-only properties if they exist
         const toSave = { ...options };
+        delete toSave.selectionRevision;
+        delete toSave.selectionCount;
         if (tool === 'number-marker') {
             delete toSave.isSelection;
             delete toSave.count;
@@ -731,6 +752,20 @@
         if (format === 'jpeg') return 'image/jpeg';
         if (format === 'webp') return 'image/webp';
         return 'image/png';
+    }
+
+    async function exportRasterBlob(format: OutputImageFormat = 'png', quality = 1): Promise<Blob | null> {
+        if (!canvasEditorRef) return null;
+        if (typeof canvasEditorRef.toBlob === 'function') {
+            return canvasEditorRef.toBlob({ format, quality });
+        }
+        // Compatibility for older exporters; current Fabric saves skip Base64 entirely.
+        const dataURL = await canvasEditorRef.toDataURL?.({ format, quality });
+        return dataURL ? dataURLToBlob(dataURL) : null;
+    }
+
+    function getSaveCompressionEffort(): 'fast' | 'balanced' {
+        return settings?.saveCompressionSpeed === 'balanced' ? 'balanced' : 'fast';
     }
 
     function shouldConvertToWebP(fileName: string) {
@@ -1034,36 +1069,23 @@
             const outputMime = getOutputMime(outputFormat);
             const outputQuality = getExportQuality(outputFormat);
 
-            // Export the canvas raster; WebP uses a lossless intermediate below.
-            let dataURL: string | null = null;
-            if (canvasEditorRef && typeof canvasEditorRef.toDataURL === 'function') {
-                // WebP must be encoded by libwebp below. Export a lossless PNG
-                // intermediate so Chromium/Fabric never performs a first WebP pass.
-                const canvasExportFormat = outputFormat === 'webp' ? 'png' : outputFormat;
-                dataURL = await canvasEditorRef.toDataURL({
-                    format: canvasExportFormat,
-                    quality: canvasExportFormat === 'png' ? 1 : outputQuality,
-                });
-            } else {
-                // No legacy TUI exporter available
-                dataURL = null;
-            }
-            if (!dataURL) {
+            // WebP still uses a lossless intermediate for the libwebp worker.
+            const canvasExportFormat = outputFormat === 'webp' ? 'png' : outputFormat;
+            let blob = await exportRasterBlob(canvasExportFormat, canvasExportFormat === 'png' ? 1 : outputQuality);
+            if (!blob) {
                 pushErrMsg(t('imageEditor.exportFailed'));
                 return null;
             }
-            // Convert dataURL to blob
-            let blob = dataURLToBlob(dataURL);
             if (outputFormat === 'png' && settings?.enableImageCompression !== false) {
                 try {
                     const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
-                    blob = await reencodeImageBlob(blob, 'png', { pngMode, quality: outputQuality });
+                    blob = await reencodeImageBlob(blob, 'png', { pngMode, quality: outputQuality, effort: getSaveCompressionEffort() });
                 } catch (e) {
                     console.warn('Failed to compress PNG during save:', e);
                 }
             } else if (outputFormat === 'webp') {
                 try {
-                    blob = await reencodeImageBlob(blob, 'webp', { quality: outputQuality });
+                    blob = await reencodeImageBlob(blob, 'webp', { quality: outputQuality, effort: getSaveCompressionEffort() });
                 } catch (e) {
                     console.warn('Failed to encode WebP during save:', e);
                     pushErrMsg(t('imageEditor.webpSaveCancelled'));
@@ -1250,6 +1272,7 @@
     });
 
     onDestroy(() => {
+        materialSaveDialog?.close();
         window.removeEventListener('resize', handleEditorResize);
         document.removeEventListener('fullscreenchange', handleFullscreenChange);
         if (canvasRevealTimer) clearTimeout(canvasRevealTimer);
@@ -1405,6 +1428,7 @@
     async function handleToolChange(e: any) {
         const tool = e.detail.tool;
         activeTool = tool;
+        sidebarVisible = true;
         if (canvasEditorRef && typeof canvasEditorRef.setTool === 'function') {
             if (tool === 'shape') {
                 const shapeType = e.detail.shape || 'rect';
@@ -1467,6 +1491,7 @@
                 canvasEditorRef.setTool(tool, savedOptions);
                 toolSettings = canvasEditorRef.getToolOptions();
             }
+            if (tool === 'select') canvasEditorRef.refreshSelectionSettings?.();
         }
     }
 </script>
@@ -1723,6 +1748,7 @@
                 on:toolChange={e => {
                     activeTool = e.detail.tool;
                 }}
+                on:saveMaterial={e => openMaterialSaveDialog(e.detail)}
                 on:selection={async e => {
                     try {
                         const type = e.detail?.type;
@@ -1730,11 +1756,15 @@
                             // Update toolSettings to reflect selected object's properties
                             toolSettings = e.detail.options;
 
-                            // Auto-activate corresponding tool ONLY if current tool is NOT 'select' or 'align'
-                            // Treat 'align' like 'select' so selecting objects while align tool is active
-                            // does not switch to shape/text/arrow tools and supports multi-select (Ctrl)
+                            // Multi-selection uses the selection panel while keeping Fabric's active objects.
+                            if (activeTool === 'image' && e.detail.selectionCount > 1) {
+                                activeTool = 'select';
+                                canvasEditorRef?.setTool('select', toolSettings);
+                            }
+
+                            // Keep selection, alignment and material panels open while selecting objects.
                             const shouldAutoActivate =
-                                activeTool !== 'select' && activeTool !== 'align';
+                                activeTool !== 'select' && activeTool !== 'align' && activeTool !== 'materials';
 
                             if (type === 'rect' || type === 'ellipse' || type === 'circle') {
                                 const shapeType =
@@ -1868,7 +1898,13 @@
                                 canvasEditorRef &&
                                 typeof canvasEditorRef.getToolOptions === 'function'
                             ) {
-                                toolSettings = canvasEditorRef.getToolOptions();
+                                toolSettings = {
+                                    ...canvasEditorRef.getToolOptions(),
+                                    isSelection: false,
+                                    selectionType: null,
+                                    selectionRevision: e.detail?.selectionRevision,
+                                    selectionCount: 0,
+                                };
                             }
                         }
                     } catch (e) {}
@@ -1940,6 +1976,8 @@
                                 {t('imageEditor.toolTitles.canvas')}
                             {:else if activeTool === 'image'}
                                 {t('imageEditor.toolTitles.image')}
+                            {:else if activeTool === 'materials'}
+                                {t('materials.title')}
                             {:else if activeTool === 'select'}
                                 {t('imageEditor.toolTitles.select')}
                             {:else}
@@ -1962,11 +2000,23 @@
                     </button>
                 </div>
                 <div class="tool-sidebar-body">
-                    {#if activeTool}
+                    {#if activeTool === 'materials'}
+                        <MaterialPanel
+                            onInsert={async snapshot => {
+                                if (!canvasEditorRef) throw new Error(t('imageEditor.loadFailed'));
+                                await canvasEditorRef.insertMaterial(snapshot);
+                            }}
+                        />
+                    {:else if activeTool}
                         <ToolSettings
                             tool={activeTool}
                             settings={toolSettings}
                             recentColors={settings.recentColors || {}}
+                            customTextTemplates={settings.customTextTemplates || []}
+                            on:updateCustomTemplates={e => {
+                                settings.customTextTemplates = e.detail;
+                                dispatch('saveSettings', settings);
+                            }}
                             {selectCanvasSizeMode}
                             on:action={e => {
                                 const { action } = e.detail;
@@ -2045,39 +2095,6 @@
                                     } else if (action === 'enterImageCropMode') {
                                         canvasEditorRef.enterImageCropMode &&
                                             canvasEditorRef.enterImageCropMode();
-                                    } else if (action === 'activateSelectionTool') {
-                                        const type = e.detail.type;
-                                        let toolToActivate = type;
-                                        let shapeType = null;
-
-                                        if (
-                                            type === 'rect' ||
-                                            type === 'circle' ||
-                                            type === 'ellipse'
-                                        ) {
-                                            toolToActivate = 'shape';
-                                            shapeType =
-                                                type === 'ellipse' || type === 'circle'
-                                                    ? 'circle'
-                                                    : 'rect';
-                                        } else if (
-                                            type === 'i-text' ||
-                                            type === 'textbox' ||
-                                            type === 'text'
-                                        ) {
-                                            toolToActivate = 'text';
-                                        } else if (type === 'mosaic-rect') {
-                                            toolToActivate = 'mosaic';
-                                        } else if (type === 'path') {
-                                            toolToActivate = 'brush';
-                                        }
-
-                                        handleToolChange({
-                                            detail: {
-                                                tool: toolToActivate,
-                                                shape: shapeType,
-                                            },
-                                        });
                                     }
                                 } catch (err) {
                                     console.warn('Action failed', err);
