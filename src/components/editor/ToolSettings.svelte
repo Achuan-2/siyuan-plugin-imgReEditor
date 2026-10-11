@@ -298,6 +298,21 @@
     {#if !tool}
         <div class="empty">{t('editor.chooseTool')}</div>
     {:else if tool === 'shape'}
+        {#if (settings.selectionType || settings.shape || 'rect') === 'rect'}
+            <div class="row">
+                <label for="rect-corner-radius">{t('editor.cornerRadius')}</label>
+                <input
+                    id="rect-corner-radius"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={settings.cornerRadius ?? 0}
+                    on:input={e => emitChange({ cornerRadius: Math.max(0, +getValue(e)) })}
+                    style="width: 72px;"
+                />
+                <span class="val">px</span>
+            </div>
+        {/if}
         <div class="row">
             <label for="stroke-color">{t('editor.strokeColor')}</label>
             <ColorPicker

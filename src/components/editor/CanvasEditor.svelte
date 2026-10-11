@@ -350,6 +350,11 @@
         return null;
     }
 
+    function normalizeRectangleCornerRadius(value: any): number {
+        const radius = Number(value);
+        return Number.isFinite(radius) ? Math.max(0, radius) : 0;
+    }
+
     function colorWithOpacity(color: string | null | undefined, opacity: number | undefined) {
         if (!color) return null;
         if (typeof color !== 'string') return color; // Return as-is if not a string (e.g. Gradient object)
@@ -1585,11 +1590,14 @@
                           : 0
                 );
                 if (shapeType === 'rect') {
+                    const cornerRadius = normalizeRectangleCornerRadius(activeToolOptions.cornerRadius);
                     tempShape = new Rect({
                         left: pointer.x,
                         top: pointer.y,
                         width: 0,
                         height: 0,
+                        rx: cornerRadius,
+                        ry: cornerRadius,
                         fill:
                             typeof computedFill !== 'undefined' && computedFill !== null
                                 ? computedFill
@@ -2085,6 +2093,11 @@
                             strokeWidth: active.strokeWidth,
                             fill: fillVal,
                             fillOpacity: fp,
+                            ...(active.type === 'rect'
+                                ? {
+                                      cornerRadius: normalizeRectangleCornerRadius((active as Rect).rx),
+                                  }
+                                : {}),
                         },
                         type: active.type,
                     });
@@ -2194,6 +2207,13 @@
                             strokeWidth: representativeObject.strokeWidth,
                             fill: fillVal,
                             fillOpacity: fp,
+                            ...(targetType === 'rect'
+                                ? {
+                                      cornerRadius: normalizeRectangleCornerRadius(
+                                          (representativeObject as Rect).rx
+                                      ),
+                                  }
+                                : {}),
                             isSelection: true,
                             selectionType: targetType,
                         },
@@ -5613,6 +5633,10 @@
                         o.setCoords && o.setCoords();
                     } else {
                         // shapes and other objects
+                        if (o.type === 'rect' && typeof options.cornerRadius !== 'undefined') {
+                            const radius = normalizeRectangleCornerRadius(options.cornerRadius);
+                            o.set({ rx: radius, ry: radius });
+                        }
                         if (typeof options.stroke !== 'undefined') o.set('stroke', options.stroke);
                         if (typeof options.strokeWidth !== 'undefined')
                             o.set('strokeWidth', options.strokeWidth);
