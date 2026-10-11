@@ -13,6 +13,10 @@ new Function('require', 'module', 'exports', compile(readFileSync(
     resolve(__dirname, '../src/components/editor/imageCornerRadius.ts'), 'utf8'
 )))(require, helperModule, helperModule.exports);
 const helpers = helperModule.exports;
+const interactionModule = { exports: {} };
+new Function('module', 'exports', compile(readFileSync(
+    resolve(__dirname, '../src/components/editor/textInteractionState.ts'), 'utf8'
+)))(interactionModule, interactionModule.exports);
 const { applyImageCornerRadius, getImageCornerRadiusPercent, getImageBorderRadiusOptions,
     getImageBorderSourceSize } = helpers;
 
@@ -45,7 +49,7 @@ function loadEditor(background, context) {
     const snapshots = [];
     const canvas = { backgroundImage: background, getObjects: () => selected,
         getActiveObjects: () => selected, requestRenderAll() {} };
-    const imports = { ...helpers, FabricImage };
+    const imports = { ...helpers, ...interactionModule.exports, FabricImage };
     const exports = new Function(...Object.keys(imports), 'canvas', 'snapshots', 'document', compile(`
         let activeTool = 'image';
         const activeToolOptions = {};

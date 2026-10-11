@@ -1,5 +1,6 @@
 import { Shadow, Color, util } from 'fabric';
 import { getTextShadowOptions, normalizeTextShadowOptions } from './textStylePresets';
+import { installTextInteractionSerializer } from './textInteractionState';
 
 const INLINE_SHADOW = '_textShadow';
 
@@ -67,6 +68,7 @@ export function installTextRangeRenderer(text: any) {
         return;
     }
     if (!text || !['text', 'textbox', 'i-text'].includes(text.type)) return;
+    installTextInteractionSerializer(text);
     if (text.__imgReEditorRangeRenderer) return;
     text.__imgReEditorRangeRenderer = true;
     const renderChar = text._renderChar;

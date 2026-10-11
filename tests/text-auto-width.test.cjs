@@ -17,11 +17,18 @@ new Function('module', 'exports', ts.transpileModule(
         compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
     }).outputText)(radiusModule, radiusModule.exports);
 const { getTextBackgroundRadiusPercent } = radiusModule.exports;
+const interactionModule = { exports: {} };
+new Function('module', 'exports', ts.transpileModule(
+    readFileSync(resolve(__dirname, '../src/components/editor/textInteractionState.ts'), 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText)(interactionModule, interactionModule.exports);
+const { restoreTextInteractionState } = interactionModule.exports;
 const rangeModule = { exports: {} };
 new Function('require', 'module', 'exports', ts.transpileModule(
     readFileSync(resolve(__dirname, '../src/components/editor/textRangeStyles.ts'), 'utf8'), {
         compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-    }).outputText)(name => name === './textStylePresets' ? presetModule.exports : require(name), rangeModule, rangeModule.exports);
+    }).outputText)(name => name === './textStylePresets' ? presetModule.exports :
+        name === './textInteractionState' ? interactionModule.exports : require(name), rangeModule, rangeModule.exports);
 const { hasTextRange, getTextSelectionOptions, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer } = rangeModule.exports;
 
 // Exercise Fabric's real wrapping with deterministic font metrics, without a browser.
@@ -90,10 +97,10 @@ const compiled = ts.transpileModule(`
 function loadTextHelpers(changeWidth = () => false) {
     return new Function('Textbox', 'IText', 'Text', 'controlsUtils',
         'applyTextShadow', 'getTextShadowOptions', 'hasTextShadowOption', 'getTextBackgroundRadiusPercent',
-        'hasTextRange', 'setRangeTextShadow', 'clearRangeTextShadows', 'installTextRangeRenderer', compiled)(
+        'hasTextRange', 'setRangeTextShadow', 'clearRangeTextShadows', 'installTextRangeRenderer', 'restoreTextInteractionState', compiled)(
         Textbox, IText, FabricText, { changeWidth },
         applyTextShadow, getTextShadowOptions, hasTextShadowOption, getTextBackgroundRadiusPercent,
-        hasTextRange, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer
+        hasTextRange, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer, restoreTextInteractionState
     );
 }
 
@@ -107,6 +114,21 @@ test('new text starts on one line at its natural width', () => {
         assert.equal(textbox.top, 50);
         assert.equal(textbox._textAutoWidth, true);
     }
+});
+
+test('the canvas restoration path restores controls for a textbox saved with temporary editing locks', () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('挑战在思源笔记', { width: 470, fontSize: 67,
+        selectable: true, hasControls: false, lockMovementX: true, lockMovementY: true,
+        lockRotation: false, lockScalingX: false, lockScalingY: false });
+    helpers.setObjects([text]);
+    helpers.restoreObjectSelectionStates();
+    assert.equal(text.hasControls, true);
+    assert.equal(text.lockMovementX, false);
+    assert.equal(text.lockMovementY, false);
+    assert.equal(text.selectable, true);
+    assert.equal(text.evented, true);
+    assert.equal(text.__imgReEditorInteractionSerializer, true);
 });
 
 test('templates style the whole editable title without a text range and survive save/history restoration', async () => {

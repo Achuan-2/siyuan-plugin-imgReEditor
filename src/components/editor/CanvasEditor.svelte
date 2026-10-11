@@ -58,6 +58,7 @@
     import type { MaterialSnapshot } from './materialLibrary';
     import { hasTextRange, getTextSelectionOptions, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer } from './textRangeStyles';
     import { createSelectionTracker, getSelectionType, getSelectionTool } from './selectionSettings';
+    import { restoreTextInteractionState } from './textInteractionState';
 
     const selectionTracker = createSelectionTracker();
     let refreshSelectionHandler: (() => void) | null = null;
@@ -297,6 +298,7 @@
                     obj.selectable = false;
                     obj.evented = false;
                 } else {
+                    restoreTextInteractionState(obj);
                     obj.selectable = true;
                     obj.evented = true;
                     if (obj.type === 'image' && (obj._cornerRadius !== undefined || obj._imageCornerRadiusPercent !== undefined)) {
