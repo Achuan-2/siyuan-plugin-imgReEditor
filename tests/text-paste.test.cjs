@@ -4,6 +4,12 @@ const { readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
 const ts = require('typescript');
 const { Textbox, Point, setEnv } = require('fabric');
+const presetModule = { exports: {} };
+new Function('require', 'module', 'exports', ts.transpileModule(readFileSync(
+    resolve(__dirname, '../src/components/editor/textStylePresets.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText)(require, presetModule, presetModule.exports);
+const { getTextStrokeStrength, textStrokeStrengthToWidth } = presetModule.exports;
 
 setEnv({
     document: { createElement: () => ({ getContext: () => ({ measureText: text => ({ width: [...text].length * 200 }) }) }) },
@@ -36,13 +42,14 @@ function fixture({ active = null, target = {}, tool = null, clipboard = [] } = {
     const onPaste = new Function('canvas', 'Textbox', 'activeTool', 'activeToolOptions', 'settings',
         'getTextStrokeOptions', 'getTextBackgroundOptions', 'applyTextShadow',
         'applyTextRenderingOptions', 'schedulePushWithType', 'clipboard', 'pasteClipboard',
-        'addFabricImageFromURL', 'FileReader', compiled)(
+        'addFabricImageFromURL', 'FileReader', 'getTextStrokeStrength', 'textStrokeStrengthToWidth', compiled)(
         canvas, Textbox, tool, { fill: '#ff0000', size: 99 }, { lastToolSettings: { text: textOptions } },
         () => ({ strokeWidth: 0 }), () => ({}), () => {}, () => {}, type => history.push(type),
         clipboard, () => shapePastes++, url => images.push(url),
         class {
             readAsDataURL(file) { this.onload({ target: { result: file.url } }); }
         },
+        getTextStrokeStrength, textStrokeStrengthToWidth,
     );
     return {
         added, history, images, center, get shapePastes() { return shapePastes; },

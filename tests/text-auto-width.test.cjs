@@ -10,7 +10,8 @@ new Function('require', 'module', 'exports', ts.transpileModule(presetSource, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText)(require, presetModule, presetModule.exports);
 const { applyTextShadow, getTextShadowOptions, hasTextShadowOption,
-    TEXT_STYLE_PRESETS, getTextStylePresetOptions } = presetModule.exports;
+    TEXT_STYLE_PRESETS, getTextStylePresetOptions, getTextStrokeStrength,
+    textStrokeStrengthToWidth, textStrokeWidthToStrength } = presetModule.exports;
 const radiusModule = { exports: {} };
 new Function('module', 'exports', ts.transpileModule(
     readFileSync(resolve(__dirname, '../src/components/editor/textBackgroundRadius.ts'), 'utf8'), {
@@ -44,9 +45,10 @@ const parsed = ts.createSourceFile('CanvasEditor.ts', source, ts.ScriptTarget.La
 const functionNames = [
     'autoResizeTextObject', 'isTextObject', 'restoreObjectSelectionStates',
     'normalizeTextResizeMode', 'getTextResizeMode', 'getTextResizeModeForEvent',
-    'getTextResizeActionHandler',
+    'getTextResizeActionHandler', 'finishTextResize',
     'applyToolOptionsToSelection',
     'normalizeTextStrokeWidth', 'getTextStrokeOptions',
+    'scaleTextStrokeWidth', 'scaleTextStylesForFontSize',
     'clampNumber', 'hasTextBackgroundOption', 'getTextBackgroundOptions',
 ];
 const functions = parsed.statements.filter(node => ts.isFunctionDeclaration(node) && functionNames.includes(node.name.text))
@@ -55,11 +57,11 @@ const creation = source.slice(source.indexOf('                    let itext: any
 const beforeTransform = source.match(/        canvas\.on\('before:transform',[\s\S]*?(?=        \/\/ A newly created textbox)/)[0];
 const compiled = ts.transpileModule(`
     const DEFAULT_TEXT_RESIZE_MODE = 'layout';
-    const MAX_TEXT_STROKE_WIDTH = 20;
     ${source.match(/const TEXT_BACKGROUND_PROPS = \[[\s\S]*?\];/)[0]}
     const activeTool = 'text';
     const activeToolOptions = { textResizeMode: 'layout' };
     let beforeResize;
+    const refreshSelectionHandler = null;
     let objects = [];
     let history = [];
     const canvas = {
@@ -77,7 +79,7 @@ const compiled = ts.transpileModule(`
     ${functions}
     ${beforeTransform}
     return {
-        autoResizeTextObject, restoreObjectSelectionStates, beforeResize,
+        autoResizeTextObject, restoreObjectSelectionStates, beforeResize, finishTextResize, getTextStrokeOptions,
         applyToolOptionsToSelection,
         getHistory: () => history,
         setObjects: value => { objects = value; },
@@ -85,8 +87,10 @@ const compiled = ts.transpileModule(`
             Object.assign(activeToolOptions, options, { textAlign });
             const t = () => value;
             const pointer = { x: 30, y: 50 };
-            const fontFamily = 'test', fontSize = 24, fill = '#000000';
-            const textStrokeOptions = {}, textBackgroundOptions = {};
+            const fontFamily = 'test', fontSize = options.size || 24, fill = '#000000';
+            const textStrokeOptions = getTextStrokeOptions(options.stroke,
+                textStrokeStrengthToWidth(getTextStrokeStrength(options, fontSize), fontSize), fontSize);
+            const textBackgroundOptions = {};
             const fontWeight = 'normal', fontStyle = 'normal', underline = false;
             ${creation}
             return itext;
@@ -97,10 +101,12 @@ const compiled = ts.transpileModule(`
 function loadTextHelpers(changeWidth = () => false) {
     return new Function('Textbox', 'IText', 'Text', 'controlsUtils',
         'applyTextShadow', 'getTextShadowOptions', 'hasTextShadowOption', 'getTextBackgroundRadiusPercent',
-        'hasTextRange', 'setRangeTextShadow', 'clearRangeTextShadows', 'installTextRangeRenderer', 'restoreTextInteractionState', compiled)(
+        'hasTextRange', 'setRangeTextShadow', 'clearRangeTextShadows', 'installTextRangeRenderer', 'restoreTextInteractionState',
+        'getTextStrokeStrength', 'textStrokeStrengthToWidth', 'textStrokeWidthToStrength', compiled)(
         Textbox, IText, FabricText, { changeWidth },
         applyTextShadow, getTextShadowOptions, hasTextShadowOption, getTextBackgroundRadiusPercent,
-        hasTextRange, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer, restoreTextInteractionState
+        hasTextRange, setRangeTextShadow, clearRangeTextShadows, installTextRangeRenderer, restoreTextInteractionState,
+        getTextStrokeStrength, textStrokeStrengthToWidth, textStrokeWidthToStrength
     );
 }
 
@@ -144,6 +150,7 @@ test('templates style the whole editable title without a text range and survive 
         textbox.selectionEnd = 0;
         helpers.setObjects([textbox]);
         const options = getTextStylePresetOptions(preset, textbox.fontSize);
+        const expectedStrokeWidth = textStrokeStrengthToWidth(options.textStrokeStrength, textbox.fontSize);
         helpers.applyToolOptionsToSelection(options);
         assert.equal(textbox.text, 'Cover title');
         assert.equal(textbox.fontSize, 60);
@@ -153,7 +160,7 @@ test('templates style the whole editable title without a text range and survive 
         assert.equal(textbox.top, 50);
         assert.equal(textbox.fill, preset.fill);
         assert.equal(textbox.fontWeight, options.bold ? 'bold' : 'normal');
-        assert.equal(textbox.strokeWidth, options.strokeWidth);
+        assert.equal(textbox.strokeWidth, expectedStrokeWidth);
         assert.equal(textbox.textBackgroundEnabled, !!preset.background);
         assert.equal(!!textbox.shadow, preset.shadow);
         assert.equal(textbox.styles[0]?.[0]?.fill, undefined);
@@ -163,7 +170,7 @@ test('templates style the whole editable title without a text range and survive 
             const restored = await Textbox.fromObject(saved);
             assert.equal(restored.text, textbox.text);
             assert.equal(restored.fill, preset.fill);
-            assert.equal(restored.strokeWidth, options.strokeWidth);
+            assert.equal(restored.strokeWidth, expectedStrokeWidth);
             assert.deepEqual(getTextShadowOptions(restored), getTextShadowOptions(textbox));
             restored.set('text', 'Still editable');
             assert.equal(restored.text, 'Still editable');
@@ -423,4 +430,168 @@ test('clicking a resize handle retains auto width; actual resizing switches to f
     helpers.autoResizeTextObject(restored);
     assert.equal(restored.width, 25);
     assert.equal(restored._textAutoWidth, false);
+});
+
+test('font resize keeps object and character stroke ratios through repeated scaling and reload', async () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('ABCD', { fontSize: 24, stroke: '#000000', strokeWidth: 2, width: 200,
+        styles: { 0: { 1: { fontSize: 36, strokeWidth: 3, fill: '#ff0000' }, 2: { strokeWidth: 0 } } } });
+    const initialWidth = text.width;
+    for (const scale of [2, 0.5, 1.333, 8]) {
+        const expectedFontSize = Math.round(text.fontSize * scale);
+        helpers.beforeResize({ e: { shiftKey: true }, transform: { target: text, corner: 'br' } });
+        text.set({ scaleX: scale, scaleY: scale });
+        helpers.finishTextResize(text);
+        assert.equal(text.fontSize, expectedFontSize);
+        assert.ok(Math.abs(text.strokeWidth / text.fontSize - 2 / 24) < 1e-12);
+        const character = text.getStyleAtPosition(1, true);
+        assert.ok(Math.abs(character.strokeWidth / character.fontSize - 3 / 36) < 1e-12);
+        assert.equal(character.fill, '#ff0000');
+        assert.equal(text.getStyleAtPosition(2, true).strokeWidth, 0);
+        assert.equal(text.scaleX, 1);
+        assert.equal(text.scaleY, 1);
+    }
+    assert.ok(text.width > initialWidth);
+    assert.ok(text.strokeWidth > 20);
+    // Rendering normalization must not clip proportional strokes to the old 20px ceiling.
+    assert.equal(helpers.getTextStrokeOptions(text.stroke, text.strokeWidth, text.fontSize).strokeWidth, text.strokeWidth);
+    const restored = await Textbox.fromObject(JSON.parse(JSON.stringify(text.toObject())));
+    helpers.setObjects([restored]);
+    helpers.restoreObjectSelectionStates();
+    // Fabric serializes object dimensions to four decimal places.
+    assert.ok(Math.abs(restored.strokeWidth - text.strokeWidth) < 0.0001);
+    assert.deepEqual(restored.getStyleAtPosition(1, true), text.getStyleAtPosition(1, true));
+});
+
+test('layout resizing keeps stroke widths and font sizes; vertical font scaling uses scaleY', () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('ABCD', { fontSize: 24, strokeWidth: 2, width: 200,
+        styles: { 0: { 1: { fontSize: 36, strokeWidth: 3 } } } });
+    const styles = structuredClone(text.styles);
+    helpers.beforeResize({ e: {}, transform: { target: text, corner: 'mr' } });
+    text.set({ width: 300 });
+    helpers.finishTextResize(text);
+    assert.equal(text.fontSize, 24);
+    assert.equal(text.strokeWidth, 2);
+    assert.deepEqual(text.styles, styles);
+    helpers.beforeResize({ e: { shiftKey: true }, transform: { target: text, corner: 'mb' } });
+    text.set({ scaleY: 2 });
+    helpers.finishTextResize(text);
+    assert.equal(text.fontSize, 48);
+    assert.equal(text.strokeWidth, 4);
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 6);
+});
+
+test('sidebar font changes preserve each stroke ratio and explicit stroke settings take precedence', async () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('ABCD', { fontSize: 24, strokeWidth: 2, stroke: '#000000',
+        styles: { 0: { 1: { fontSize: 48, strokeWidth: 8, stroke: '#ff0000' }, 2: { strokeWidth: 0 } } } });
+    helpers.setObjects([text]);
+    helpers.applyToolOptionsToSelection({ size: 48 });
+    assert.equal(text.fontSize, 48);
+    assert.equal(text.strokeWidth, 4);
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 8);
+    assert.equal(text.getStyleAtPosition(1, true).stroke, '#ff0000');
+    assert.equal(text.getStyleAtPosition(2, true).strokeWidth, 0);
+    const restored = await Textbox.fromObject(helpers.getHistory().at(-1)[0]);
+    assert.equal(restored.strokeWidth, 4);
+    assert.equal(restored.getStyleAtPosition(1, true).strokeWidth, 8);
+    helpers.applyToolOptionsToSelection({ size: 96, strokeWidth: 5 });
+    assert.equal(text.strokeWidth, 5);
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 5);
+    helpers.applyToolOptionsToSelection({ strokeWidth: 0 });
+    helpers.applyToolOptionsToSelection({ size: 24 });
+    assert.equal(text.strokeWidth, 0);
+});
+
+test('range font changes scale individual strokes without changing unselected characters', () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('ABCD', { fontSize: 24, strokeWidth: 2,
+        styles: { 0: { 2: { fontSize: 48, strokeWidth: 8, stroke: '#ff0000' } } } });
+    text.initDelayedCursor = () => {};
+    text.isEditing = true;
+    text.selectionStart = 1;
+    text.selectionEnd = 3;
+    helpers.setObjects([text]);
+    helpers.applyToolOptionsToSelection({ size: 48 });
+    assert.equal(text.strokeWidth, 2);
+    assert.equal(text.fontSize, 24);
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 4);
+    assert.equal(text.getStyleAtPosition(2, true).strokeWidth, 8);
+    assert.equal(text.getStyleAtPosition(2, true).stroke, '#ff0000');
+    for (const index of [0, 3]) {
+        assert.equal(text.getStyleAtPosition(index, true).fontSize, 24);
+        assert.equal(text.getStyleAtPosition(index, true).strokeWidth, 2);
+    }
+    helpers.applyToolOptionsToSelection({ size: 96, strokeWidth: 6 });
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 6);
+    assert.equal(text.getStyleAtPosition(2, true).strokeWidth, 6);
+});
+
+test('restoring legacy scaled text bakes the scale into its stroke and character styles', () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('ABCD', { fontSize: 24, strokeWidth: 2, scaleX: 2, scaleY: 2,
+        styles: { 0: { 1: { fontSize: 36, strokeWidth: 3 } } } });
+    helpers.setObjects([text]);
+    helpers.restoreObjectSelectionStates();
+    assert.equal(text.fontSize, 48);
+    assert.equal(text.strokeWidth, 4);
+    assert.equal(text.getStyleAtPosition(1, true).fontSize, 72);
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 6);
+});
+
+test('strength 2 has the same effect at every font size and stays 2 after resizing and reloading', async () => {
+    for (const fontSize of [12, 24, 48, 96]) {
+        const helpers = loadTextHelpers();
+        const text = helpers.createText('ABCD', 'left', { size: fontSize, textStrokeStrength: 2 });
+        assert.equal(text.strokeWidth / text.fontSize, 2 / 24);
+        helpers.setObjects([text]);
+        helpers.applyToolOptionsToSelection({ textStrokeStrength: 2 });
+        assert.equal(textStrokeWidthToStrength(text.strokeWidth, text.fontSize), 2);
+        helpers.applyToolOptionsToSelection({ size: fontSize * 2 });
+        assert.equal(text.strokeWidth / text.fontSize, 2 / 24);
+        helpers.beforeResize({ e: { shiftKey: true }, transform: { target: text, corner: 'br' } });
+        text.set({ scaleX: 1.5, scaleY: 1.5 });
+        helpers.finishTextResize(text);
+        assert.equal(textStrokeWidthToStrength(text.strokeWidth, text.fontSize), 2);
+        const restored = await Textbox.fromObject(text.toObject());
+        helpers.setObjects([restored]);
+        helpers.restoreObjectSelectionStates();
+        assert.equal(textStrokeWidthToStrength(restored.strokeWidth, restored.fontSize), 2);
+    }
+});
+
+test('applying strength to a mixed-size text range uses each character size', () => {
+    const helpers = loadTextHelpers();
+    const text = new Textbox('ABCD', { fontSize: 24, strokeWidth: 0,
+        styles: { 0: { 2: { fontSize: 48 } } } });
+    text.initDelayedCursor = () => {};
+    text.isEditing = true;
+    text.selectionStart = 1;
+    text.selectionEnd = 3;
+    helpers.setObjects([text]);
+    helpers.applyToolOptionsToSelection({ textStrokeStrength: 2 });
+    assert.equal(text.getStyleAtPosition(1, true).strokeWidth, 2);
+    assert.equal(text.getStyleAtPosition(2, true).strokeWidth, 4);
+    assert.equal(getTextSelectionOptions(text).textStrokeStrength, 2);
+    text.selectionStart = 2;
+    assert.equal(getTextSelectionOptions(text).textStrokeStrength, 2);
+    assert.equal(text.getStyleAtPosition(0, true).strokeWidth, 0);
+    helpers.applyToolOptionsToSelection({ size: 96, textStrokeStrength: 2 });
+    assert.equal(text.getStyleAtPosition(2, true).strokeWidth, 8);
+    assert.equal(getTextSelectionOptions(text).textStrokeStrength, 2);
+});
+
+test('legacy pixel settings convert to strength while existing saved text keeps its appearance', () => {
+    const legacy = { strokeWidth: 4, size: 48 };
+    assert.equal(getTextStrokeStrength(legacy), 2);
+    assert.equal(getTextStrokeStrength({ ...legacy, textStrokeStrength: 3 }), 3);
+    const helpers = loadTextHelpers();
+    const text = helpers.createText('ABCD', 'left', legacy);
+    assert.equal(text.strokeWidth, 4);
+    helpers.setObjects([text]);
+    helpers.restoreObjectSelectionStates();
+    assert.equal(text.strokeWidth, 4);
+    assert.equal(text.fontSize, 48);
+    assert.equal(textStrokeWidthToStrength(text.strokeWidth, text.fontSize), 2);
 });

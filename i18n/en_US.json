@@ -334,7 +334,7 @@
         "bold": "Bold",
         "italic": "Italic",
         "underline": "Underline",
-        "strokeThickness": "Stroke width",
+        "strokeThickness": "Stroke strength",
         "textTemplates": "Text templates",
         "textTemplatePreview": "Text",
         "textTemplateHint": "Apply to the whole text, keep its size and position, then customize the style",

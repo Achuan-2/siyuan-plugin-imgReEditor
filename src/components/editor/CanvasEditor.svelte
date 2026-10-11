@@ -47,6 +47,9 @@
         getTextShadowOptions,
         hasTextShadowOption,
         normalizeTextShadowOptions,
+        getTextStrokeStrength,
+        textStrokeStrengthToWidth,
+        textStrokeWidthToStrength,
     } from './textStylePresets';
     import { getTextBackgroundRadiusPercent, getTextBackgroundPixelRadius } from './textBackgroundRadius';
     import {
@@ -320,6 +323,7 @@
                             const previousScaleX = Number(obj.scaleX) || 1;
                             const previousWidth = Number(obj.width) || 1;
                             const newFontSize = Math.round(obj.fontSize * previousScaleX);
+                            scaleTextStylesForFontSize(obj, newFontSize);
                             obj.set({
                                 fontSize: newFontSize,
                                 scaleX: 1,
@@ -429,7 +433,6 @@
         return color;
     }
 
-    const MAX_TEXT_STROKE_WIDTH = 20;
     const DEFAULT_TEXT_RESIZE_MODE = 'layout';
     const TEXT_RESIZE_MODE_VERSION = 2;
     const TEXT_RESIZE_MODES = ['font-size', 'layout'] as const;
@@ -467,9 +470,9 @@
         if (resizeState?.mode === 'layout') {
             return Math.round(Number(resizeState.fontSize) || Number(textObj.fontSize) || 1);
         }
-        return Math.round(
-            (Number(textObj?.fontSize) || 1) * (Number(textObj?.scaleX) || 1)
-        );
+        const scale = resizeState?.corner === 'mt' || resizeState?.corner === 'mb'
+            ? textObj?.scaleY : textObj?.scaleX;
+        return Math.max(1, Math.round((Number(textObj?.fontSize) || 1) * Math.abs(Number(scale) || 1)));
     }
 
     function autoResizeTextObject(textObj: any) {
@@ -584,6 +587,7 @@
             nextFontSize = Math.round(Number(target.fontSize) || initialFontSize);
         } else {
             nextFontSize = Math.max(1, nextFontSize);
+            scaleTextStylesForFontSize(target, nextFontSize);
             if (target.type === 'textbox') {
                 // Font-size mode is an equivalent zoom: keep each line at the
                 // same break point by scaling the internal layout width along
@@ -609,7 +613,47 @@
     function normalizeTextStrokeWidth(value: any, _fontSize?: any) {
         const n = Number(value);
         if (!Number.isFinite(n) || n <= 0) return 0;
-        return Math.min(MAX_TEXT_STROKE_WIDTH, n);
+        return n;
+    }
+
+    function scaleTextStrokeWidth(value: any, previousFontSize: any, nextFontSize: any) {
+        const previousSize = Number(previousFontSize);
+        const nextSize = Number(nextFontSize);
+        if (!Number.isFinite(previousSize) || previousSize <= 0 ||
+            !Number.isFinite(nextSize) || nextSize <= 0) {
+            return normalizeTextStrokeWidth(value);
+        }
+        return normalizeTextStrokeWidth(value) * nextSize / previousSize;
+    }
+
+    /** Bake a font resize into both object and character styles before clearing scale. */
+    function scaleTextStylesForFontSize(textObj: any, nextFontSize: number, scaleCharacterFonts = true) {
+        const previousFontSize = Number(textObj.fontSize) || 1;
+        const previousStrokeWidth = textObj.strokeWidth;
+        const ratio = nextFontSize / previousFontSize;
+        const styles: any = {};
+        for (const [line, row] of Object.entries(textObj.styles || {})) {
+            styles[line] = {};
+            for (const [character, style] of Object.entries(row as any)) {
+                const nextStyle: any = { ...(style as any) };
+                if (nextStyle.strokeWidth !== undefined ||
+                    (!scaleCharacterFonts && nextStyle.fontSize !== undefined)) {
+                    nextStyle.strokeWidth = scaleTextStrokeWidth(
+                        nextStyle.strokeWidth ?? previousStrokeWidth,
+                        scaleCharacterFonts ? previousFontSize : nextStyle.fontSize ?? previousFontSize,
+                        nextFontSize
+                    );
+                }
+                if (scaleCharacterFonts && nextStyle.fontSize !== undefined) {
+                    nextStyle.fontSize *= ratio;
+                }
+                styles[line][character] = nextStyle;
+            }
+        }
+        textObj.set({
+            strokeWidth: scaleTextStrokeWidth(previousStrokeWidth, previousFontSize, nextFontSize),
+            styles,
+        });
     }
 
     function getTextStrokeOptions(
@@ -1129,7 +1173,8 @@
             fontWeight: options.bold ? 'bold' : 'normal',
             fontStyle: options.italic ? 'italic' : 'normal',
             underline: !!options.underline,
-            ...getTextStrokeOptions(options.stroke, options.strokeWidth, fontSize),
+            ...getTextStrokeOptions(options.stroke,
+                textStrokeStrengthToWidth(getTextStrokeStrength(options, fontSize), fontSize), fontSize),
             ...getTextBackgroundOptions(options),
             selectable: true,
             evented: true,
@@ -1444,6 +1489,7 @@
                     const previousScaleX = Number(target.scaleX) || 1;
                     const previousWidth = Number(target.width) || 1;
                     const newFontSize = Math.round(target.fontSize * previousScaleX);
+                    scaleTextStylesForFontSize(target, newFontSize);
                     target.set({ fontSize: newFontSize, scaleX: 1, scaleY: 1 });
                     if (target.type === 'textbox') {
                         target.set('width', previousWidth);
@@ -2020,13 +2066,13 @@
                                 typeof hit.stroke !== 'undefined'
                                     ? hit.stroke
                                     : activeToolOptions.stroke;
-                            activeToolOptions.strokeWidth =
+                            activeToolOptions.textStrokeStrength =
                                 typeof hit.strokeWidth !== 'undefined'
-                                    ? normalizeTextStrokeWidth(
+                                    ? textStrokeWidthToStrength(
                                           hit.strokeWidth,
                                           (hit as any).fontSize
                                       )
-                                    : activeToolOptions.strokeWidth;
+                                    : activeToolOptions.textStrokeStrength;
                             Object.assign(activeToolOptions, getTextBackgroundOptions(hit));
                             Object.assign(activeToolOptions, getTextShadowOptions(hit));
                             applyTextRenderingOptions(hit);
@@ -2046,7 +2092,7 @@
                     const fill = activeToolOptions.fill || '#000000';
                     const textStrokeOptions = getTextStrokeOptions(
                         activeToolOptions.stroke,
-                        activeToolOptions.strokeWidth,
+                        textStrokeStrengthToWidth(getTextStrokeStrength(activeToolOptions, fontSize), fontSize),
                         fontSize
                     );
                     const textBackgroundOptions = getTextBackgroundOptions(activeToolOptions);
@@ -2234,7 +2280,7 @@
                             textAlign: (active as any).textAlign || 'left',
                             fill: active.fill,
                             stroke: active.stroke || activeToolOptions.stroke || '#ffffff',
-                            strokeWidth: normalizeTextStrokeWidth(
+                            textStrokeStrength: textStrokeWidthToStrength(
                                 active.strokeWidth,
                                 (active as any).fontSize
                             ),
@@ -2431,7 +2477,7 @@
                             textAlign: (representativeObject as any).textAlign || 'left',
                             fill: fillVal,
                             stroke: representativeObject.stroke || activeToolOptions.stroke || '#ffffff',
-                            strokeWidth: normalizeTextStrokeWidth(
+                            textStrokeStrength: textStrokeWidthToStrength(
                                 representativeObject.strokeWidth,
                                 (representativeObject as any).fontSize
                             ),
@@ -2604,6 +2650,9 @@
                 if (activeTool === 'text') {
                     const effectiveSize = getTextDisplayFontSize(target);
                     activeToolOptions.size = effectiveSize;
+                    activeToolOptions.textStrokeStrength = textStrokeWidthToStrength(
+                        target.strokeWidth, target.fontSize
+                    );
                     // Only dispatch if necessary to avoid flooding
                     dispatchSelection({
                         options: { ...activeToolOptions, size: effectiveSize },
@@ -3237,10 +3286,8 @@
             activeToolOptions.textAlign = activeToolOptions.textAlign || 'left';
             activeToolOptions.fill = activeToolOptions.fill || '#000000';
             activeToolOptions.stroke = activeToolOptions.stroke || '#ffffff';
-            activeToolOptions.strokeWidth = normalizeTextStrokeWidth(
-                activeToolOptions.strokeWidth ?? 0,
-                activeToolOptions.size
-            );
+            activeToolOptions.textStrokeStrength = getTextStrokeStrength(activeToolOptions);
+            delete activeToolOptions.strokeWidth;
             activeToolOptions.textResizeMode = normalizeTextResizeMode(
                 activeToolOptions.textResizeMode
             );
@@ -5695,15 +5742,17 @@
                         const shouldUpdateStroke =
                             typeof options.stroke !== 'undefined' ||
                             typeof options.strokeWidth !== 'undefined' ||
-                            typeof options.size !== 'undefined';
+                            typeof options.textStrokeStrength !== 'undefined';
+                        const shouldUpdateStrokeWidth = typeof options.strokeWidth !== 'undefined' ||
+                            typeof options.textStrokeStrength !== 'undefined';
                         const shouldUpdateBackground = hasTextBackgroundOption(options);
                         const textStrokeOptions = getTextStrokeOptions(
                             typeof options.stroke !== 'undefined'
                                 ? options.stroke
                                 : o.stroke || activeToolOptions.stroke,
-                            typeof options.strokeWidth !== 'undefined'
-                                ? options.strokeWidth
-                                : o.strokeWidth,
+                            typeof options.textStrokeStrength !== 'undefined'
+                                ? textStrokeStrengthToWidth(options.textStrokeStrength, nextFontSize)
+                                : typeof options.strokeWidth !== 'undefined' ? options.strokeWidth : o.strokeWidth,
                             nextFontSize
                         );
                         const textBackgroundOptions = getTextBackgroundOptions({
@@ -5734,14 +5783,29 @@
                         if (applyToRange) {
                             // Apply to selected text range
                             const styles: any = {};
+                            if (typeof options.textStrokeStrength !== 'undefined' ||
+                                (typeof options.size !== 'undefined' && !shouldUpdateStrokeWidth)) {
+                                // Each selected character can have a different font size and stroke.
+                                for (let index = o.selectionStart; index < o.selectionEnd; index++) {
+                                    const current = o.getSelectionStyles(index, index + 1, true)[0];
+                                    o.setSelectionStyles({
+                                        strokeWidth: typeof options.textStrokeStrength !== 'undefined'
+                                            ? textStrokeStrengthToWidth(options.textStrokeStrength,
+                                                typeof options.size !== 'undefined' ? nextFontSize : current.fontSize)
+                                            : scaleTextStrokeWidth(current.strokeWidth, current.fontSize, nextFontSize),
+                                    }, index, index + 1);
+                                }
+                            }
                             if (typeof options.family !== 'undefined')
                                 styles.fontFamily = options.family;
                             if (typeof options.size !== 'undefined')
                                 styles.fontSize = +options.size;
                             if (typeof options.fill !== 'undefined') styles.fill = options.fill;
                             if (shouldUpdateStroke) {
-                                styles.stroke = textStrokeOptions.stroke;
-                                styles.strokeWidth = textStrokeOptions.strokeWidth;
+                                if (typeof options.stroke !== 'undefined') styles.stroke = textStrokeOptions.stroke;
+                                // Relative strength is applied per character above, using each font size.
+                                if (typeof options.strokeWidth !== 'undefined' && typeof options.textStrokeStrength === 'undefined')
+                                    styles.strokeWidth = textStrokeOptions.strokeWidth;
                             }
                             if (shouldUpdateBackground) {
                                 if (options.textStylePreset) {
@@ -5775,6 +5839,9 @@
                                 cleanStyle('fontFamily');
                             }
                             if (typeof options.size !== 'undefined') {
+                                if (!shouldUpdateStrokeWidth) {
+                                    scaleTextStylesForFontSize(o, nextFontSize, false);
+                                }
                                 o.set('fontSize', +options.size);
                                 cleanStyle('fontSize');
                             }
@@ -5783,9 +5850,14 @@
                                 cleanStyle('fill');
                             }
                             if (shouldUpdateStroke) {
-                                o.set(textStrokeOptions);
-                                cleanStyle('stroke');
-                                cleanStyle('strokeWidth');
+                                if (typeof options.stroke !== 'undefined') {
+                                    o.set('stroke', textStrokeOptions.stroke);
+                                    cleanStyle('stroke');
+                                }
+                                if (shouldUpdateStrokeWidth) {
+                                    o.set('strokeWidth', textStrokeOptions.strokeWidth);
+                                    cleanStyle('strokeWidth');
+                                }
                             }
                             if (shouldUpdateBackground) {
                                 o.set(textBackgroundOptions);
@@ -5978,6 +6050,8 @@
             canvas.requestRenderAll();
             // push to history (treat as modification)
             schedulePushWithType('modified');
+            if (typeof options.size !== 'undefined' || typeof options.textStrokeStrength !== 'undefined')
+                refreshSelectionHandler?.();
         } catch (e) {}
     }
 

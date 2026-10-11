@@ -59,7 +59,7 @@ test('default and unfilled templates preview transparently and reset styled text
     const options = component.events.at(-1).detail;
     assert.equal(options.fill, '#000000');
     assert.equal(options.bold, false);
-    assert.equal(options.strokeWidth, 0);
+    assert.equal(options.textStrokeStrength, 0);
     assert.equal(options.textShadowEnabled, false);
     assert.equal(options.textBackgroundEnabled, false);
     assert.equal(Object.hasOwn(options, 'size'), false);
@@ -68,7 +68,7 @@ test('default and unfilled templates preview transparently and reset styled text
 
 test('custom templates save style only and are reusable after settings serialization', async () => {
     const current = { family: 'Arial', size: 64, text: 'Never save content', left: 42,
-        bold: true, fill: '#ff0000', strokeWidth: 4, textBackgroundEnabled: true,
+        bold: true, fill: '#ff0000', textStrokeStrength: 4, textBackgroundEnabled: true,
         textBackgroundFill: '#ff0000', textBackgroundOpacity: 0.5, textBackgroundRadiusPercent: 40,
         textShadowEnabled: true, textShadowColor: '#111111', textShadowOffsetX: -3 };
     const component = loadTemplates(current);
@@ -146,4 +146,24 @@ test('the real dropdown markup renders template names and previews with custom t
     }
     assert.ok(rendered.includes('<details'));
     assert.ok(!rendered.includes('封面文字样式'));
+});
+
+test('templates store relative stroke strength and preview it consistently at different font sizes', () => {
+    const preset = helpers.TEXT_STYLE_PRESETS.find(item => item.id === 'whiteOutline');
+    const small = helpers.getTextStylePresetOptions(preset, 24);
+    const large = helpers.getTextStylePresetOptions(preset, 96);
+    assert.equal(small.textStrokeStrength, 2);
+    assert.equal(large.textStrokeStrength, 2);
+    const smallStroke = helpers.getTextTemplatePreview(small, 24).match(/-webkit-text-stroke:[^;]+/)[0];
+    const largeStroke = helpers.getTextTemplatePreview(large, 96).match(/-webkit-text-stroke:[^;]+/)[0];
+    assert.equal(smallStroke, largeStroke);
+    const saved = helpers.captureTextTemplateStyle({ textStrokeStrength: 2, size: 96 });
+    assert.equal(saved.textStrokeStrength, 2);
+    assert.equal(Object.hasOwn(saved, 'strokeWidth'), false);
+    const restored = helpers.normalizeCustomTextTemplates(JSON.parse(JSON.stringify([
+        { id: 'custom-strength', name: 'Outline', style: saved },
+    ])))[0];
+    assert.equal(restored.style.textStrokeStrength, 2);
+    const legacy = helpers.captureTextTemplateStyle({ strokeWidth: 4, size: 48 });
+    assert.equal(legacy.textStrokeStrength, 2);
 });

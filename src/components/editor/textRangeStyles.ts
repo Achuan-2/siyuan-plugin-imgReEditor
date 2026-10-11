@@ -1,5 +1,5 @@
 import { Shadow, Color, util } from 'fabric';
-import { getTextShadowOptions, normalizeTextShadowOptions } from './textStylePresets';
+import { getTextShadowOptions, normalizeTextShadowOptions, textStrokeWidthToStrength } from './textStylePresets';
 import { installTextInteractionSerializer } from './textInteractionState';
 
 const INLINE_SHADOW = '_textShadow';
@@ -24,7 +24,7 @@ export function getTextSelectionOptions(text: any) {
     const background = style.textBackgroundColor ? new Color(style.textBackgroundColor) : null;
     return {
         family: style.fontFamily, size: style.fontSize, fill: style.fill,
-        stroke: style.stroke, strokeWidth: style.strokeWidth,
+        stroke: style.stroke, textStrokeStrength: textStrokeWidthToStrength(style.strokeWidth, style.fontSize),
         bold: style.fontWeight === 'bold' || Number(style.fontWeight) >= 600,
         italic: style.fontStyle === 'italic', underline: !!style.underline,
         ...getTextShadowOptions(text),

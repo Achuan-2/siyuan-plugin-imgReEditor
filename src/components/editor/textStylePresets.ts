@@ -33,6 +33,28 @@ function finiteNumber(value: unknown, fallback: number) {
     return Number.isFinite(number) ? number : fallback;
 }
 
+// A strength of 1 means 1px at 24px font size. Fabric keeps pixel widths;
+// tool settings and templates keep the same dimensionless strength at any size.
+const TEXT_STROKE_REFERENCE_SIZE = 24;
+
+export function textStrokeStrengthToWidth(strength: unknown, fontSize: unknown) {
+    const size = Math.max(1, finiteNumber(fontSize, TEXT_STROKE_REFERENCE_SIZE));
+    return Math.max(0, finiteNumber(strength, 0)) * size / TEXT_STROKE_REFERENCE_SIZE;
+}
+
+export function textStrokeWidthToStrength(width: unknown, fontSize: unknown) {
+    const size = Math.max(1, finiteNumber(fontSize, TEXT_STROKE_REFERENCE_SIZE));
+    // Match Fabric's saved precision and keep the numeric input readable.
+    return Math.round(Math.max(0, finiteNumber(width, 0)) * TEXT_STROKE_REFERENCE_SIZE / size * 10000) / 10000;
+}
+
+/** Convert legacy pixel-based tool settings without changing existing objects. */
+export function getTextStrokeStrength(options: Record<string, unknown>, fontSize = options.size || options.fontSize || 24) {
+    return options.textStrokeStrength !== undefined
+        ? Math.max(0, finiteNumber(options.textStrokeStrength, 0))
+        : textStrokeWidthToStrength(options.strokeWidth, fontSize);
+}
+
 /** Keep title size, font family, alignment and geometry; size effects to the current font. */
 export function getTextStylePresetOptions(preset: TextStylePreset, fontSize = 24) {
     const size = Math.max(1, finiteNumber(fontSize, 24));
@@ -43,7 +65,7 @@ export function getTextStylePresetOptions(preset: TextStylePreset, fontSize = 24
         underline: false,
         fill: preset.fill,
         stroke: preset.stroke,
-        strokeWidth: Math.min(20, Math.round(size * preset.strokeRatio * 2) / 2),
+        textStrokeStrength: Math.round(TEXT_STROKE_REFERENCE_SIZE * preset.strokeRatio * 2) / 2,
         textShadowEnabled: preset.shadow,
         textShadowColor: '#000000',
         textShadowBlur: Math.round(size * 0.08 * 2) / 2,
@@ -53,7 +75,7 @@ export function getTextStylePresetOptions(preset: TextStylePreset, fontSize = 24
         textBackgroundFill: preset.background || '#ffffff',
         textBackgroundOpacity: 1,
         textBackgroundRadiusPercent: 0,
-        textBackgroundPadding: Math.round(size * 0.15),
+        textBackgroundPadding: preset.background ? 5 : Math.round(size * 0.15),
         textBackgroundStrokeEnabled: false,
         textBackgroundStroke: preset.background || '#ffffff',
     };
@@ -71,7 +93,7 @@ export interface CustomTextTemplate {
 }
 
 const TEXT_TEMPLATE_STYLE_KEYS = [
-    'family', 'bold', 'italic', 'underline', 'fill', 'stroke', 'strokeWidth',
+    'family', 'bold', 'italic', 'underline', 'fill', 'stroke', 'textStrokeStrength',
     'textShadowEnabled', 'textShadowColor', 'textShadowBlur', 'textShadowOffsetX', 'textShadowOffsetY',
     'textBackgroundEnabled', 'textBackgroundFill', 'textBackgroundOpacity',
     'textBackgroundRadiusPercent', 'textBackgroundPadding', 'textBackgroundStrokeEnabled', 'textBackgroundStroke',
@@ -89,7 +111,7 @@ export function captureTextTemplateStyle(options: Record<string, unknown>) {
         if (typeof value === 'string' || typeof value === 'boolean' ||
             (typeof value === 'number' && Number.isFinite(value))) style[key] = value;
     }
-    style.strokeWidth = Math.max(0, Math.min(20, Number(style.strokeWidth)));
+    style.textStrokeStrength = getTextStrokeStrength(options);
     style.textBackgroundRadiusPercent = normalizePercent(style.textBackgroundRadiusPercent);
     style.textBackgroundOpacity = Math.max(0, Math.min(1, Number(style.textBackgroundOpacity)));
     style.textBackgroundPadding = Math.max(0, Math.min(120, Number(style.textBackgroundPadding)));
@@ -114,7 +136,7 @@ export function textTemplateMatches(options: Record<string, unknown>, template: 
     const expected = captureTextTemplateStyle(template);
     return TEXT_TEMPLATE_STYLE_KEYS.every(key => {
         if (key === 'family' && expected.family === undefined) return true;
-        if ((key === 'stroke' && !expected.strokeWidth) ||
+        if ((key === 'stroke' && !expected.textStrokeStrength) ||
             (key.startsWith('textShadow') && key !== 'textShadowEnabled' && !expected.textShadowEnabled) ||
             (key.startsWith('textBackground') && key !== 'textBackgroundEnabled' && !expected.textBackgroundEnabled) ||
             (key === 'textBackgroundStroke' && !expected.textBackgroundStrokeEnabled)) return true;
@@ -140,7 +162,7 @@ export function getTextTemplatePreview(options: Record<string, unknown>, fontSiz
         (style.family ? `font-family:${JSON.stringify(style.family)},sans-serif;` : '') +
         `padding:${padding}px;border-radius:${radius}px;` +
         `border:${style.textBackgroundEnabled && style.textBackgroundStrokeEnabled ? `1px solid ${style.textBackgroundStroke}` : 'none'};` +
-        `-webkit-text-stroke:${Number(style.strokeWidth) * scale}px ${style.stroke};paint-order:stroke fill;` +
+        `-webkit-text-stroke:${textStrokeStrengthToWidth(style.textStrokeStrength, 20)}px ${style.stroke};paint-order:stroke fill;` +
         `text-shadow:${shadow.textShadowEnabled ? `${shadow.textShadowOffsetX * scale}px ${shadow.textShadowOffsetY * scale}px ${shadow.textShadowBlur * scale}px ${shadow.textShadowColor}` : 'none'};`;
 }
 

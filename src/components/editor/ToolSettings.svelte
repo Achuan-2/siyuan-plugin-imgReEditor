@@ -664,13 +664,11 @@
                 id="font-stroke-width"
                 type="number"
                 min="0"
-                max="20"
                 step="0.5"
-                value={settings.strokeWidth ?? 0}
-                on:input={e => emitChange({ strokeWidth: +getValue(e) })}
+                value={settings.textStrokeStrength ?? 0}
+                on:input={e => emitChange({ textStrokeStrength: +getValue(e) })}
                 style="width: 72px;"
             />
-            <span class="val">{settings.strokeWidth ?? 0}px</span>
         </div>
         <div class="row">
             <label for="text-shadow-enabled">{t('editor.textShadow')}</label>
