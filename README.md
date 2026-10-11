@@ -6,7 +6,7 @@
 
 ## 📝更新日志
 
-见[CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-imgReEditor@main/CHANGELOG.md)
+见[CHANGELOG.md](https://github.com/Achuan-2/siyuan-plugin-imgReEditor/blob/main/CHANGELOG.md)
 
 ## 📝开发背景
 

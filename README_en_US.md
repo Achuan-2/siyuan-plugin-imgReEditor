@@ -4,7 +4,7 @@ Plugin GitHub repository: [https://github.com/Achuan-2/siyuan-plugin-image-edito
 
 ## 📝 Changelog
 
-See [CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-imgReEditor@main/CHANGELOG.md).
+See [CHANGELOG.md](https://github.com/Achuan-2/siyuan-plugin-imgReEditor/blob/main/CHANGELOG.md).
 
 ## 📝 Development Background
 
