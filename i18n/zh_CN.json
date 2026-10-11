@@ -38,7 +38,13 @@
             "reset": "数据清除",
             "compression": "压缩设置",
             "screenshot": "截图设置",
-            "storage": "保存设置"
+            "storage": "保存设置",
+            "donation": "❤用爱发电"
+        },
+        "donation": {
+            "description": "如果喜欢我的插件，欢迎给GitHub仓库点star和微信赞赏，这会激励我继续完善此插件。",
+            "coffeeLink": "请我喝杯咖啡",
+            "imageAlt": "Achuan-2 的微信赞赏码"
         },
         "storageMode": {
             "title": "图片编辑数据存储方式",

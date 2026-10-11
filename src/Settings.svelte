@@ -1,12 +1,14 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import SettingPanel from '@/libs/components/setting-panel.svelte';
-    import { t } from './utils/i18n';
+    import { getCurrentLanguage, t } from './utils/i18n';
     import { getDefaultSettings } from './defaultSettings';
     import { pushMsg, pushErrMsg, readDir, removeFile } from './api';
     import { confirm, Constants, Dialog } from 'siyuan';
     import LoadingDialog from './components/LoadingDialog.svelte';
     export let plugin;
+    const isChinese = getCurrentLanguage().toLowerCase().startsWith('zh');
+    const coffeeURL = 'https://pancake.waffo.ai/store/achuan-2-fdbho4ye/product/PROD_3F7Aa7c2NQlz9KmxcgxjQ7?type=onetime&currency=USD';
     export const useShell = async (cmd: 'showItemInFolder' | 'openPath', filePath: string) => {
         try {
             const { ipcRenderer } = window.require('electron');
@@ -402,6 +404,12 @@
         },
     ];
 
+    groups.push({
+        id: 'donation',
+        name: t('settings.settingsGroup.donation'),
+        items: [],
+    });
+
     let focusGroup = groups[0].id;
 
     function handleGroupKeydown(event: KeyboardEvent, index: number) {
@@ -499,7 +507,24 @@
             settingItems={currentGroup?.items || []}
             display={true}
             on:changed={onChanged}
-        />
+        >
+            {#if focusGroup === 'donation'}
+                <div class="donation-content">
+                    <p>{t('settings.donation.description')}</p>
+                    {#if isChinese}
+                        <img
+                            class="donation-code"
+                            src={`/plugins/${plugin.name}/assets/donate.png`}
+                            alt={t('settings.donation.imageAlt')}
+                        />
+                    {:else}
+                        <a href={coffeeURL} target="_blank" rel="noopener noreferrer">
+                            {t('settings.donation.coffeeLink')}
+                        </a>
+                    {/if}
+                </div>
+            {/if}
+        </SettingPanel>
     </div>
 </div>
 
@@ -560,6 +585,25 @@
         margin: 0 0 20px;
         font-size: 18px;
         line-height: 1.5;
+    }
+    .donation-content {
+        line-height: 1.8;
+        overflow-wrap: anywhere;
+    }
+    .donation-content p {
+        margin: 0 0 16px;
+    }
+    .donation-content a {
+        color: var(--b3-theme-primary);
+        text-decoration: underline;
+    }
+    .donation-code {
+        display: block;
+        width: 296px;
+        max-width: 100%;
+        height: auto;
+        margin-top: 20px;
+        border-radius: 8px;
     }
     .config__tab-wrap :global(.item-wrap) {
         align-items: flex-start;

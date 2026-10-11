@@ -38,7 +38,13 @@
             "reset": "Reset",
             "compression": "Compression",
             "screenshot": "Screenshots",
-            "storage": "Storage"
+            "storage": "Storage",
+            "donation": "❤Buy me a coffee"
+        },
+        "donation": {
+            "description": "If you find this plugin useful, you're welcome to buy me a coffee. Your support helps me maintain and improve this plugin and develop new ones.",
+            "coffeeLink": "Buy me a coffee",
+            "imageAlt": "Achuan-2's WeChat donation code"
         },
         "storageMode": {
             "title": "Image project data storage",
