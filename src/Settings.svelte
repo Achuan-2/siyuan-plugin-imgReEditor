@@ -37,6 +37,149 @@
 
     let groups: ISettingGroup[] = [
         {
+            id: 'storage',
+            name: t('settings.settingsGroup.storage'),
+            items: [
+                {
+                    key: 'storageMode',
+                    value: settings.storageMode,
+                    type: 'select',
+                    title: t('settings.storageMode.title'),
+                    description: t('settings.storageMode.description'),
+                    options: {
+                        embed: t('settings.storageMode.options.embed'),
+                        backup: t('settings.storageMode.options.backup'),
+                    },
+                },
+                {
+                    key: 'openDataFolder',
+                    value: '',
+                    type: 'button',
+                    title: t('settings.openDataFolder.title'),
+                    description: '',
+                    button: {
+                        label: t('settings.openDataFolder.label'),
+                        callback: async () => {
+                            const path =
+                                window.siyuan.config.system.dataDir +
+                                '/storage/petal/siyuan-plugin-imgReEditor';
+                            await useShell('openPath', path);
+                        },
+                    },
+                },
+                {
+                    key: 'tidyBackup',
+                    value: '',
+                    type: 'button',
+                    title: t('settings.tidyBackup.title'),
+                    description:
+                        t('settings.tidyBackup.description'),
+                    button: {
+                        label: t('settings.tidyBackup.label'),
+                        callback: async () => {
+                            confirm(
+                                t('settings.tidyBackup.title'),
+                                t('settings.tidyBackup.confirmMessage'),
+                                async () => {
+                                    let loadingDialog: any;
+                                    loadingDialog = new Dialog({
+                                        title: t('settings.tidyBackup.dialogTitle'),
+                                        content: `<div id="loadingDialogContent"></div>`,
+                                        width: '300px',
+                                        height: '150px',
+                                        disableClose: true,
+                                    });
+                                    new LoadingDialog({
+                                        target: loadingDialog.element.querySelector(
+                                            '#loadingDialogContent'
+                                        ),
+                                        props: { message: t('settings.tidyBackup.progress') },
+                                    });
+                                    try {
+                                        const backupDir =
+                                            'data/storage/petal/siyuan-plugin-imgReEditor/backup';
+                                        const assetsDir = 'data/assets';
+
+                                        const entries: any = await readDir(backupDir);
+                                        if (
+                                            !entries ||
+                                            !Array.isArray(entries) ||
+                                            entries.length === 0
+                                        ) {
+                                            await pushMsg(t('settings.backupEmpty'));
+                                            return;
+                                        }
+
+                                        const assetsEntries: any = await readDir(assetsDir);
+                                        const assetBasenames = new Set();
+                                        if (assetsEntries && Array.isArray(assetsEntries)) {
+                                            for (const a of assetsEntries) {
+                                                try {
+                                                    const fname =
+                                                        a.name ||
+                                                        (a.path ? a.path.split('/').pop() : '');
+                                                    if (!fname) continue;
+                                                    const parts = fname.split('.');
+                                                    const base =
+                                                        parts.slice(0, -1).join('.') || fname;
+                                                    assetBasenames.add(base);
+                                                } catch (err) {
+                                                    console.warn('parse asset name failed', err);
+                                                }
+                                            }
+                                        }
+
+                                        let removedCount = 0;
+                                        for (const e of entries) {
+                                            try {
+                                                const filePath =
+                                                    e.path ||
+                                                    (e.name ? `${backupDir}/${e.name}` : null);
+                                                if (!filePath) continue;
+                                                if (e.isDir || e.isdir || e.type === 'dir')
+                                                    continue;
+                                                const fname = e.name || filePath.split('/').pop();
+                                                if (!fname) continue;
+                                                const nameWithoutJson = fname.replace(
+                                                    /\.json$/i,
+                                                    ''
+                                                );
+                                                const baseName = nameWithoutJson.replace(
+                                                    /\.[^.]+$/i,
+                                                    ''
+                                                );
+                                                if (!assetBasenames.has(baseName)) {
+                                                    await removeFile(filePath);
+                                                    removedCount++;
+                                                }
+                                            } catch (err) {
+                                                console.warn('remove file failed', err);
+                                            }
+                                        }
+
+                                        await pushMsg(
+                                            t('settings.tidyBackup.success', { count: String(removedCount) })
+                                        );
+                                        loadingDialog.destroy();
+                                    } catch (err) {
+                                        console.error(err);
+                                        await pushErrMsg(
+                                            t('common.errorWithDetail', {
+                                                message: t('settings.tidyBackup.failed'),
+                                                error: String(err?.message || err),
+                                            })
+                                        );
+                                        loadingDialog.destroy();
+                                    }
+                                },
+                                () => {}
+                            );
+                        },
+                    },
+                },
+            ],
+        },
+        {
             id: 'compression',
             name: t('settings.settingsGroup.compression'),
             items: [
@@ -239,149 +382,6 @@
                     type: 'number',
                     title: t('settings.screenshotLimit.title'),
                     description: t('settings.screenshotLimit.description'),
-                },
-            ],
-        },
-        {
-            id: 'storage',
-            name: t('settings.settingsGroup.storage'),
-            items: [
-                {
-                    key: 'storageMode',
-                    value: settings.storageMode,
-                    type: 'select',
-                    title: t('settings.storageMode.title'),
-                    description: t('settings.storageMode.description'),
-                    options: {
-                        embed: t('settings.storageMode.options.embed'),
-                        backup: t('settings.storageMode.options.backup'),
-                    },
-                },
-                {
-                    key: 'openDataFolder',
-                    value: '',
-                    type: 'button',
-                    title: t('settings.openDataFolder.title'),
-                    description: '',
-                    button: {
-                        label: t('settings.openDataFolder.label'),
-                        callback: async () => {
-                            const path =
-                                window.siyuan.config.system.dataDir +
-                                '/storage/petal/siyuan-plugin-imgReEditor';
-                            await useShell('openPath', path);
-                        },
-                    },
-                },
-                {
-                    key: 'tidyBackup',
-                    value: '',
-                    type: 'button',
-                    title: t('settings.tidyBackup.title'),
-                    description:
-                        t('settings.tidyBackup.description'),
-                    button: {
-                        label: t('settings.tidyBackup.label'),
-                        callback: async () => {
-                            confirm(
-                                t('settings.tidyBackup.title'),
-                                t('settings.tidyBackup.confirmMessage'),
-                                async () => {
-                                    let loadingDialog: any;
-                                    loadingDialog = new Dialog({
-                                        title: t('settings.tidyBackup.dialogTitle'),
-                                        content: `<div id="loadingDialogContent"></div>`,
-                                        width: '300px',
-                                        height: '150px',
-                                        disableClose: true,
-                                    });
-                                    new LoadingDialog({
-                                        target: loadingDialog.element.querySelector(
-                                            '#loadingDialogContent'
-                                        ),
-                                        props: { message: t('settings.tidyBackup.progress') },
-                                    });
-                                    try {
-                                        const backupDir =
-                                            'data/storage/petal/siyuan-plugin-imgReEditor/backup';
-                                        const assetsDir = 'data/assets';
-
-                                        const entries: any = await readDir(backupDir);
-                                        if (
-                                            !entries ||
-                                            !Array.isArray(entries) ||
-                                            entries.length === 0
-                                        ) {
-                                            await pushMsg(t('settings.backupEmpty'));
-                                            return;
-                                        }
-
-                                        const assetsEntries: any = await readDir(assetsDir);
-                                        const assetBasenames = new Set();
-                                        if (assetsEntries && Array.isArray(assetsEntries)) {
-                                            for (const a of assetsEntries) {
-                                                try {
-                                                    const fname =
-                                                        a.name ||
-                                                        (a.path ? a.path.split('/').pop() : '');
-                                                    if (!fname) continue;
-                                                    const parts = fname.split('.');
-                                                    const base =
-                                                        parts.slice(0, -1).join('.') || fname;
-                                                    assetBasenames.add(base);
-                                                } catch (err) {
-                                                    console.warn('parse asset name failed', err);
-                                                }
-                                            }
-                                        }
-
-                                        let removedCount = 0;
-                                        for (const e of entries) {
-                                            try {
-                                                const filePath =
-                                                    e.path ||
-                                                    (e.name ? `${backupDir}/${e.name}` : null);
-                                                if (!filePath) continue;
-                                                if (e.isDir || e.isdir || e.type === 'dir')
-                                                    continue;
-                                                const fname = e.name || filePath.split('/').pop();
-                                                if (!fname) continue;
-                                                const nameWithoutJson = fname.replace(
-                                                    /\.json$/i,
-                                                    ''
-                                                );
-                                                const baseName = nameWithoutJson.replace(
-                                                    /\.[^.]+$/i,
-                                                    ''
-                                                );
-                                                if (!assetBasenames.has(baseName)) {
-                                                    await removeFile(filePath);
-                                                    removedCount++;
-                                                }
-                                            } catch (err) {
-                                                console.warn('remove file failed', err);
-                                            }
-                                        }
-
-                                        await pushMsg(
-                                            t('settings.tidyBackup.success', { count: String(removedCount) })
-                                        );
-                                        loadingDialog.destroy();
-                                    } catch (err) {
-                                        console.error(err);
-                                        await pushErrMsg(
-                                            t('common.errorWithDetail', {
-                                                message: t('settings.tidyBackup.failed'),
-                                                error: String(err?.message || err),
-                                            })
-                                        );
-                                        loadingDialog.destroy();
-                                    }
-                                },
-                                () => {}
-                            );
-                        },
-                    },
                 },
             ],
         },
