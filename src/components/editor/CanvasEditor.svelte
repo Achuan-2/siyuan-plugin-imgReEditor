@@ -1115,7 +1115,42 @@
         } catch (e) {}
     }
 
+    function pastePlainText(text: string) {
+        if (!canvas || !text) return;
+        const options = activeTool === 'text'
+            ? activeToolOptions
+            : settings?.lastToolSettings?.text || {};
+        const fontSize = options.size || options.fontSize || 24;
+        const textbox = new Textbox(text.replace(/\r\n?/g, '\n'), {
+            fontFamily: options.family || options.fontFamily || 'Microsoft Yahei',
+            fontSize,
+            textAlign: options.textAlign || 'left',
+            fill: options.fill || '#000000',
+            fontWeight: options.bold ? 'bold' : 'normal',
+            fontStyle: options.italic ? 'italic' : 'normal',
+            underline: !!options.underline,
+            ...getTextStrokeOptions(options.stroke, options.strokeWidth, fontSize),
+            ...getTextBackgroundOptions(options),
+            selectable: true,
+            evented: true,
+            erasable: true,
+            lockUniScaling: true,
+            splitByGrapheme: true,
+            _textAutoWidth: true,
+        } as any);
+        applyTextShadow(textbox, options);
+        applyTextRenderingOptions(textbox);
+        autoResizeTextObject(textbox);
+        // Place text in the visible viewport, including when the canvas is zoomed or panned.
+        textbox.setPositionByOrigin(canvas.getVpCenter(), 'center', 'center');
+        canvas.add(textbox);
+        canvas.setActiveObject(textbox);
+        canvas.requestRenderAll();
+        schedulePushWithType('added');
+    }
+
     const onPaste = (e: ClipboardEvent) => {
+        if (!canvas || e.defaultPrevented) return;
         // If editing text, allow default paste
         const active = canvas?.getActiveObject();
         if (
@@ -1125,6 +1160,13 @@
         ) {
             return;
         }
+
+        // Sidebar fields and other native editors keep their normal paste behavior.
+        const target = e.target as HTMLElement | null;
+        if (target && (
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+            target.isContentEditable
+        )) return;
 
         const clipboardData = e.clipboardData;
         if (!clipboardData) return;
@@ -1136,8 +1178,8 @@
             if (clipboard && clipboard.length > 0) {
                 e.preventDefault();
                 pasteClipboard();
-                return;
             }
+            return;
         }
 
         // check for files (from explorer)
@@ -1179,6 +1221,12 @@
                     }
                 }
             }
+        }
+
+        // Text cut/copied from a textbox can be pasted without enabling the text tool.
+        if (text) {
+            pastePlainText(text);
+            e.preventDefault();
         }
     };
 
