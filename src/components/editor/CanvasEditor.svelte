@@ -2735,10 +2735,18 @@
             if (isDrawingShape && tempShape) {
                 const sx = shapeStart.x;
                 const sy = shapeStart.y;
-                const left = Math.min(sx, pointer.x);
-                const top = Math.min(sy, pointer.y);
-                const width = Math.abs(pointer.x - sx);
-                const height = Math.abs(pointer.y - sy);
+                const dx = pointer.x - sx;
+                const dy = pointer.y - sy;
+                let width = Math.abs(dx);
+                let height = Math.abs(dy);
+                if ((opt.e as MouseEvent).shiftKey) {
+                    // Keep the starting corner fixed in every drag direction.
+                    const size = Math.max(width, height);
+                    width = size;
+                    height = size;
+                }
+                const left = dx < 0 ? sx - width : sx;
+                const top = dy < 0 ? sy - height : sy;
                 if (tempShape.type === 'rect') {
                     tempShape.set({ left, top, width, height });
                 } else if (tempShape.type === 'ellipse') {
