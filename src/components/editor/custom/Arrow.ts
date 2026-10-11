@@ -516,9 +516,10 @@ export class Arrow extends Line {
             return mag === 0 ? { x: 1, y: 0 } : { x: dx / mag, y: dy / mag };
         };
 
-        // Arrow head size based on original stroke width to prevent disappearing at certain angles
-        const headLength = Math.max(10, this.strokeWidth * 5.5);
-        const headWidth = Math.max(6, this.strokeWidth * 2.5);
+        // Use the original stroke width so head size stays stable at every angle.
+        // headWidth is the half-width; the outline adds another stroke width.
+        const headLength = Math.max(8, this.strokeWidth * 4);
+        const headWidth = Math.max(3, this.strokeWidth * 1.5);
         ctx.rotate(visualAngle);
         // Set common styles
         ctx.strokeStyle = this.stroke as string;
