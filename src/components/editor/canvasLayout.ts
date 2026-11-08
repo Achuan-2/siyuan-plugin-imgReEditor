@@ -77,12 +77,6 @@ export function normalizeCanvasPresets(value: unknown): CanvasPreset[] {
     }).map(p => ({ id: p.id, name: p.name.trim(), layout: normalizeCanvasLayout(p.layout) }));
 }
 
-export function createMarginGuides(margin: number): CanvasGuide[] {
-    if (!Number.isFinite(margin) || margin <= 0 || margin >= 50) return [];
-    return (['horizontal', 'vertical'] as const).flatMap(axis =>
-        [margin, 100 - margin].map(position => ({ axis, position })));
-}
-
 /** Project guide coordinates through Fabric's viewport without adding exportable objects. */
 export function projectCanvasGuides(layout: CanvasLayout, bounds: { left: number; top: number; width: number; height: number }, viewport: number[]) {
     if (!layout.guidesVisible) return [];

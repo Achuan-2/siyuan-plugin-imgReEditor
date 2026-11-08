@@ -15,9 +15,7 @@
         "vertical": "纵向",
         "position": "位置（距左侧／顶部的百分比）",
         "deleteGuide": "删除参考线",
-        "clear": "清空",
-        "margin": "四周留白",
-        "add": "添加"
+        "clear": "清空"
     },
     "materials": {
         "title": "素材",

@@ -65,7 +65,7 @@ Type `/canvas` in the slash menu and choose **Create canvas (ImgReEditor)**  to 
 
 - Adjust the canvas width and height.
 - Choose common aspect ratios, including 16:10, and lock the ratio when resizing.
-- Drag horizontal and vertical guides directly, enter percentage positions, or add guides for all four margins. Press Esc to cancel a drag; completed drags support undo and redo. Guides appear only in the editor and are excluded from image exports.
+- Add horizontal and vertical guides, then drag them directly or enter percentage positions. Press Esc to cancel a drag; completed drags support undo and redo. Guides appear only in the editor and are excluded from image exports.
 - Save and load named canvas presets with dimensions, aspect-ratio locking, background, and guides. Replace a preset by saving with the same name, or delete it.
 - Set a background color, including gradients.
 - Insert multiple images.

@@ -15,9 +15,7 @@
         "vertical": "Vertical",
         "position": "Position (% from left / top)",
         "deleteGuide": "Delete guide",
-        "clear": "Clear",
-        "margin": "Edge margin",
-        "add": "Add"
+        "clear": "Clear"
     },
     "materials": {
         "title": "Materials",

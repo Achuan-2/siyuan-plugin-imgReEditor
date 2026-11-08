@@ -2,7 +2,7 @@
     import { createEventDispatcher } from 'svelte';
     import { t } from '../../utils/i18n';
     import { generateId } from '../../utils/uuid';
-    import { createMarginGuides, normalizeCanvasLayout, normalizeCanvasPresets } from './canvasLayout';
+    import { normalizeCanvasLayout, normalizeCanvasPresets } from './canvasLayout';
     import type { CanvasGuide } from './canvasLayout';
 
     export let settings: any = {};
@@ -10,7 +10,6 @@
     const dispatch = createEventDispatcher();
     let selected = '';
     let name = '';
-    let margin = 10;
     $: entries = normalizeCanvasPresets(presets);
     $: guides = normalizeCanvasLayout(settings).guides;
 
@@ -27,11 +26,6 @@
         const input = event.currentTarget as HTMLInputElement;
         if (input.value !== '' && input.validity.valid) updateGuide(index, { position: Number(input.value) });
         else input.value = String(guides[index].position);
-    }
-    function addMargins() {
-        const added = createMarginGuides(margin).filter(g =>
-            !guides.some(old => old.axis === g.axis && old.position === g.position));
-        changeGuides([...guides, ...added]);
     }
     function save() {
         if (!name.trim()) return;
@@ -70,11 +64,6 @@
             <button on:click={() => changeGuides([...guides, { axis: 'horizontal', position: 50 }])}>+ {t('canvasLayout.horizontal')}</button>
             <button on:click={() => changeGuides([...guides, { axis: 'vertical', position: 50 }])}>+ {t('canvasLayout.vertical')}</button>
             <button disabled={!guides.length} on:click={() => changeGuides([])}>{t('canvasLayout.clear')}</button>
-        </div>
-        <div class="controls">
-            <label for="canvas-margin">{t('canvasLayout.margin')}</label>
-            <input id="canvas-margin" class="position" type="number" min="0.1" max="49.9" step="0.1" bind:value={margin} /><span>%</span>
-            <button disabled={!createMarginGuides(margin).length} on:click={addMargins}>{t('canvasLayout.add')}</button>
         </div>
     </details>
     <details>

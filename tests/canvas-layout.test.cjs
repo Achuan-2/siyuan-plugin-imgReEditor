@@ -13,7 +13,11 @@ new Function('module', 'exports', compile(readFileSync(
     resolve(__dirname, '../src/components/editor/canvasLayout.ts'), 'utf8'
 )))(moduleFixture, moduleFixture.exports);
 const helpers = moduleFixture.exports;
-const { CANVAS_RATIOS, normalizeCanvasLayout, normalizeCanvasPresets, createMarginGuides, projectCanvasGuides } = helpers;
+const { CANVAS_RATIOS, normalizeCanvasLayout, normalizeCanvasPresets, projectCanvasGuides } = helpers;
+const guideFixture = (offset = 10) => [
+    { axis: 'horizontal', position: offset }, { axis: 'horizontal', position: 100 - offset },
+    { axis: 'vertical', position: offset }, { axis: 'vertical', position: 100 - offset },
+];
 const source = readFileSync(resolve(__dirname, '../src/components/editor/CanvasEditor.svelte'), 'utf8')
     .match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
 const parsed = ts.createSourceFile('canvas.ts', source, ts.ScriptTarget.Latest, true);
@@ -104,7 +108,7 @@ test('16:10 dimensions and presets preserve layout without sharing mutable guide
     const ratio = CANVAS_RATIOS.find(p => p.label === '16:10');
     assert.equal(Math.round(1920 / ratio.ratio), 1200);
     const original = { width: 1920, height: 1200, ratioLabel: '16:10', lockAspectRatio: true,
-        fill: { type: 'linear', colorStops: [{ offset: 0, color: '#ffffff' }] }, guides: createMarginGuides(8) };
+        fill: { type: 'linear', colorStops: [{ offset: 0, color: '#ffffff' }] }, guides: guideFixture(8) };
     const saved = normalizeCanvasPresets([{ id: 'cover', name: ' 封面 ', layout: original }])[0];
     original.guides[0].position = 45;
     original.fill.colorStops[0].color = '#ff0000';
@@ -114,7 +118,6 @@ test('16:10 dimensions and presets preserve layout without sharing mutable guide
     assert.equal(saved.layout.fill.colorStops[0].color, '#ffffff');
     assert.equal(normalizeCanvasPresets([null, {}, saved, saved]).length, 1);
     assert.equal(normalizeCanvasLayout({ ...saved.layout, height: 1000 }).ratioLabel, '');
-    assert.deepEqual(createMarginGuides(50), []);
 });
 
 test('guide positions follow logical bounds, resizing, zoom and pan, and can be hidden', () => {
@@ -133,7 +136,7 @@ test('canvas layout survives serialization, reopening, tool switching and undo/r
     const artwork = editor.canvas.getActiveObjects()[0];
     const artworkBefore = artwork.toObject();
     const layout = normalizeCanvasLayout({ width: 1600, height: 1000, lockAspectRatio: true,
-        ratioLabel: '16:10', fill: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', guides: createMarginGuides(10) });
+        ratioLabel: '16:10', fill: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', guides: guideFixture(10) });
     editor.setTool('canvas', layout);
     editor.applyToolOptionsToSelection(layout);
     editor.resizeCanvas(layout.width, layout.height);
@@ -164,7 +167,7 @@ test('canvas layout survives serialization, reopening, tool switching and undo/r
 
 test('guide visibility and edits are restored together with background through history', async () => {
     const editor = editorFixture();
-    editor.setTool('canvas', { guides: createMarginGuides(5) });
+    editor.setTool('canvas', { guides: guideFixture(5) });
     editor.flush();
     editor.setTool('canvas', { guidesVisible: false, fill: 'transparent' });
     editor.flush();
@@ -185,9 +188,9 @@ function layoutControlFixture(initialSettings, initialPresets = []) {
     const events = [];
     const imports = { ...helpers, dispatch: (name, detail) => events.push({ name, detail }), generateId: () => 'saved-cover' };
     const api = new Function(...Object.keys(imports), compile(`
-        let settings, entries, guides, selected = '', name = '', margin = 10;
+        let settings, entries, guides, selected = '', name = '';
         ${functions}
-        return { load, deletePreset, addMargins, changePosition,
+        return { load, deletePreset, changePosition,
             configure(nextSettings, nextPresets) {
                 settings = nextSettings;
                 entries = normalizeCanvasPresets(nextPresets);
@@ -203,7 +206,7 @@ function layoutControlFixture(initialSettings, initialPresets = []) {
 
 test('preset controls save, reload, replace same-name presets and delete without changing the applied layout', () => {
     const layout = normalizeCanvasLayout({ width: 1920, height: 1200, ratioLabel: '16:10', lockAspectRatio: true,
-        fill: '#123456', guides: createMarginGuides(10), guidesVisible: false });
+        fill: '#123456', guides: guideFixture(10), guidesVisible: false });
     const first = layoutControlFixture(layout);
     first.saveAs('');
     assert.equal(first.events.length, 0);
@@ -227,10 +230,8 @@ test('preset controls save, reload, replace same-name presets and delete without
     assert.equal(replacement.fill, 'transparent');
 });
 
-test('margin guide controls avoid duplicates and reject invalid position input', () => {
-    const control = layoutControlFixture({ guides: createMarginGuides(10) });
-    control.addMargins();
-    assert.equal(control.events.at(-1).detail.guides.length, 4);
+test('guide controls reject invalid position input', () => {
+    const control = layoutControlFixture({ guides: guideFixture(10) });
     const invalid = { value: '-2', validity: { valid: false } };
     const count = control.events.length;
     control.changePosition(0, { currentTarget: invalid });
@@ -242,7 +243,7 @@ test('margin guide controls avoid duplicates and reject invalid position input',
 
 test('direct guide dragging preserves the grab offset, follows the viewport and commits one undo step', async () => {
     const editor = editorFixture();
-    editor.setTool('canvas', { guides: createMarginGuides(10) });
+    editor.setTool('canvas', { guides: guideFixture(10) });
     editor.flush();
     const artwork = editor.canvas.getActiveObjects()[0].toObject();
     // Start 0.6% away from the visible vertical line, inside its wider hit area.
@@ -269,7 +270,7 @@ test('direct guide dragging preserves the grab offset, follows the viewport and 
 
 test('consecutive drags have separate undo steps and horizontal dragging clamps to the canvas edges', async () => {
     const editor = editorFixture();
-    editor.setTool('canvas', { guides: createMarginGuides(10) });
+    editor.setTool('canvas', { guides: guideFixture(10) });
     // Deliberately leave the earlier edit pending when starting the first drag.
     editor.startGuideDrag(0, editor.pointer('horizontal', 10));
     editor.moveGuideDrag(editor.pointer('horizontal', -30));
@@ -291,7 +292,7 @@ test('Escape, pointer cancellation and focus loss restore the original position 
         editor => editor.listeners.get('blur')(),
     ]) {
         const editor = editorFixture();
-        editor.setTool('canvas', { guides: createMarginGuides(10) });
+        editor.setTool('canvas', { guides: guideFixture(10) });
         editor.flush();
         editor.startGuideDrag(0, editor.pointer('horizontal', 10));
         editor.moveGuideDrag(editor.pointer('horizontal', 40));
