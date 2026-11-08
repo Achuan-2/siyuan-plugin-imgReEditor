@@ -19,6 +19,25 @@ export interface CanvasPreset {
     layout: CanvasLayout;
 }
 
+/** Convert a point in viewport pixels back to a guide's logical percentage. */
+export function canvasGuidePositionAtPoint(
+    axis: CanvasGuide['axis'],
+    point: { x: number; y: number },
+    bounds: { left: number; top: number; width: number; height: number },
+    viewport: number[],
+): number | null {
+    const [a, b, c, d, e, f] = viewport;
+    const determinant = a * d - b * c;
+    const size = axis === 'vertical' ? bounds.width : bounds.height;
+    if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-12 || size <= 0) return null;
+    const x = point.x - e;
+    const y = point.y - f;
+    const coordinate = axis === 'vertical' ? (d * x - c * y) / determinant : (a * y - b * x) / determinant;
+    const origin = axis === 'vertical' ? bounds.left : bounds.top;
+    const position = (coordinate - origin) / size * 100;
+    return Number.isFinite(position) ? position : null;
+}
+
 export const CANVAS_RATIOS = [
     { label: '3:4', ratio: 3 / 4 },
     { label: '2.35:1', ratio: 2.35 },

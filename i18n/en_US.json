@@ -9,6 +9,7 @@
         "overwrite": "Replace same-name preset",
         "guides": "Guides",
         "showGuides": "Show guides",
+        "dragGuide": "Drag to move the guide; Esc to cancel",
         "direction": "Direction",
         "horizontal": "Horizontal",
         "vertical": "Vertical",

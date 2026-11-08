@@ -19,7 +19,9 @@ const source = readFileSync(resolve(__dirname, '../src/components/editor/CanvasE
 const parsed = ts.createSourceFile('canvas.ts', source, ts.ScriptTarget.Latest, true);
 const names = new Set(['getCanvasLayout', 'getToolOptions', 'updateGuideOverlay', 'restoreCanvasLayout',
     'setTool', 'resizeCanvas', 'setCanvasBackground', 'updateCanvasBackgroundSize',
-    'pushHistory', 'pushInitialHistory', 'undo', 'redo', 'toJSON', 'fromJSON', 'applyToolOptionsToSelection']);
+    'pushHistory', 'pushInitialHistory', 'undo', 'redo', 'toJSON', 'fromJSON', 'applyToolOptionsToSelection',
+    'guidePositionFromEvent', 'startGuideDrag', 'setDraggedGuidePosition', 'moveGuideDrag', 'releaseGuideDrag',
+    'finishGuideDrag', 'cancelGuideDrag', 'cancelGuidePointer', 'handleGuideDragKeydown']);
 const functions = parsed.statements.filter(node => ts.isFunctionDeclaration(node) && names.has(node.name.text))
     .map(node => node.getText(parsed).replace(/^export\s+/, '')).join('\n');
 
@@ -32,6 +34,14 @@ function editorFixture() {
     let objects = [new Background({ width: 800, height: 600, fill: '#ffffff', excludeFromExport: true }),
         new Rect({ left: 120, top: 90, width: 100, height: 60, fill: '#ff0000' })];
     const events = [];
+    const captures = new Set();
+    const listeners = new Map();
+    const overlayElement = {
+        getBoundingClientRect: () => ({ left: 100, top: 50, width: 500, height: 400 }),
+        setPointerCapture: id => captures.add(id),
+        hasPointerCapture: id => captures.has(id),
+        releasePointerCapture: id => captures.delete(id),
+    };
     const canvas = {
         width: 1000, height: 800, viewportTransform: [0.5, 0, 0, 0.5, 30, 20],
         getWidth() { return this.width; }, getHeight() { return this.height; },
@@ -47,7 +57,9 @@ function editorFixture() {
         },
         requestRenderAll() {}, renderAll() {},
     };
-    const imports = { ...helpers, canvas, Gradient, CanvasBackgroundRect: Background,
+    const imports = { ...helpers, canvas, Gradient, CanvasBackgroundRect: Background, overlayElement,
+        window: { addEventListener: (type, listener) => listeners.set(type, listener),
+            removeEventListener: type => listeners.delete(type) },
         dispatch: (name, detail) => events.push({ name, detail }), setTimeout: () => {},
         // Surface swallowed integration errors as test failures.
         console: { warn: (_, error) => { throw error; }, error: (_, error) => { throw error; } } };
@@ -56,6 +68,7 @@ function editorFixture() {
         const container = { closest: () => ({ clientWidth: 1000, clientHeight: 800 }) };
         const HISTORY_PROPS = [], MAX_HISTORY = 50;
         let activeTool = null, activeToolOptions = {}, guideSegments = [], canvasLayoutState = normalizeCanvasLayout();
+        let guideDrag = null, guideOverlay = overlayElement;
         let isHistoryProcessing = false, history = [], historyIndex = -1;
         let lastActionType = null, pendingActionType = null, lastPushTime = 0;
         const schedulePushWithType = type => { pendingActionType = type; };
@@ -65,12 +78,26 @@ function editorFixture() {
         ${functions}
         pushInitialHistory();
         return { setTool, resizeCanvas, getCanvasLayout, getToolOptions, toJSON, fromJSON, undo, redo,
-            applyToolOptionsToSelection,
+            applyToolOptionsToSelection, startGuideDrag, moveGuideDrag, finishGuideDrag, cancelGuidePointer,
+            cancelGuideDrag, handleGuideDragKeydown,
+            getDragging: () => guideDrag,
             flush() { lastPushTime = 0; pushHistory(); pendingActionType = null; },
             overlay() { updateGuideOverlay(); return guideSegments; },
         };
     `))(...Object.values(imports));
-    return { ...api, canvas, events };
+    return { ...api, canvas, events, captures, listeners,
+        pointer(axis, position, pointerId = 1, button = 0) {
+            const bounds = canvas.getObjects().find(o => o._isCanvasBackground);
+            const x = bounds.left + bounds.width * (axis === 'vertical' ? position : 50) / 100;
+            const y = bounds.top + bounds.height * (axis === 'horizontal' ? position : 50) / 100;
+            const [a, b, c, d, e, f] = canvas.viewportTransform;
+            return { pointerId, button, isPrimary: true,
+                clientX: 100 + (a * x + c * y + e) / 2,
+                clientY: 50 + (b * x + d * y + f) / 2,
+                preventDefault() {}, stopPropagation() {},
+            };
+        },
+    };
 }
 
 test('16:10 dimensions and presets preserve layout without sharing mutable guide or gradient data', () => {
@@ -211,4 +238,97 @@ test('margin guide controls avoid duplicates and reject invalid position input',
     assert.equal(invalid.value, '10');
     control.changePosition(0, { currentTarget: { value: '12.5', validity: { valid: true } } });
     assert.equal(control.events.at(-1).detail.guides[0].position, 12.5);
+});
+
+test('direct guide dragging preserves the grab offset, follows the viewport and commits one undo step', async () => {
+    const editor = editorFixture();
+    editor.setTool('canvas', { guides: createMarginGuides(10) });
+    editor.flush();
+    const artwork = editor.canvas.getActiveObjects()[0].toObject();
+    // Start 0.6% away from the visible vertical line, inside its wider hit area.
+    editor.startGuideDrag(2, editor.pointer('vertical', 10.6));
+    assert.equal(editor.captures.size, 1);
+    editor.moveGuideDrag(editor.pointer('vertical', 20.6));
+    editor.moveGuideDrag(editor.pointer('vertical', 25.6));
+    assert.equal(editor.getCanvasLayout().guides[2].position, 25);
+    assert.equal(editor.events.filter(e => e.name === 'canvasGuidesChanged').length, 0);
+    editor.finishGuideDrag(editor.pointer('vertical', 30.6));
+    assert.equal(editor.getCanvasLayout().guides[2].position, 30);
+    assert.equal(editor.events.filter(e => e.name === 'canvasGuidesChanged').length, 1);
+    assert.equal(editor.listeners.size, 0);
+    assert.equal(editor.captures.size, 0);
+    assert.deepEqual(editor.canvas.getActiveObjects()[0].toObject(), artwork);
+    await editor.undo();
+    assert.equal(editor.getCanvasLayout().guides[2].position, 10);
+    await editor.redo();
+    assert.equal(editor.getCanvasLayout().guides[2].position, 30);
+    const saved = await editor.toJSON();
+    assert.equal(saved.canvasLayout.guides[2].position, 30);
+    assert.equal(saved.objects.length, 1);
+});
+
+test('consecutive drags have separate undo steps and horizontal dragging clamps to the canvas edges', async () => {
+    const editor = editorFixture();
+    editor.setTool('canvas', { guides: createMarginGuides(10) });
+    // Deliberately leave the earlier edit pending when starting the first drag.
+    editor.startGuideDrag(0, editor.pointer('horizontal', 10));
+    editor.moveGuideDrag(editor.pointer('horizontal', -30));
+    assert.equal(editor.getCanvasLayout().guides[0].position, 0);
+    editor.finishGuideDrag(editor.pointer('horizontal', 20));
+    editor.startGuideDrag(0, editor.pointer('horizontal', 20));
+    editor.finishGuideDrag(editor.pointer('horizontal', 130));
+    assert.equal(editor.getCanvasLayout().guides[0].position, 100);
+    await editor.undo();
+    assert.equal(editor.getCanvasLayout().guides[0].position, 20);
+    await editor.undo();
+    assert.equal(editor.getCanvasLayout().guides[0].position, 10);
+});
+
+test('Escape, pointer cancellation and focus loss restore the original position and release capture', () => {
+    for (const cancel of [
+        editor => editor.handleGuideDragKeydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} }),
+        editor => editor.cancelGuidePointer({ pointerId: 1 }),
+        editor => editor.listeners.get('blur')(),
+    ]) {
+        const editor = editorFixture();
+        editor.setTool('canvas', { guides: createMarginGuides(10) });
+        editor.flush();
+        editor.startGuideDrag(0, editor.pointer('horizontal', 10));
+        editor.moveGuideDrag(editor.pointer('horizontal', 40));
+        assert.equal(editor.getCanvasLayout().guides[0].position, 40);
+        cancel(editor);
+        assert.equal(editor.getCanvasLayout().guides[0].position, 10);
+        assert.equal(editor.getDragging(), null);
+        assert.equal(editor.captures.size, 0);
+        assert.equal(editor.listeners.size, 0);
+        assert.equal(editor.events.filter(e => e.name === 'canvasGuidesChanged').length, 0);
+    }
+});
+
+test('a click does not round or commit a guide, and unrelated pointers and right clicks cannot move it', () => {
+    const editor = editorFixture();
+    editor.setTool('canvas', { guides: [{ axis: 'vertical', position: 33.333 }] });
+    editor.flush();
+    editor.startGuideDrag(0, editor.pointer('vertical', 33.333, 2, 2));
+    assert.equal(editor.getDragging(), null);
+    editor.startGuideDrag(0, editor.pointer('vertical', 33.333));
+    editor.moveGuideDrag(editor.pointer('vertical', 80, 2));
+    editor.finishGuideDrag(editor.pointer('vertical', 80, 2));
+    editor.cancelGuidePointer({ pointerId: 2 });
+    assert.ok(editor.getDragging());
+    editor.finishGuideDrag(editor.pointer('vertical', 33.333));
+    assert.equal(editor.getCanvasLayout().guides[0].position, 33.333);
+    assert.equal(editor.events.filter(e => e.name === 'canvasGuidesChanged').length, 0);
+});
+
+test('pointer-to-guide conversion inverts transformed viewports and rejects singular matrices', () => {
+    const bounds = { left: 60, top: 40, width: 800, height: 600 };
+    const layout = normalizeCanvasLayout({ guides: [{ axis: 'vertical', position: 27.5 }, { axis: 'horizontal', position: 63 }] });
+    const viewport = [0.8, 0.2, -0.1, 0.9, 35, -12];
+    const segments = projectCanvasGuides(layout, bounds, viewport);
+    segments.forEach((segment, index) => {
+        const position = helpers.canvasGuidePositionAtPoint(layout.guides[index].axis, segment.start, bounds, viewport);
+        assert.ok(Math.abs(position - layout.guides[index].position) < 1e-8);
+    });
+    assert.equal(helpers.canvasGuidePositionAtPoint('vertical', { x: 1, y: 2 }, bounds, [0, 0, 0, 0, 0, 0]), null);
 });

@@ -9,6 +9,7 @@
         "overwrite": "覆盖同名预设",
         "guides": "参考线",
         "showGuides": "显示参考线",
+        "dragGuide": "拖动参考线调整位置，Esc 取消",
         "direction": "方向",
         "horizontal": "横向",
         "vertical": "纵向",

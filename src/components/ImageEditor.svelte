@@ -1707,6 +1707,10 @@
                 on:canvasLayoutChanged={e => {
                     if (activeTool === 'canvas') toolSettings = e.detail;
                 }}
+                on:canvasGuidesChanged={e => {
+                    if (activeTool === 'canvas') toolSettings = e.detail;
+                    saveToolSettings('canvas', e.detail);
+                }}
                 on:loadError={e => {
                     try {
                         const msg = e.detail?.message || t('imageEditor.loadError');

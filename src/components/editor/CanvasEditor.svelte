@@ -1,7 +1,7 @@
 <script lang="ts">
     import { t } from '../../utils/i18n';
     import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-    import { normalizeCanvasLayout, projectCanvasGuides } from './canvasLayout';
+    import { canvasGuidePositionAtPoint, normalizeCanvasLayout, projectCanvasGuides } from './canvasLayout';
     import {
         Canvas,
         Triangle,
@@ -146,6 +146,109 @@
     let activeToolOptions: any = {};
     let canvasLayoutState = normalizeCanvasLayout();
     let guideSegments: ReturnType<typeof projectCanvasGuides> = [];
+    let guideOverlay: SVGSVGElement;
+    let guideDrag: {
+        index: number;
+        pointerId: number;
+        startPosition: number;
+        grabOffset: number;
+        capture: SVGSVGElement;
+    } | null = null;
+
+    function guidePositionFromEvent(index: number, event: PointerEvent) {
+        const boundary = canvas?.getObjects().find((o: any) => o._isCanvasBackground);
+        const guide = canvasLayoutState.guides[index];
+        const rect = guideOverlay?.getBoundingClientRect();
+        if (!boundary || !guide || !rect?.width || !rect.height) return null;
+        return canvasGuidePositionAtPoint(guide.axis, {
+            x: (event.clientX - rect.left) * canvas.getWidth() / rect.width,
+            y: (event.clientY - rect.top) * canvas.getHeight() / rect.height,
+        }, boundary, canvas.viewportTransform);
+    }
+
+    function startGuideDrag(index: number, event: PointerEvent) {
+        if (event.button !== 0 || event.isPrimary === false || guideDrag || isHistoryProcessing ||
+            cropMode || selectCanvasSizeMode || isImageCropping) return;
+        const position = guidePositionFromEvent(index, event);
+        if (position === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        // Finish earlier edits before previewing a drag, so undo returns to the exact start position.
+        if (pendingActionType) {
+            clearTimeout((schedulePushWithType as any)._t);
+            pushHistory();
+            pendingActionType = null;
+        }
+        const startPosition = canvasLayoutState.guides[index].position;
+        guideDrag = { index, pointerId: event.pointerId, startPosition,
+            grabOffset: position - startPosition, capture: guideOverlay };
+        guideOverlay.setPointerCapture(event.pointerId);
+        window.addEventListener('keydown', handleGuideDragKeydown, true);
+        window.addEventListener('blur', cancelGuideDrag);
+    }
+
+    function setDraggedGuidePosition(position: number) {
+        if (!guideDrag) return;
+        canvasLayoutState = { ...canvasLayoutState, guides: canvasLayoutState.guides.map((guide, index) =>
+            index === guideDrag.index ? { ...guide, position } : guide) };
+        if (activeTool === 'canvas') activeToolOptions = getCanvasLayout();
+        updateGuideOverlay();
+        dispatch('canvasLayoutChanged', getCanvasLayout());
+    }
+
+    function moveGuideDrag(event: PointerEvent) {
+        if (!guideDrag || event.pointerId !== guideDrag.pointerId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const position = guidePositionFromEvent(guideDrag.index, event);
+        if (position === null) return;
+        const clamped = Math.min(100, Math.max(0, position - guideDrag.grabOffset));
+        const next = Math.abs(clamped - guideDrag.startPosition) < 1e-8 ? guideDrag.startPosition
+            : Math.round(clamped * 10) / 10;
+        if (next !== canvasLayoutState.guides[guideDrag.index].position) setDraggedGuidePosition(next);
+    }
+
+    function releaseGuideDrag() {
+        const drag = guideDrag;
+        guideDrag = null;
+        window.removeEventListener('keydown', handleGuideDragKeydown, true);
+        window.removeEventListener('blur', cancelGuideDrag);
+        if (drag?.capture.hasPointerCapture(drag.pointerId)) drag.capture.releasePointerCapture(drag.pointerId);
+    }
+
+    function finishGuideDrag(event: PointerEvent) {
+        if (!guideDrag || event.pointerId !== guideDrag.pointerId) return;
+        moveGuideDrag(event);
+        const changed = canvasLayoutState.guides[guideDrag.index].position !== guideDrag.startPosition;
+        releaseGuideDrag();
+        if (!changed) return;
+        // Each completed gesture is an independent undo step, even during rapid consecutive drags.
+        clearTimeout((schedulePushWithType as any)._t);
+        lastActionType = null;
+        pendingActionType = 'guide-moved';
+        pushHistory();
+        pendingActionType = null;
+        dispatch('canvasGuidesChanged', getCanvasLayout());
+    }
+
+    function cancelGuideDrag() {
+        if (!guideDrag) return;
+        setDraggedGuidePosition(guideDrag.startPosition);
+        releaseGuideDrag();
+    }
+
+    function cancelGuidePointer(event: PointerEvent) {
+        if (event.pointerId === guideDrag?.pointerId) cancelGuideDrag();
+    }
+
+    function handleGuideDragKeydown(event: KeyboardEvent) {
+        if (!guideDrag) return;
+        event.stopPropagation();
+        event.preventDefault();
+        if (event.key === 'Escape') {
+            cancelGuideDrag();
+        }
+    }
 
     export function getCanvasLayout() {
         const boundary = canvas?.getObjects().find((o: any) => o._isCanvasBackground);
@@ -3235,6 +3338,7 @@
     }
 
     onDestroy(() => {
+        cancelGuideDrag();
         refreshSelectionHandler = null;
         try {
             canvas?.dispose();
@@ -7323,9 +7427,20 @@
     <canvas bind:this={container}></canvas>
 
     {#if isCanvasMode && guideSegments.length}
-        <svg class="canvas-guides" aria-hidden="true">
-            {#each guideSegments as segment}
-                <line x1={segment.start.x} y1={segment.start.y} x2={segment.end.x} y2={segment.end.y} />
+        <svg class="canvas-guides" class:dragging={guideDrag !== null}
+            class:vertical-drag={guideDrag && canvasLayoutState.guides[guideDrag.index].axis === 'vertical'}
+            class:inactive={cropMode || selectCanvasSizeMode || isImageCropping}
+            bind:this={guideOverlay} aria-hidden="true"
+            on:pointermove={moveGuideDrag} on:pointerup={finishGuideDrag}
+            on:pointercancel={cancelGuidePointer} on:lostpointercapture={cancelGuidePointer}>
+            {#each guideSegments as segment, index}
+                <line class="guide-line" class:active={guideDrag?.index === index}
+                    x1={segment.start.x} y1={segment.start.y} x2={segment.end.x} y2={segment.end.y} />
+                <line class="guide-hit" class:vertical={canvasLayoutState.guides[index].axis === 'vertical'}
+                    x1={segment.start.x} y1={segment.start.y} x2={segment.end.x} y2={segment.end.y}
+                    on:pointerdown={event => startGuideDrag(index, event)}>
+                    <title>{t('canvasLayout.dragGuide')}</title>
+                </line>
             {/each}
         </svg>
     {/if}
@@ -7340,7 +7455,14 @@
 
 <style>
     .canvas-guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    .canvas-guides line { stroke: #00a8ff; stroke-width: 1; stroke-dasharray: 6 4; }
+    .guide-line { stroke: #00a8ff; stroke-width: 1; stroke-dasharray: 6 4; }
+    .guide-line.active { stroke-width: 2; }
+    .guide-hit { stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: ns-resize; touch-action: none; }
+    .guide-hit.vertical { cursor: ew-resize; }
+    .canvas-guides.inactive .guide-hit { pointer-events: none; }
+    .canvas-guides.dragging { pointer-events: all; cursor: ns-resize; }
+    .canvas-guides.dragging.vertical-drag { cursor: ew-resize; }
+    .canvas-guides.dragging .guide-hit { cursor: inherit; }
     .canvas-editor {
         position: relative;
         width: 100%;
