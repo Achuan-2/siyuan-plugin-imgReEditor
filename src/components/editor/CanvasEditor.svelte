@@ -1,6 +1,7 @@
 <script lang="ts">
     import { t } from '../../utils/i18n';
     import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+    import { normalizeCanvasLayout, projectCanvasGuides } from './canvasLayout';
     import {
         Canvas,
         Triangle,
@@ -143,6 +144,35 @@
     // active tool state
     let activeTool: string | null = null;
     let activeToolOptions: any = {};
+    let canvasLayoutState = normalizeCanvasLayout();
+    let guideSegments: ReturnType<typeof projectCanvasGuides> = [];
+
+    export function getCanvasLayout() {
+        const boundary = canvas?.getObjects().find((o: any) => o._isCanvasBackground);
+        return normalizeCanvasLayout({
+            ...canvasLayoutState,
+            width: boundary?.width ?? canvasLayoutState.width,
+            height: boundary?.height ?? canvasLayoutState.height,
+        });
+    }
+
+    function updateGuideOverlay() {
+        const boundary = canvas?.getObjects().find((o: any) => o._isCanvasBackground);
+        guideSegments = isCanvasMode && boundary
+            ? projectCanvasGuides(canvasLayoutState, boundary, canvas.viewportTransform)
+            : [];
+    }
+
+    function restoreCanvasLayout(json: any) {
+        if (!isCanvasMode) return;
+        // Older projects have no layout metadata and must not inherit another canvas's guides.
+        canvasLayoutState = normalizeCanvasLayout(json.canvasLayout ?? {
+            width: json.width, height: json.height, fill: json.bgFill ?? 'transparent',
+        });
+        if (activeTool === 'canvas') activeToolOptions = getCanvasLayout();
+        updateGuideOverlay();
+        dispatch('canvasLayoutChanged', getCanvasLayout());
+    }
     // image crop state
     let isImageCropping = false;
     let targetImageToCrop: any = null;
@@ -872,6 +902,7 @@
             if (!canvas) return;
             // Use the same logic as toJSON to include background metadata
             let json = (canvas as any).toJSON(HISTORY_PROPS);
+            if (isCanvasMode) json.canvasLayout = getCanvasLayout();
             // Ensure canvas-mode project dimensions and background fill are saved in history
             if (isCanvasMode) {
                 const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
@@ -1287,6 +1318,9 @@
             fireRightClick: true,
             stopContextMenu: true,
         });
+
+        // A separate SVG overlay follows the viewport and never participates in image export.
+        canvas.on('after:render', updateGuideOverlay);
 
         // Initialize custom controls
         initControls(canvas);
@@ -3267,9 +3301,13 @@
             if (canvas) canvas.defaultCursor = 'default';
         }
         if (tool === 'canvas') {
+            const before = JSON.stringify(getCanvasLayout());
+            canvasLayoutState = normalizeCanvasLayout({ ...getCanvasLayout(), ...options });
             if (options.fill) {
                 setCanvasBackground(options.fill);
             }
+            updateGuideOverlay();
+            if (before !== JSON.stringify(getCanvasLayout())) schedulePushWithType('modified');
         }
 
         // provide sensible defaults for text tool
@@ -4466,6 +4504,7 @@
             // Use saved settings or defaults
             const savedCanvas =
                 (settings && settings.lastToolSettings && settings.lastToolSettings.canvas) || {};
+            canvasLayoutState = normalizeCanvasLayout(savedCanvas);
             const imgW = initialCanvasSize?.width || savedCanvas.width || 800;
             const imgH = initialCanvasSize?.height || savedCanvas.height || 600;
             const bgFill = savedCanvas.fill || '#ffffff';
@@ -4873,6 +4912,7 @@
             history = [];
             historyIndex = -1;
             const json = (canvas as any).toJSON(HISTORY_PROPS);
+            if (isCanvasMode) json.canvasLayout = getCanvasLayout();
             // Ensure initial history stores canvas-mode project size and bg fill
             if (isCanvasMode) {
                 const boundary = canvas.getObjects().find((o: any) => o._isCanvasBackground);
@@ -5109,6 +5149,7 @@
                 bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
             }
 
+            restoreCanvasLayout(json);
             restoreObjectSelectionStates();
             updateCurrentNumberFromCanvas();
             canvas.renderAll();
@@ -5285,6 +5326,7 @@
                 } catch (e) {}
             }
 
+            restoreCanvasLayout(json);
             restoreObjectSelectionStates();
             updateCurrentNumberFromCanvas();
             canvas.renderAll();
@@ -5359,6 +5401,7 @@
     }
 
     export function getToolOptions() {
+        if (activeTool === 'canvas') return getCanvasLayout();
         if (activeTool === 'number-marker') {
             const active = canvas?.getActiveObject();
             if (active && active.type === 'number-marker') {
@@ -5424,6 +5467,7 @@
     export function applyToolOptionsToSelection(options: any) {
         try {
             if (!canvas) return;
+            if (activeTool === 'canvas') return;
             if (activeTool === 'image-border') {
                 updateImageBorder(options);
                 canvas.requestRenderAll();
@@ -6116,6 +6160,7 @@
         if (!canvas) return null;
         // Standard toObject includes HISTORY_PROPS for top-level objects.
         const json = (canvas as any).toObject(HISTORY_PROPS);
+        if (isCanvasMode) json.canvasLayout = getCanvasLayout();
 
         // For canvas mode, add project dimensions from boundary rectangle and remove backgroundImage to avoid blob URL issues
         if (isCanvasMode) {
@@ -6334,6 +6379,7 @@
                 bg._borderShadowOpacity = json.backgroundImage._borderShadowOpacity;
             }
 
+            restoreCanvasLayout(json);
             // After loading, ensure all objects (except background) are selectable and evented
             restoreObjectSelectionStates();
 
@@ -6813,10 +6859,11 @@
             }
 
             activeToolOptions = { ...activeToolOptions, width, height };
+            canvasLayoutState = normalizeCanvasLayout({ ...canvasLayoutState, width, height });
 
             // Update background if exists
-            if (activeToolOptions && activeToolOptions.fill) {
-                setCanvasBackground(activeToolOptions.fill);
+            if (canvasLayoutState.fill) {
+                setCanvasBackground(canvasLayoutState.fill);
             } else {
                 updateCanvasBackgroundSize();
             }
@@ -6845,7 +6892,7 @@
                 top: boundary.top,
             });
             // If it's a gradient, we might need to refresh it because coords depend on size
-            const fill = activeToolOptions.fill;
+            const fill = canvasLayoutState.fill;
             if (fill && typeof fill === 'string' && fill.startsWith('linear-gradient')) {
                 setCanvasBackground(fill);
             }
@@ -6854,6 +6901,7 @@
 
     export function setCanvasBackground(fill: any) {
         if (!canvas || !isCanvasMode) return;
+        canvasLayoutState = normalizeCanvasLayout({ ...canvasLayoutState, fill });
 
         let bgNode = canvas.getObjects().find((o: any) => (o as any)._isCanvasBackground) as Rect;
         const boundary = canvas
@@ -7274,6 +7322,14 @@
 <div class="canvas-editor">
     <canvas bind:this={container}></canvas>
 
+    {#if isCanvasMode && guideSegments.length}
+        <svg class="canvas-guides" aria-hidden="true">
+            {#each guideSegments as segment}
+                <line x1={segment.start.x} y1={segment.start.y} x2={segment.end.x} y2={segment.end.y} />
+            {/each}
+        </svg>
+    {/if}
+
     <div class="zoom-controls">
         <div class="zoom-info">{zoomDisplay}</div>
         <button on:click={() => handleZoom(1)} title={t('editor.zoomIn')}>+</button>
@@ -7283,6 +7339,8 @@
 </div>
 
 <style>
+    .canvas-guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .canvas-guides line { stroke: #00a8ff; stroke-width: 1; stroke-dasharray: 6 4; }
     .canvas-editor {
         position: relative;
         width: 100%;

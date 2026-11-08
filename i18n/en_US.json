@@ -1,4 +1,23 @@
 {
+    "canvasLayout": {
+        "presets": "Canvas presets",
+        "choosePreset": "Choose a preset",
+        "load": "Load",
+        "delete": "Delete",
+        "presetName": "Preset name",
+        "save": "Save current settings",
+        "overwrite": "Replace same-name preset",
+        "guides": "Guides",
+        "showGuides": "Show guides",
+        "direction": "Direction",
+        "horizontal": "Horizontal",
+        "vertical": "Vertical",
+        "position": "Position (% from left / top)",
+        "deleteGuide": "Delete guide",
+        "clear": "Clear",
+        "margin": "Edge margin",
+        "add": "Add"
+    },
     "materials": {
         "title": "Materials",
         "saveObject": "Save as material",

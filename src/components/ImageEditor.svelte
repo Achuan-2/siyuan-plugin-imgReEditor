@@ -6,6 +6,7 @@
     import CanvasEditor from './editor/CanvasEditor.svelte';
     import Toolbar from './editor/Toolbar.svelte';
     import ToolSettings from './editor/ToolSettings.svelte';
+    import { normalizeCanvasLayout } from './editor/canvasLayout';
     import MaterialPanel from './editor/MaterialPanel.svelte';
     import MaterialSaveDialog from './editor/MaterialSaveDialog.svelte';
     import type { MaterialSnapshot } from './editor/materialLibrary';
@@ -1463,9 +1464,7 @@
                 canvasEditorRef.setTool('transform');
                 toolSettings = canvasEditorRef.getToolOptions();
             } else if (tool === 'canvas') {
-                const savedOptions =
-                    (settings.lastToolSettings && settings.lastToolSettings['canvas']) || {};
-                canvasEditorRef.setTool('canvas', savedOptions);
+                canvasEditorRef.setTool('canvas', canvasEditorRef.getCanvasLayout());
                 activeTool = 'canvas';
                 toolSettings = canvasEditorRef.getToolOptions();
             } else if (tool === 'image-border') {
@@ -1699,27 +1698,14 @@
                         const h = e.detail?.height;
                         if (typeof w === 'number' && typeof h === 'number') {
                             // Update toolSettings so UI reflects new canvas size
-                            const nw = Math.round(w);
-                            const nh = Math.round(h);
-                            toolSettings = {
-                                ...(toolSettings || {}),
-                                width: nw,
-                                height: nh,
-                            };
-                            // Persist settings for the canvas tool
-                            saveToolSettings('canvas', toolSettings);
-                            // Re-apply after a short delay to avoid being overwritten by selection handlers
-                            setTimeout(() => {
-                                try {
-                                    toolSettings = {
-                                        ...(toolSettings || {}),
-                                        width: nw,
-                                        height: nh,
-                                    };
-                                } catch (e) {}
-                            }, 80);
+                            const layout = canvasEditorRef.getCanvasLayout();
+                            if (activeTool === 'canvas') toolSettings = layout;
+                            saveToolSettings('canvas', layout);
                         }
                     } catch (err) {}
+                }}
+                on:canvasLayoutChanged={e => {
+                    if (activeTool === 'canvas') toolSettings = e.detail;
                 }}
                 on:loadError={e => {
                     try {
@@ -2013,6 +1999,18 @@
                             settings={toolSettings}
                             recentColors={settings.recentColors || {}}
                             customTextTemplates={settings.customTextTemplates || []}
+                            canvasPresets={settings.canvasPresets || []}
+                            on:updatePresets={e => {
+                                settings.canvasPresets = e.detail;
+                                dispatch('saveSettings', settings);
+                            }}
+                            on:loadPreset={e => {
+                                toolSettings = normalizeCanvasLayout(e.detail);
+                                canvasEditorRef.setTool('canvas', toolSettings);
+                                canvasEditorRef.resizeCanvas(toolSettings.width, toolSettings.height);
+                                toolSettings = canvasEditorRef.getCanvasLayout();
+                                saveToolSettings('canvas', toolSettings);
+                            }}
                             on:updateCustomTemplates={e => {
                                 settings.customTextTemplates = e.detail;
                                 dispatch('saveSettings', settings);

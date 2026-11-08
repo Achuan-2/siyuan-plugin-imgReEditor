@@ -4,6 +4,8 @@
     import ColorPicker from './ColorPicker.svelte';
     import GradientDesigner from './GradientDesigner.svelte';
     import TextTemplates from './TextTemplates.svelte';
+    import CanvasLayoutSettings from './CanvasLayoutSettings.svelte';
+    import { CANVAS_RATIOS } from './canvasLayout';
     import {
         DEFAULT_TEXT_BACKGROUND_RADIUS_PERCENT,
         normalizeTextBackgroundRadiusPercent,
@@ -15,6 +17,7 @@
     export let recentColors: Record<string, string[]> = {};
     export let savedGradients: string[] = [];
     export let customTextTemplates: unknown = [];
+    export let canvasPresets: unknown = [];
     export let selectCanvasSizeMode: boolean = false;
     const dispatch = createEventDispatcher();
 
@@ -230,14 +233,13 @@
     // lock aspect-ratio handling: 当勾选时，修改宽度会自动调整高度以保持比例
     let lockCanvasRatio: boolean = false;
     let lockedAspectRatio: number | null = null; // width / height
-    const canvasRatioPresets = [
-        { label: '3:4', ratio: 3 / 4 },
-        { label: '2.35:1', ratio: 2.35 },
-        { label: '4:3', ratio: 4 / 3 },
-        { label: '9:16', ratio: 9 / 16 },
-        { label: '16:9', ratio: 16 / 9 },
-    ];
+    const canvasRatioPresets = CANVAS_RATIOS;
     let selectedCanvasRatio = '';
+
+    $: if (tool === 'canvas') {
+        lockCanvasRatio = settings.lockAspectRatio === true;
+        selectedCanvasRatio = settings.ratioLabel || '';
+    }
 
     function applyCanvasRatio(preset: { label: string; ratio: number }) {
         const width = Math.max(1, Math.round(settings.width || 800));
@@ -245,7 +247,7 @@
         selectedCanvasRatio = preset.label;
         lockCanvasRatio = true;
         lockedAspectRatio = preset.ratio;
-        emitChange({ width, height });
+        emitChange({ width, height, lockAspectRatio: true, ratioLabel: preset.label });
         emitResize(width, height);
     }
 
@@ -259,6 +261,7 @@
             lockedAspectRatio = null;
             selectedCanvasRatio = '';
         }
+        emitChange({ lockAspectRatio: checked, ratioLabel: selectedCanvasRatio });
     }
 
     function emitResize(width: number, height: number) {
@@ -1337,6 +1340,7 @@
             </div>
         {/if}
 
+        <CanvasLayoutSettings {settings} presets={canvasPresets} on:change on:updatePresets on:loadPreset />
         <div class="row" style="gap: 8px;">
             <button
                 on:click={() => dispatch('action', { action: 'selectCanvasSize' })}

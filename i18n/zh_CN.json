@@ -1,4 +1,23 @@
 {
+    "canvasLayout": {
+        "presets": "画布预设",
+        "choosePreset": "选择预设",
+        "load": "加载",
+        "delete": "删除",
+        "presetName": "预设名称",
+        "save": "保存当前设置",
+        "overwrite": "覆盖同名预设",
+        "guides": "参考线",
+        "showGuides": "显示参考线",
+        "direction": "方向",
+        "horizontal": "横向",
+        "vertical": "纵向",
+        "position": "位置（距左侧／顶部的百分比）",
+        "deleteGuide": "删除参考线",
+        "clear": "清空",
+        "margin": "四周留白",
+        "add": "添加"
+    },
     "materials": {
         "title": "素材",
         "saveObject": "保存为素材",
