@@ -53,21 +53,6 @@
 </script>
 
 <div class="layout-settings">
-    <details>
-        <summary>{t('canvasLayout.presets')}</summary>
-        <div class="controls">
-            <select bind:value={selected} aria-label={t('canvasLayout.presets')}>
-                <option value="">{t('canvasLayout.choosePreset')}</option>
-                {#each entries as preset}<option value={preset.id}>{preset.name}</option>{/each}
-            </select>
-            <button disabled={!entries.some(p => p.id === selected)} on:click={load}>{t('canvasLayout.load')}</button>
-            <button disabled={!entries.some(p => p.id === selected)} on:click={deletePreset}>{t('canvasLayout.delete')}</button>
-        </div>
-        <form class="controls" on:submit|preventDefault={save}>
-            <input bind:value={name} maxlength="80" placeholder={t('canvasLayout.presetName')} aria-label={t('canvasLayout.presetName')} />
-            <button type="submit" disabled={!name.trim()}>{entries.some(p => p.name === name.trim()) ? t('canvasLayout.overwrite') : t('canvasLayout.save')}</button>
-        </form>
-    </details>
     <details open>
         <summary>{t('canvasLayout.guides')}</summary>
         <label class="visibility"><input type="checkbox" checked={settings.guidesVisible !== false} on:change={e => dispatch('change', { guidesVisible: e.currentTarget.checked })} />{t('canvasLayout.showGuides')}</label>
@@ -91,6 +76,21 @@
             <input id="canvas-margin" class="position" type="number" min="0.1" max="49.9" step="0.1" bind:value={margin} /><span>%</span>
             <button disabled={!createMarginGuides(margin).length} on:click={addMargins}>{t('canvasLayout.add')}</button>
         </div>
+    </details>
+    <details>
+        <summary>{t('canvasLayout.presets')}</summary>
+        <div class="controls">
+            <select bind:value={selected} aria-label={t('canvasLayout.presets')}>
+                <option value="">{t('canvasLayout.choosePreset')}</option>
+                {#each entries as preset}<option value={preset.id}>{preset.name}</option>{/each}
+            </select>
+            <button disabled={!entries.some(p => p.id === selected)} on:click={load}>{t('canvasLayout.load')}</button>
+            <button disabled={!entries.some(p => p.id === selected)} on:click={deletePreset}>{t('canvasLayout.delete')}</button>
+        </div>
+        <form class="controls" on:submit|preventDefault={save}>
+            <input bind:value={name} maxlength="80" placeholder={t('canvasLayout.presetName')} aria-label={t('canvasLayout.presetName')} />
+            <button type="submit" disabled={!name.trim()}>{entries.some(p => p.name === name.trim()) ? t('canvasLayout.overwrite') : t('canvasLayout.save')}</button>
+        </form>
     </details>
 </div>
 
