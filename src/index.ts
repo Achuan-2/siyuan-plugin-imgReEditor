@@ -14,6 +14,7 @@ import { getDefaultSettings } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
 import { observeAssetUploads } from './utils/assetUploadObserver';
+import { refreshAssetImages } from './utils/assetImageRefresh';
 import {
     reencodeImageBlob,
     getMimeByFormat,
@@ -646,8 +647,7 @@ export default class PluginSample extends Plugin {
         savedPath: string
     ) {
         if (!blockID || originalPath === savedPath) return;
-        // The live DOM may already have been refreshed to savedPath; mapping it to itself
-        // also removes the temporary cache-busting query before persisting the block.
+        // The live DOM may already have been refreshed to savedPath.
         const pathMap = new Map([
             [originalPath, savedPath],
             [savedPath, savedPath],
@@ -931,16 +931,21 @@ export default class PluginSample extends Plugin {
         await saveHistory();
 
         if (changedAssetPaths.size > 0) {
-            const cacheBust = Date.now();
+            const imagesByPath = new Map<string, HTMLImageElement[]>();
             document.querySelectorAll('img').forEach((element: Element) => {
                 const image = element as HTMLImageElement;
                 const assetPath = normalizeAssetPath(
                     image.dataset?.src || image.getAttribute('src')
                 );
                 if (assetPath && changedAssetPaths.has(assetPath)) {
-                    image.src = `${assetPath}?t=${cacheBust}`;
+                    const images = imagesByPath.get(assetPath) || [];
+                    images.push(image);
+                    imagesByPath.set(assetPath, images);
                 }
             });
+            for (const [assetPath, images] of imagesByPath) {
+                await refreshAssetImages(images, assetPath);
+            }
         }
 
         return stats;
@@ -1160,20 +1165,15 @@ export default class PluginSample extends Plugin {
                 return { status: 'skipped', reason: 'write-failed' };
             }
 
-            const cacheBustURL = `${savedPath}?t=${Date.now()}`;
-            const refreshImage = (img: HTMLImageElement) => {
-                if (normalizeAssetPath(img.dataset?.src || img.getAttribute('src')) === imagePath) {
-                    img.setAttribute('data-src', savedPath);
-                    img.src = cacheBustURL;
-                }
-            };
-
-            if (imageElement) refreshImage(imageElement);
+            const images = new Set<HTMLImageElement>();
+            if (imageElement) images.add(imageElement);
             if (savedPath === imagePath) {
-                document.querySelectorAll('img[data-src]').forEach((img: Element) => {
-                    refreshImage(img as HTMLImageElement);
-                });
+                document.querySelectorAll<HTMLImageElement>('img[data-src]').forEach(img => images.add(img));
             }
+            await refreshAssetImages(
+                [...images].filter(img => normalizeAssetPath(img.dataset?.src || img.getAttribute('src')) === imagePath),
+                savedPath
+            );
 
             await notifyMsg(
                 t(isFormatConversion ? 'imageCompression.converted' : 'imageCompression.success', {

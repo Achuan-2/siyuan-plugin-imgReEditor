@@ -32,6 +32,7 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
         svelte: { onMount() {}, onDestroy() {}, createEventDispatcher: () => () => {}, tick: async () => {} },
         '../libs/dialog': { unsavedChangesDialog: async () => { prompts++; return typeof choice === 'function' ? choice() : choice; } },
         '../utils/i18n': { t: key => key },
+        '../utils/assetImageRefresh': evaluate(readFileSync(resolve(__dirname, '../src/utils/assetImageRefresh.ts'), 'utf8'), {}),
         './editor/CanvasEditor.svelte': {},
         './editor/Toolbar.svelte': {},
         './editor/ToolSettings.svelte': {},

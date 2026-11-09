@@ -3,6 +3,7 @@
     const dispatch = createEventDispatcher();
     import { unsavedChangesDialog, svelteDialog } from '../libs/dialog';
     import { t } from '../utils/i18n';
+    import { refreshAssetImages } from '../utils/assetImageRefresh';
     import CanvasEditor from './editor/CanvasEditor.svelte';
     import Toolbar from './editor/Toolbar.svelte';
     import ToolSettings from './editor/ToolSettings.svelte';
@@ -1172,14 +1173,10 @@
             try {
                 // Update img elements where dataset.src equal to current imagePath
                 const newDataset = `assets/${saveName}`;
-                const refreshedSrc = `${newDataset}?v=${Date.now()}`;
-                document
-                    .querySelectorAll(`img[data-src="${imagePath}"]`)
-                    .forEach((imageElement: any) => {
-                        imageElement.setAttribute('data-src', newDataset);
-                        // Keep the stored asset path stable; let the image load refresh asynchronously.
-                        imageElement.src = refreshedSrc;
-                    });
+                await refreshAssetImages(
+                    document.querySelectorAll<HTMLImageElement>(`img[data-src="${imagePath}"]`),
+                    newDataset
+                );
                 // update local imagePath so subsequent saves reuse updated path
                 imagePath = newDataset;
             } catch (e) {

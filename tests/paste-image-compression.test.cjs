@@ -21,6 +21,7 @@ function loadSource(path, imports = {}) {
 }
 
 const { observeAssetUploads } = loadSource('src/utils/assetUploadObserver.ts');
+const assetImageRefresh = loadSource('src/utils/assetImageRefresh.ts');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const deferred = () => {
     let resolve;
@@ -152,6 +153,7 @@ function createPlugin(api, utils = {}) {
         siyuan: { Plugin: class {} }, '@/index.scss': {}, './Settings.svelte': {},
         './components/ImageEditor.svelte': {}, './defaultSettings': {}, './utils/i18n': { t: key => key },
         './ScreenshotManager': {}, './utils/assetUploadObserver': { observeAssetUploads },
+        './utils/assetImageRefresh': assetImageRefresh,
         './utils': utils, './api': api,
     }).default;
     const plugin = new Plugin();

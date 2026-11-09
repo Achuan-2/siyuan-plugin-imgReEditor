@@ -44,6 +44,7 @@ function createPlugin(api = {}, overrides = {}, notifications = []) {
         './components/ImageEditor.svelte': {}, './defaultSettings': {},
         './utils/i18n': { t: key => key }, './ScreenshotManager': {},
         './utils/assetUploadObserver': {}, './api': api,
+        './utils/assetImageRefresh': evaluate(compile('src/utils/assetImageRefresh.ts'), {}),
         './utils': {
             ...utils,
             // Strip all metadata like a pixel encoder would; use the real metadata helpers.
