@@ -55,10 +55,13 @@
     let showCanvasGradientDesigner = false;
     let selectionPanelTool: string | null = null;
     let selectionPanelRevision: number | undefined;
+    let selectionPanelSourceTool: string | null = null;
 
-    $: if (tool !== 'select' || settings.selectionRevision !== selectionPanelRevision) {
-        selectionPanelTool = null;
+    // Default to alignment for a new selection; preserve manually opened properties on style updates.
+    $: if (tool !== 'select' || tool !== selectionPanelSourceTool || settings.selectionRevision !== selectionPanelRevision) {
+        selectionPanelTool = tool === 'select' && settings.selectionCount > 0 ? 'align' : null;
         selectionPanelRevision = settings.selectionRevision;
+        selectionPanelSourceTool = tool;
     }
 
     $: isGradient =
@@ -1744,7 +1747,7 @@
         {:else}
             <div class="empty">{t('editor.selectShape')}</div>
         {/if}
-        {#if settings.selectionCount > 1}
+        {#if settings.selectionCount > 0}
             <div class="row" style="margin: 12px 0;">
                 <button
                     type="button"

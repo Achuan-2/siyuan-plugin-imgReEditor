@@ -110,31 +110,43 @@ test('selection identity changes reset panels even within a category; style refr
     assert.equal(cleared.selectionCount, 0);
 });
 
-test('selection settings activate locally and reset only on membership changes or leaving the selection tool', () => {
+test('selection settings default to alignment for single and multiple selections while preserving manual property edits', () => {
     const component = readFileSync(resolve(__dirname, '../src/components/editor/ToolSettings.svelte'), 'utf8');
     const script = component.match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
     const reset = script.match(/\$: if \(tool !== 'select'[\s\S]*?^    \}/m)[0].replace('$: ', '');
     const choose = component.match(/on:click=\{(\(\) => selectionPanelTool = getSelectionTool\([^}]+)\}/)[1];
     const align = component.match(/on:click=\{(\(\) => selectionPanelTool = 'align')\}/)[1];
     const panel = new Function('getSelectionTool', compile(`
-        let tool = 'select', settings = {}, selectionPanelTool = null, selectionPanelRevision;
+        let tool = 'select', settings = {}, selectionPanelTool = null, selectionPanelRevision, selectionPanelSourceTool = null;
         return {
             update(value, nextTool = tool) { settings = value; tool = nextTool; ${reset} },
             choose: ${choose}, align: ${align},
             state: () => ({ tool, selectionPanelTool }),
         };
     `))(selection.getSelectionTool);
-    panel.update({ selectionType: 'text', selectionRevision: 1 });
+    panel.update({ selectionCount: 0, selectionRevision: 0 });
+    assert.equal(panel.state().selectionPanelTool, null);
+    panel.update({ selectionType: 'text', selectionCount: 1, selectionRevision: 1 });
+    assert.deepEqual(panel.state(), { tool: 'select', selectionPanelTool: 'align' });
     panel.choose();
     assert.deepEqual(panel.state(), { tool: 'select', selectionPanelTool: 'text' });
-    panel.update({ selectionType: 'text', selectionRevision: 1, fill: '#ffffff' });
+    panel.update({ selectionType: 'text', selectionCount: 1, selectionRevision: 1, fill: '#ffffff' });
     assert.equal(panel.state().selectionPanelTool, 'text');
     panel.align();
     assert.deepEqual(panel.state(), { tool: 'select', selectionPanelTool: 'align' });
-    panel.update({ selectionType: 'text', selectionRevision: 2 });
-    assert.equal(panel.state().selectionPanelTool, null);
+    panel.update({ selectionType: 'text', selectionCount: 2, selectionRevision: 2 });
+    assert.equal(panel.state().selectionPanelTool, 'align');
     panel.choose();
-    panel.update({ selectionType: 'text', selectionRevision: 2 }, 'shape');
+    panel.update({ selectionType: 'text', selectionCount: 2, selectionRevision: 2 }, 'shape');
+    assert.equal(panel.state().selectionPanelTool, null);
+    // Returning to selection must reopen alignment even if the objects did not change.
+    panel.update({ selectionType: 'text', selectionCount: 2, selectionRevision: 2 }, 'select');
+    assert.equal(panel.state().selectionPanelTool, 'align');
+    panel.update({ selectionType: 'activeSelection', isMixedSelection: true, selectionCount: 2, selectionRevision: 3 });
+    assert.equal(panel.state().selectionPanelTool, 'align');
+    panel.update({ selectionType: 'text', selectionCount: 1, selectionRevision: 4 });
+    assert.equal(panel.state().selectionPanelTool, 'align');
+    panel.update({ selectionCount: 0, selectionRevision: 5 });
     assert.equal(panel.state().selectionPanelTool, null);
 });
 
