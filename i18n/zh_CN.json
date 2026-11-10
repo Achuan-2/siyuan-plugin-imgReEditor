@@ -121,6 +121,13 @@
             "title": "粘贴图片自动压缩",
             "description": "开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅采用体积更小的结果。同格式压缩保留原文件名和链接；转换为 WebP 时只替换扩展名并更新链接。失败则保留原图。默认关闭。"
         },
+        "limitImageLongEdge": {
+            "title": "图片压缩时限制最长边",
+            "description": "超过上限时按比例下采样，小图不放大。单张图片和文档压缩默认继承此设置，可在确认框临时调整；粘贴自动压缩使用此全局设置。默认不限制。"
+        },
+        "imageMaxLongEdge": {
+            "title": "图片最长边上限（px）"
+        },
         "showPasteImageCompressionNotification": {
             "title": "粘贴图片压缩提示",
             "description": "开启后显示粘贴或拖拽图片自动压缩后的大小变化提示；关闭后在后台静默压缩。默认开启，压缩失败时仍会提示。"
@@ -172,6 +179,8 @@
     },
     "imageCompression": {
         "title": "压缩图片",
+        "limitLongEdge": "限制最长边（按比例缩小）",
+        "maxLongEdge": "最长边上限（px）",
         "confirmConvert": "将尝试转为 WebP；仅采用体积更小的结果，并更新当前图片块的引用；仍被其他位置引用的原资源会保留。继续吗？",
         "confirmOverwrite": "将使用当前压缩设置覆盖原图片。继续吗？",
         "unsupported": "暂不支持压缩该图片格式，仅支持 PNG、JPG/JPEG、WebP",

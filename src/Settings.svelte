@@ -258,12 +258,25 @@
                     },
                 },
                 {
+                    key: 'limitImageLongEdge',
+                    value: settings.limitImageLongEdge,
+                    type: 'checkbox',
+                    title: t('settings.limitImageLongEdge.title'),
+                    description: t('settings.limitImageLongEdge.description'),
+                },
+                {
+                    key: 'imageMaxLongEdge',
+                    value: settings.imageMaxLongEdge,
+                    type: 'number',
+                    title: t('settings.imageMaxLongEdge.title'),
+                    description: '',
+                },
+                {
                     key: 'enablePasteImageCompression',
                     value: settings.enablePasteImageCompression,
                     type: 'checkbox',
                     title: t('settings.enablePasteImageCompression.title'),
-                    description:
-                        t('settings.enablePasteImageCompression.description'),
+                    description: t('settings.enablePasteImageCompression.description'),
                 },
                 {
                     key: 'showPasteImageCompressionNotification',
@@ -440,7 +453,12 @@
     const onChanged = async ({ detail }: CustomEvent<ChangeEvent>) => {
         const setting = settings[detail.key];
         if (setting !== undefined) {
+            if (detail.key === 'imageMaxLongEdge') {
+                const pixels = Number(detail.value);
+                detail.value = Number.isFinite(pixels) && pixels >= 1 ? Math.floor(pixels) : 2000;
+            }
             settings[detail.key] = detail.value;
+            updateGroupItems();
             await saveSettings();
             if (
                 detail.key === 'enableScreenshot' &&
@@ -504,7 +522,9 @@
         <h2>{currentGroup?.name || ''}</h2>
         <SettingPanel
             group={currentGroup?.name || ''}
-            settingItems={currentGroup?.items || []}
+            settingItems={(currentGroup?.items || []).filter(item =>
+                item.key !== 'imageMaxLongEdge' || settings.limitImageLongEdge
+            )}
             display={true}
             on:changed={onChanged}
         >

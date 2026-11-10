@@ -90,6 +90,11 @@ function getCompressionOutputFormat(
     return sourceFormat;
 }
 
+function getImageMaxLongEdge(settings: any): number {
+    const pixels = Number(settings?.imageMaxLongEdge ?? 2000);
+    return Number.isFinite(pixels) && pixels >= 1 ? Math.floor(pixels) : 2000;
+}
+
 function getFormatCompressionOptions(settings: any, format: CompressibleImageFormat): ReencodeOptions {
     const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
     const rawPngQuality = Number(settings?.pngQuality ?? settings?.imageCompressionQuality ?? 92);
@@ -951,7 +956,66 @@ export default class PluginSample extends Plugin {
         return stats;
     }
 
-    private async compressDocumentImageAssets(docID: string, imageURLs: string[]) {
+    /** Inherit global dimensions, allowing overrides for this image/document only. */
+    private showImageCompressionDialog(
+        title: string,
+        message: string,
+        onConfirm: (maxLongEdge?: number) => Promise<void>
+    ): void {
+        const dialog = new Dialog({
+            title,
+            content: `<form>
+<div class="b3-dialog__content">
+    <div data-message class="ft__breakword"></div>
+    <label class="fn__flex" style="align-items:center;margin-top:16px;gap:16px">
+        <span data-limit-label class="fn__flex-1"></span>
+        <input data-limit type="checkbox" class="b3-switch">
+    </label>
+    <label data-pixels-row class="fn__flex fn__none" style="align-items:center;margin-top:12px;gap:16px">
+        <span data-pixels-label class="fn__flex-1"></span>
+        <input data-pixels type="number" min="1" step="1" required class="b3-text-field" style="width:120px">
+    </label>
+</div>
+<div class="b3-dialog__action">
+    <button data-cancel type="button" class="b3-button b3-button--cancel"></button><div class="fn__space"></div>
+    <button data-confirm type="submit" class="b3-button b3-button--text"></button>
+</div>
+</form>`,
+            width: '520px',
+        });
+        const root = dialog.element;
+        root.querySelector('[data-message]').textContent = message;
+        root.querySelector('[data-limit-label]').textContent = t('imageCompression.limitLongEdge');
+        root.querySelector('[data-pixels-label]').textContent = t('imageCompression.maxLongEdge');
+        root.querySelector('[data-cancel]').textContent = window.siyuan.languages.cancel;
+        root.querySelector('[data-confirm]').textContent = window.siyuan.languages.confirm;
+        const limit = root.querySelector<HTMLInputElement>('[data-limit]');
+        const pixels = root.querySelector<HTMLInputElement>('[data-pixels]');
+        limit.checked = this.settings?.limitImageLongEdge === true;
+        pixels.value = String(getImageMaxLongEdge(this.settings));
+        const updateLimit = () => {
+            pixels.disabled = !limit.checked;
+            root.querySelector('[data-pixels-row]').classList.toggle('fn__none', !limit.checked);
+        };
+        updateLimit();
+        limit.addEventListener('change', updateLimit);
+        root.querySelector('[data-cancel]').addEventListener('click', () => dialog.destroy());
+        root.querySelector('form').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (limit.checked && !pixels.reportValidity()) return;
+            const maxLongEdge = limit.checked ? pixels.valueAsNumber : undefined;
+            dialog.destroy();
+            try {
+                await onConfirm(maxLongEdge);
+            } catch (error) {
+                console.error('Image compression failed:', error);
+                const { pushErrMsg } = await import('./api');
+                await pushErrMsg(t('imageCompression.failed'));
+            }
+        });
+    }
+
+    private async compressDocumentImageAssets(docID: string, imageURLs: string[], maxLongEdge?: number) {
         const { pushMsg, pushErrMsg } = await import('./api');
         const uniqueURLs = Array.from(new Set(imageURLs
             .map((imageURL) => normalizeAssetPath(imageURL))
@@ -975,7 +1039,7 @@ export default class PluginSample extends Plugin {
         const convertedPaths = new Map<string, string>();
 
         for (const imageURL of uniqueURLs) {
-            const result = await this.compressImageAsset(imageURL, undefined, { silent: true });
+            const result = await this.compressImageAsset(imageURL, undefined, { silent: true, maxLongEdge });
             if (result.status === 'compressed') {
                 stats.compressed += 1;
                 stats.originalSize += result.originalSize;
@@ -1039,7 +1103,7 @@ export default class PluginSample extends Plugin {
     private async compressImageAsset(
         imageURL: string,
         imageElement?: HTMLImageElement,
-        options: { silent?: boolean; isActive?: () => boolean } = {}
+        options: { silent?: boolean; isActive?: () => boolean; maxLongEdge?: number } = {}
     ): Promise<CompressionResult> {
         const imagePath = normalizeAssetPath(imageURL);
         const fileName = imagePath?.split('/').pop() || '';
@@ -1069,6 +1133,7 @@ export default class PluginSample extends Plugin {
                 outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
             const savedPath = imagePath.replace(/[^/]+$/, savedFileName);
             const compressionOptions = getFormatCompressionOptions(this.settings, outputFormat);
+            compressionOptions.maxLongEdge = options.maxLongEdge;
 
             let sidecarText: string | null = null;
             if (savedPath !== imagePath) {
@@ -1263,7 +1328,7 @@ export default class PluginSample extends Plugin {
                         return;
                     }
 
-                    confirm(
+                    this.showImageCompressionDialog(
                         t('documentImageCompression.title'),
                         t(
                             this.settings?.convertToWebP === true
@@ -1271,8 +1336,8 @@ export default class PluginSample extends Plugin {
                                 : 'documentImageCompression.confirmOverwrite',
                             { count: String(compressibleImageURLs.length) }
                         ),
-                        async () => {
-                            await this.compressDocumentImageAssets(docID, compressibleImageURLs);
+                        async (maxLongEdge) => {
+                            await this.compressDocumentImageAssets(docID, compressibleImageURLs, maxLongEdge);
                         }
                     );
                 } catch (error) {
@@ -1354,13 +1419,13 @@ export default class PluginSample extends Plugin {
             label: t('imageCompression.title'),
             index: 1,
             click: async () => {
-                confirm(
+                this.showImageCompressionDialog(
                     t('imageCompression.title'),
                     this.settings?.convertToWebP === true && getCompressibleImageFormat(imageURL) !== 'webp'
                         ? t('imageCompression.confirmConvert')
                         : t('imageCompression.confirmOverwrite'),
-                    async () => {
-                        const result = await this.compressImageAsset(imageURL, imageElement);
+                    async (maxLongEdge) => {
+                        const result = await this.compressImageAsset(imageURL, imageElement, { maxLongEdge });
                         if (result.status === 'compressed' && result.originalPath !== result.savedPath) {
                             try {
                                 await this.replaceImageAssetReferenceInBlock(
@@ -2106,6 +2171,9 @@ export default class PluginSample extends Plugin {
                     const result = await this.compressImageAsset(path, undefined, {
                         silent: true,
                         isActive,
+                        maxLongEdge: this.settings?.limitImageLongEdge === true
+                            ? getImageMaxLongEdge(this.settings)
+                            : undefined,
                     });
                     if (result.status === 'failed' || (result.status === 'skipped' && result.reason === 'write-failed')) {
                         failedCount += 1;

@@ -14,6 +14,8 @@ export const getDefaultSettings = () => ({
     webpQuality: 100,
     imageCompressionQuality: 92,
     enablePasteImageCompression: false,
+    limitImageLongEdge: false,
+    imageMaxLongEdge: 2000,
     showPasteImageCompressionNotification: true,
     enableScreenshot: false,
     screenshotLimit: 200,

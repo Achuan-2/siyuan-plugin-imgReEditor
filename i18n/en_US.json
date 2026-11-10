@@ -121,6 +121,13 @@
             "title": "Compress pasted images",
             "description": "Insert pasted or dropped PNG, JPG/JPEG and WebP images first, then compress them in the background. Use only smaller results. Same-format compression preserves the filename and link; WebP conversion changes only the extension and updates the link. Keep the original on failure. Disabled by default."
         },
+        "limitImageLongEdge": {
+            "title": "Limit longest edge when compressing images",
+            "description": "Downsample proportionally above the limit without enlarging smaller images. Single-image and document compression inherit this setting and allow temporary overrides; automatic paste compression uses this global setting. Off by default."
+        },
+        "imageMaxLongEdge": {
+            "title": "Maximum image longest edge (px)"
+        },
         "showPasteImageCompressionNotification": {
             "title": "Show paste compression notifications",
             "description": "Show file size changes after compressing pasted or dropped images. Disable to compress silently. Enabled by default; failures are always reported."
@@ -172,6 +179,8 @@
     },
     "imageCompression": {
         "title": "Compress image",
+        "limitLongEdge": "Limit longest edge (scale proportionally)",
+        "maxLongEdge": "Maximum longest edge (px)",
         "confirmConvert": "Try converting to WebP and use the result only if it is smaller. Update the current image block reference and keep the original asset if it is still referenced elsewhere. Continue?",
         "confirmOverwrite": "Overwrite the original image using the current compression settings. Continue?",
         "unsupported": "Unsupported image format. Only PNG, JPG/JPEG and WebP can be compressed.",

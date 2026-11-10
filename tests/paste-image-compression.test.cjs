@@ -290,6 +290,55 @@ test('same-format automatic compression keeps the complete filename and only wri
     assert.equal(writes.length, 1);
 });
 
+test('single-image pixel overrides reach the encoder without changing global settings', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    let stored = new Blob(['original image bytes']);
+    const limits = [];
+    const plugin = createPlugin({
+        getFileBlob: async () => stored,
+        putFile: async (_path, _isDir, file) => { stored = file; },
+        pushMsg: async () => {}, pushErrMsg: async () => {},
+    }, {
+        reencodeImageBlob: async (_blob, _format, options) => {
+            limits.push(options.maxLongEdge);
+            return new Blob([new Uint8Array(stored.size - 1)]);
+        },
+        getMimeByFormat: () => 'image/png', locatePNGtEXt: () => false,
+    });
+    plugin.settings = { limitImageLongEdge: true, imageMaxLongEdge: 2000 };
+    await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, maxLongEdge: 1200 });
+    await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, maxLongEdge: undefined });
+    assert.deepEqual(limits, [1200, undefined]);
+    assert.deepEqual(plugin.settings, { limitImageLongEdge: true, imageMaxLongEdge: 2000 });
+});
+
+test('document compression shares the chosen pixel limit across unique images', async () => {
+    const plugin = createPlugin({ pushMsg: async () => {}, pushErrMsg: async () => {} });
+    const calls = [];
+    plugin.compressImageAsset = async (path, _image, options) => {
+        calls.push([path, options.maxLongEdge]);
+        return { status: 'skipped', reason: 'not-smaller' };
+    };
+    await plugin.compressDocumentImageAssets('doc', ['assets/a.png', 'assets/b.jpg', 'assets/a.png'], 1800);
+    assert.deepEqual(calls, [['assets/a.png', 1800], ['assets/b.jpg', 1800]]);
+});
+
+test('automatic compression uses the global pixel switch and validates saved limits', async () => {
+    const plugin = createPlugin({});
+    plugin.waitForAutomaticImageReferences = async () => [{}];
+    const limits = [];
+    plugin.compressImageAsset = async (_path, _image, options) => {
+        limits.push(options.maxLongEdge);
+        return { status: 'skipped', reason: 'not-smaller' };
+    };
+    for (const [enabled, value] of [[true, 2000], [false, 1200], [true, 1200], [true, -5], [true, null]]) {
+        plugin.settings = { limitImageLongEdge: enabled, imageMaxLongEdge: value };
+        await plugin.queueAutomaticImageCompression(['assets/a.png'], 'doc', () => true);
+    }
+    assert.deepEqual(limits, [2000, undefined, 1200, 2000, 2000]);
+});
+
 test('WebP conversion changes only the extension even when the target already exists', async () => {
     setBrowser();
     const source = new Blob(['original image bytes']);

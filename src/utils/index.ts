@@ -9,6 +9,57 @@ export interface ReencodeOptions {
     pngMode?: 'lossless' | 'lossy';
     quality?: number; // 0.01 ~ 1.0
     effort?: 'fast' | 'balanced'; // Encoding effort, independent of visual quality.
+    maxLongEdge?: number; // Optional pixel limit; only downsample, never upscale.
+}
+
+export function getImageResizeDimensions(width: number, height: number, maxLongEdge?: number) {
+    const limit = Number.isFinite(maxLongEdge) && maxLongEdge >= 1 ? Math.floor(maxLongEdge) : 0;
+    const scale = limit > 0 ? Math.min(1, limit / Math.max(width, height)) : 1;
+    return {
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale)),
+    };
+}
+
+/** Decode once and draw at the requested size, preserving transparency except for JPEG. */
+async function rasterizeImage(blob: Blob, format: CompressibleImageFormat, maxLongEdge?: number) {
+    const image = new Image();
+    const objectURL = URL.createObjectURL(blob);
+    try {
+        await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('Failed to load image'));
+            image.src = objectURL;
+        });
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        const size = getImageResizeDimensions(width, height, maxLongEdge);
+        const canvas = document.createElement('canvas');
+        canvas.width = size.width;
+        canvas.height = size.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to create canvas context');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        if (format === 'jpeg') {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+        return { canvas, ctx, resized: width !== size.width || height !== size.height };
+    } finally {
+        URL.revokeObjectURL(objectURL);
+    }
+}
+
+function encodeCanvas(canvas: HTMLCanvasElement, format: CompressibleImageFormat, quality?: number): Promise<Blob> {
+    const mime = getMimeByFormat(format);
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => {
+            if (blob?.size > 0 && blob.type === mime) resolve(blob);
+            else reject(new Error(`Failed to encode ${format} image`));
+        }, mime, quality);
+    });
 }
 
 export function getMimeByFormat(format: CompressibleImageFormat): string {
@@ -124,121 +175,43 @@ export async function reencodeImageBlob(
         return blob;
     }
 
-    if (format === 'png') {
-        if (pngMode === 'lossless') {
-            try {
-                const optimized = await optimizePNGBlob(blob, { level: options.effort === 'fast' ? 0 : 2, optimiseAlpha: true });
-                return optimized.size > 0 && optimized.size < blob.size ? optimized : blob;
-            } catch (err) {
-                console.warn('PNG worker optimization failed, keeping the original PNG:', err);
-                return blob;
-            }
-        } else {
-            // PNG 有损调色板量化压缩
-            return new Promise<Blob>((resolve, reject) => {
-                const image = new Image();
-                const objectURL = URL.createObjectURL(blob);
-                image.onload = async () => {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = image.naturalWidth || image.width;
-                        canvas.height = image.naturalHeight || image.height;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) {
-                            URL.revokeObjectURL(objectURL);
-                            reject(new Error('Failed to create canvas context'));
-                            return;
-                        }
-                        ctx.drawImage(image, 0, 0);
-                        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        URL.revokeObjectURL(objectURL);
-                        resolve(await quantizePNG(imgData, quality, { level: options.effort === 'fast' ? 0 : 2 }));
-                    } catch (error) {
-                        URL.revokeObjectURL(objectURL);
-                        reject(error);
-                    }
-                };
-                image.onerror = () => {
-                    URL.revokeObjectURL(objectURL);
-                    reject(new Error('Failed to load image'));
-                };
-                image.src = objectURL;
+    const losslessPNG = format === 'png' && pngMode === 'lossless';
+    const hasSizeLimit = Number.isFinite(options.maxLongEdge) && options.maxLongEdge >= 1;
+    // Keep the original lossless PNG fast path when dimensions are unrestricted.
+    const raster = !losslessPNG || hasSizeLimit
+        ? await rasterizeImage(blob, format, options.maxLongEdge)
+        : null;
+
+    if (losslessPNG) {
+        // After downsampling, a worker failure must keep the resized PNG.
+        const input = raster?.resized ? await encodeCanvas(raster.canvas, 'png') : blob;
+        try {
+            const optimized = await optimizePNGBlob(input, {
+                level: options.effort === 'fast' ? 0 : 2, optimiseAlpha: true,
             });
+            return optimized.size > 0 && optimized.size < input.size ? optimized : input;
+        } catch (err) {
+            console.warn('PNG worker optimization failed, keeping the PNG:', err);
+            return input;
         }
     }
 
-    return new Promise<Blob>((resolve, reject) => {
-        const image = new Image();
-        const objectURL = URL.createObjectURL(blob);
-        image.onload = () => {
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = image.naturalWidth || image.width;
-                canvas.height = image.naturalHeight || image.height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    URL.revokeObjectURL(objectURL);
-                    reject(new Error('Failed to create canvas context'));
-                    return;
-                }
-
-                if (format === 'jpeg') {
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(image, 0, 0);
-
-                    canvas.toBlob(
-                        outputBlob => {
-                            URL.revokeObjectURL(objectURL);
-                            if (outputBlob) {
-                                resolve(outputBlob);
-                            } else {
-                                reject(new Error('Failed to encode image'));
-                            }
-                        },
-                        getMimeByFormat(format),
-                        quality
-                    );
-                } else if (format === 'webp') {
-                    ctx.drawImage(image, 0, 0);
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    URL.revokeObjectURL(objectURL);
-                    void encodeWebP(imageData, quality, options.effort).then(resolve, error => {
-                        // Some older Electron builds or strict CSP configurations may
-                        // reject inline workers. Keep the fallback asynchronous and
-                        // never run libwebp synchronously on SiYuan's UI thread.
-                        console.warn(
-                            'WebP worker encoding failed, falling back to canvas encoding:',
-                            error
-                        );
-                        canvas.toBlob(
-                            outputBlob => {
-                                if (outputBlob?.type === 'image/webp') {
-                                    resolve(outputBlob);
-                                } else {
-                                    reject(
-                                        new Error(
-                                            'WebP encoding is not supported by this client'
-                                        )
-                                    );
-                                }
-                            },
-                            'image/webp',
-                            quality
-                        );
-                    });
-                }
-            } catch (error) {
-                URL.revokeObjectURL(objectURL);
-                reject(error);
-            }
-        };
-        image.onerror = () => {
-            URL.revokeObjectURL(objectURL);
-            reject(new Error('Failed to load image'));
-        };
-        image.src = objectURL;
-    });
+    const { canvas, ctx } = raster;
+    if (format === 'png') {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        return quantizePNG(imageData, quality, { level: options.effort === 'fast' ? 0 : 2 });
+    }
+    if (format === 'webp') {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        try {
+            return await encodeWebP(imageData, quality, options.effort);
+        } catch (error) {
+            // Older Electron builds or strict CSP may reject inline workers.
+            // Keep the fallback asynchronous rather than blocking SiYuan's UI.
+            console.warn('WebP worker encoding failed, falling back to canvas encoding:', error);
+        }
+    }
+    return encodeCanvas(canvas, format, quality);
 }
 
 interface WebPChunk {
