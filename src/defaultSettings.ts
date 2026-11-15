@@ -1,5 +1,17 @@
 
 
+export type ImageCompressionFormat = 'png' | 'jpeg' | 'webp' | 'original';
+
+/** Resolve the new format preference before falling back to the legacy WebP switch. */
+export function getCompressionFormat(settings: any): ImageCompressionFormat {
+    const format = settings?.compressionFormat;
+    if (['png', 'jpeg', 'webp', 'original'].includes(format)) return format;
+    if (typeof settings?.convertToWebP === 'boolean') {
+        return settings.convertToWebP ? 'webp' : 'original';
+    }
+    return 'webp';
+}
+
 export const getDefaultSettings = () => ({
     storageMode: 'embed', // 'embed' or 'backup'
     // Recent colors storage, keyed by color picker identifier
@@ -10,7 +22,7 @@ export const getDefaultSettings = () => ({
     pngCompressionMode: 'lossless' as 'lossless' | 'lossy',
     pngQuality: 92,
     jpegQuality: 92,
-    convertToWebP: false,
+    compressionFormat: 'webp' as ImageCompressionFormat,
     webpQuality: 100,
     imageCompressionQuality: 92,
     enablePasteImageCompression: false,

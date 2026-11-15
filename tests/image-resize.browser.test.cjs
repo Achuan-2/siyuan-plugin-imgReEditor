@@ -19,7 +19,7 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
 }, async () => {
     const temporary = mkdtempSync(path.join(tmpdir(), 'imgreeditor-resize-'));
     try {
-        const browserCase = async ({ utilsSource, pluginSource, dialogSource, translations, upngPath }) => {
+        const browserCase = async ({ utilsSource, pluginSource, dialogSource, settingsSource, translations, upngPath }) => {
             const assert = require('node:assert/strict');
             const UPNG = require(upngPath);
             const evaluate = (source, imports) => {
@@ -123,7 +123,7 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             };
             const Plugin = evaluate(pluginSource, {
                 siyuan: { Plugin: class {}, Dialog }, '@/index.scss': {}, './Settings.svelte': {},
-                './components/ImageEditor.svelte': {}, './defaultSettings': {}, './utils/i18n': { t: translate },
+                './components/ImageEditor.svelte': {}, './defaultSettings': evaluate(settingsSource, {}), './utils/i18n': { t: translate },
                 './ScreenshotManager': {}, './utils/assetUploadObserver': {},
                 './utils/assetImageRefresh': { refreshAssetImages: async () => {} },
                 './utils/imageCompressionDialog': dialogModule,
@@ -234,6 +234,13 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             assert.equal(form.quality.value, '100');
             form.close();
             assert.equal(choices.length, 3);
+            for (const [format, expected, quality] of [['png', 'png', '100'], ['jpeg', 'jpeg', '85'], ['original', 'original', '100']]) {
+                plugin.settings.compressionFormat = format;
+                form = await open(['assets/a.png', 'assets/b.jpg']);
+                assert.equal(form.format.value, expected, 'The new global format overrides the legacy WebP switch');
+                assert.equal(form.quality.value, quality);
+                form.close();
+            }
             plugin.settings = { ...globalSettings };
             form = await open();
             change(form.pixels, '0');
@@ -265,6 +272,7 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
         };
         const fixture = {
             utilsSource: compile('src/utils/index.ts'), pluginSource: compile('src/index.ts'),
+            settingsSource: compile('src/defaultSettings.ts'),
             dialogSource: compile('src/utils/imageCompressionDialog.ts'), translations: require('../i18n/zh_CN.json'),
             upngPath: require.resolve('upng-js'),
         };

@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
     import SettingPanel from '@/libs/components/setting-panel.svelte';
     import { getCurrentLanguage, t } from './utils/i18n';
-    import { getDefaultSettings } from './defaultSettings';
+    import { getDefaultSettings, getCompressionFormat } from './defaultSettings';
     import { pushMsg, pushErrMsg, readDir, removeFile } from './api';
     import { confirm, Constants, Dialog } from 'siyuan';
     import LoadingDialog from './components/LoadingDialog.svelte';
@@ -180,6 +180,20 @@
             name: t('settings.settingsGroup.compression'),
             items: [
                 {
+                    key: 'enablePasteImageCompression',
+                    value: settings.enablePasteImageCompression,
+                    type: 'checkbox',
+                    title: t('settings.enablePasteImageCompression.title'),
+                    description: t('settings.enablePasteImageCompression.description'),
+                },
+                {
+                    key: 'showPasteImageCompressionNotification',
+                    value: settings.showPasteImageCompressionNotification,
+                    type: 'checkbox',
+                    title: t('settings.showPasteImageCompressionNotification.title'),
+                    description: t('settings.showPasteImageCompressionNotification.description'),
+                },
+                {
                     key: 'enableImageCompression',
                     value: settings.enableImageCompression,
                     type: 'checkbox',
@@ -199,12 +213,17 @@
                     },
                 },
                 {
-                    key: 'convertToWebP',
-                    value: settings.convertToWebP,
-                    type: 'checkbox',
-                    title: t('settings.convertToWebP.title'),
-                    description:
-                        t('settings.convertToWebP.description'),
+                    key: 'compressionFormat',
+                    value: settings.compressionFormat,
+                    type: 'select',
+                    title: t('settings.compressionFormat.title'),
+                    description: '',
+                    options: {
+                        png: 'PNG',
+                        jpeg: 'JPG',
+                        webp: 'WebP',
+                        original: t('settings.compressionFormat.original'),
+                    },
                 },
                 {
                     key: 'webpQuality',
@@ -270,21 +289,6 @@
                     type: 'number',
                     title: t('settings.imageMaxLongEdge.title'),
                     description: '',
-                },
-                {
-                    key: 'enablePasteImageCompression',
-                    value: settings.enablePasteImageCompression,
-                    type: 'checkbox',
-                    title: t('settings.enablePasteImageCompression.title'),
-                    description: t('settings.enablePasteImageCompression.description'),
-                },
-                {
-                    key: 'showPasteImageCompressionNotification',
-                    value: settings.showPasteImageCompressionNotification,
-                    type: 'checkbox',
-                    title: t('settings.showPasteImageCompressionNotification.title'),
-                    description:
-                        t('settings.showPasteImageCompressionNotification.description'),
                 },
                 {
                     key: 'compressAllAssets',
@@ -495,6 +499,16 @@
     }
 
     $: currentGroup = groups.find(group => group.id === focusGroup);
+    $: visibleItems = (currentGroup?.items || []).filter(item => {
+        const format = getCompressionFormat(settings);
+        if (item.key === 'webpQuality') return format === 'webp' || format === 'original';
+        if (item.key === 'jpegQuality') return format === 'jpeg' || format === 'original';
+        if (item.key === 'pngCompressionMode') return format === 'png' || format === 'original';
+        if (item.key === 'pngQuality') {
+            return (format === 'png' || format === 'original') && settings.pngCompressionMode === 'lossy';
+        }
+        return item.key !== 'imageMaxLongEdge' || settings.limitImageLongEdge;
+    });
 </script>
 
 <div class="fn__flex-1 fn__flex config__panel">
@@ -522,9 +536,7 @@
         <h2>{currentGroup?.name || ''}</h2>
         <SettingPanel
             group={currentGroup?.name || ''}
-            settingItems={(currentGroup?.items || []).filter(item =>
-                item.key !== 'imageMaxLongEdge' || settings.limitImageLongEdge
-            )}
+            settingItems={visibleItems}
             display={true}
             on:changed={onChanged}
         >

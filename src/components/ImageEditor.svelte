@@ -3,6 +3,7 @@
     const dispatch = createEventDispatcher();
     import { unsavedChangesDialog, svelteDialog } from '../libs/dialog';
     import { t } from '../utils/i18n';
+    import { getCompressionFormat } from '../defaultSettings';
     import { refreshAssetImages } from '../utils/assetImageRefresh';
     import CanvasEditor from './editor/CanvasEditor.svelte';
     import Toolbar from './editor/Toolbar.svelte';
@@ -209,7 +210,7 @@
     }
 
     async function saveToHistory() {
-        // Export current canvas as PNG and save to screenshot history according to storageMode
+        // Export a lossless intermediate before encoding the selected history format.
         if (!canvasEditorRef) return null;
 
         const canvasJSON = canvasEditorRef.toJSON ? await canvasEditorRef.toJSON() : null;
@@ -226,12 +227,10 @@
             const timestamp = Date.now();
             filename = `screenshot-${timestamp}.png`;
         }
-        if (!['png', 'webp'].includes(getFileExtension(filename))) {
+        if (!isSupportedOutputExtension(getFileExtension(filename))) {
             filename = replaceFileExtension(filename, 'png');
         }
-        if (shouldConvertToWebP(filename)) {
-            filename = replaceFileExtension(filename, 'webp');
-        }
+        filename = getSaveFileName(filename);
         const path = `${SCREENSHOT_HISTORY_DIR}/${filename}`;
 
         // Insert metadata only after raster compression has finished.
@@ -249,6 +248,14 @@
                 pushErrMsg(t('imageEditor.webpUnsupported'));
                 return null;
             }
+        } else if (outputFormat === 'jpeg') {
+            try {
+                compressedBlob = await reencodeImageBlob(rawBlob, 'jpeg', { quality: getExportQuality('jpeg') });
+            } catch (e) {
+                console.warn('Failed to encode history screenshot as JPEG:', e);
+                pushErrMsg(t('imageEditor.exportFailed'));
+                return null;
+            }
         } else if (settings?.enableImageCompression !== false) {
             const pngMode = settings?.pngCompressionMode === 'lossy' ? 'lossy' : 'lossless';
             try {
@@ -261,8 +268,7 @@
                 console.warn('Failed to compress history screenshot:', e);
             }
         }
-        const buffer = new Uint8Array(await compressedBlob.arrayBuffer());
-
+        const mustSaveBackupJson = settings.storageMode === 'backup' || outputFormat === 'jpeg';
         const metaObj: any = {
             version: 1,
             isCanvasMode,
@@ -276,28 +282,30 @@
                       : null,
         };
 
-        if (settings.storageMode !== 'backup') {
+        if (!mustSaveBackupJson) {
             metaObj.canvasJSON = canvasJSON;
         }
 
-        // In backup mode, include the expected backup filename in PNG metadata
-        if (settings.storageMode === 'backup') {
+        if (mustSaveBackupJson) {
             metaObj.backupFileName = `${filename}.json`;
         }
 
-        const metaValue = JSON.stringify(metaObj);
-        const newBuffer =
-            outputFormat === 'webp'
+        let newBlob = compressedBlob;
+        if (outputFormat === 'png' || outputFormat === 'webp') {
+            const buffer = new Uint8Array(await compressedBlob.arrayBuffer());
+            const metaValue = JSON.stringify(metaObj);
+            const newBuffer = outputFormat === 'webp'
                 ? insertWebPMetadata(buffer, EDITOR_METADATA_KEY, metaValue)
                 : insertPNGTextChunk(buffer, EDITOR_METADATA_KEY, metaValue);
-        const newBlob = new Blob([newBuffer as any], { type: outputMime });
+            newBlob = new Blob([newBuffer as any], { type: outputMime });
+        }
 
         // Save image to history
         const file = new File([newBlob], filename, { type: outputMime });
         await putFile(path, false, file, { throwOnError: true });
 
-        // If backup mode, write separate JSON backup to backup dir
-        if (settings.storageMode === 'backup') {
+        // JPEG always needs a separate project backup, regardless of storage mode.
+        if (mustSaveBackupJson) {
             try {
                 const backupName = `${filename}.json`;
                 const backupPath = `${STORAGE_BACKUP_DIR}/${backupName}`;
@@ -770,14 +778,11 @@
         return settings?.saveCompressionSpeed === 'balanced' ? 'balanced' : 'fast';
     }
 
-    function shouldConvertToWebP(fileName: string) {
-        if (
-            settings?.enableImageCompression === false ||
-            settings?.convertToWebP !== true
-        ) {
-            return false;
-        }
-        return ['png', 'jpg', 'jpeg'].includes(getFileExtension(fileName));
+    function getSaveFileName(fileName: string) {
+        if (settings?.enableImageCompression === false) return fileName;
+        const format = getCompressionFormat(settings);
+        if (format === 'original' || format === getOutputFormatByFileName(fileName)) return fileName;
+        return replaceFileExtension(fileName, format === 'jpeg' ? 'jpg' : format);
     }
 
     function getExportQuality(format: OutputImageFormat) {
@@ -1056,9 +1061,7 @@
                     : originalFileName;
             }
 
-            if (shouldConvertToWebP(saveName)) {
-                saveName = replaceFileExtension(saveName, 'webp');
-            }
+            saveName = getSaveFileName(saveName);
             if (imagePath && saveName !== originalFileName) {
                 const existingTarget = await getFileBlob(`data/assets/${saveName}`);
                 if (existingTarget && existingTarget.size > 0) {

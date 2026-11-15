@@ -41,7 +41,7 @@ function createPlugin(api = {}, overrides = {}, notifications = []) {
     const Plugin = evaluate(pluginSource, {
         siyuan: { Plugin: class {}, showMessage: message => notifications.push(message) },
         '@/index.scss': {}, './Settings.svelte': {},
-        './components/ImageEditor.svelte': {}, './defaultSettings': {},
+        './components/ImageEditor.svelte': {}, './defaultSettings': evaluate(compile('src/defaultSettings.ts'), {}),
         './utils/i18n': { t: key => key }, './ScreenshotManager': {},
         './utils/assetUploadObserver': {}, './api': api,
         './utils/assetImageRefresh': evaluate(compile('src/utils/assetImageRefresh.ts'), {}),

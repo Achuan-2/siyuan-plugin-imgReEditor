@@ -20,7 +20,7 @@ function evaluate(source, imports, suffix = '', fetchImplementation = async () =
 }
 
 function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write, read, fetchImplementation,
-    compression = false, effort, blobExporter } = {}) {
+    compression = false, effort, blobExporter, format } = {}) {
     const closes = [];
     const writes = [];
     const errors = [];
@@ -32,6 +32,7 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
         svelte: { onMount() {}, onDestroy() {}, createEventDispatcher: () => () => {}, tick: async () => {} },
         '../libs/dialog': { unsavedChangesDialog: async () => { prompts++; return typeof choice === 'function' ? choice() : choice; } },
         '../utils/i18n': { t: key => key },
+        '../defaultSettings': evaluate(readFileSync(resolve(__dirname, '../src/defaultSettings.ts'), 'utf8'), {}),
         '../utils/assetImageRefresh': evaluate(readFileSync(resolve(__dirname, '../src/utils/assetImageRefresh.ts'), 'utf8'), {}),
         './editor/CanvasEditor.svelte': {},
         './editor/Toolbar.svelte': {},
@@ -45,13 +46,14 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
             readDir: async () => [], removeFile: async () => {},
             pushMsg() {}, pushErrMsg: message => errors.push(message),
         },
-        '../utils': { insertPNGTextChunk: buffer => buffer,
+        '../utils': { insertPNGTextChunk: buffer => buffer, insertWebPMetadata: buffer => buffer,
             reencodeImageBlob: async (blob, format, options) => { encodes.push({ blob, format, options }); return blob; } },
     }, `
         module.exports = { requestClose, isDirty, saveForSwitch, configure(fixture) {
             imagePath = 'assets/example.png'; originalFileName = 'example.png';
             imageBlob = new Blob(['original']); editorReady = true;
-            settings = { storageMode: 'metadata', enableImageCompression: fixture.compression, saveCompressionSpeed: fixture.effort };
+            settings = { storageMode: 'metadata', enableImageCompression: fixture.compression,
+                saveCompressionSpeed: fixture.effort, compressionFormat: fixture.format ?? 'original' };
             isScreenshotMode = fixture.screenshot; onClose = fixture.onClose;
             canvasEditorRef = {
                 getHistoryIndex: () => fixture.dirty ? 1 : 0,
@@ -61,7 +63,7 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
             if (fixture.blobExporter) canvasEditorRef.toBlob = fixture.blobExporter;
         } };
     `, fetchImplementation);
-    editor.configure({ dirty, screenshot, compression, effort, blobExporter, onClose: (...args) => closes.push(args) });
+    editor.configure({ dirty, screenshot, compression, effort, blobExporter, format, onClose: (...args) => closes.push(args) });
     return { ...editor, closes, writes, errors, encodes, prompts: () => prompts };
 }
 
@@ -101,6 +103,26 @@ test('balanced save compression is honored and failed Blob export keeps the edit
     assert.equal(failed.writes.length, 0);
     assert.equal(failed.closes.length, 0);
     assert.equal(failed.isDirty(), true);
+});
+
+test('edited images and screenshots follow the global format and JPEG keeps a project backup', async () => {
+    for (const screenshot of [false, true]) {
+        for (const format of ['png', 'jpeg', 'webp', 'original']) {
+            const editor = loadEditor({ choice: 'save', screenshot, compression: true, format,
+                blobExporter: async () => new Blob(['pixels']) });
+            await editor.requestClose();
+            assert.equal(editor.errors.length, 0);
+            assert.equal(editor.closes[0][0], true);
+            const images = editor.writes.filter(([path]) => !path.endsWith('.json'));
+            const output = format === 'original' ? 'png' : format;
+            assert.equal(images.length, 1);
+            assert.equal(images[0][2].type, `image/${output}`);
+            assert.ok(images[0][0].endsWith(output === 'jpeg' ? '.jpg' : `.${output}`));
+            const backups = editor.writes.filter(([path]) => path.endsWith('.json'));
+            assert.equal(backups.length, format === 'jpeg' ? 1 : 0);
+            if (backups.length) assert.deepEqual(JSON.parse(await backups[0][2].text()).canvasJSON, {});
+        }
+    }
 });
 
 test('unchanged images exit directly without a prompt', async () => {

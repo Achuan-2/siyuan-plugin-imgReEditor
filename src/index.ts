@@ -9,7 +9,7 @@ import "@/index.scss";
 
 import SettingPanel from "./Settings.svelte";
 import ImageEditorComponent from './components/ImageEditor.svelte';
-import { getDefaultSettings } from "./defaultSettings";
+import { getDefaultSettings, getCompressionFormat } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
 import { observeAssetUploads } from './utils/assetUploadObserver';
@@ -86,8 +86,8 @@ function getCompressionOutputFormat(
     settings: any,
     sourceFormat: CompressibleImageFormat
 ): CompressibleImageFormat {
-    if (settings?.convertToWebP === true && sourceFormat !== 'webp') return 'webp';
-    return sourceFormat;
+    const format = getCompressionFormat(settings);
+    return format === 'original' ? sourceFormat : format;
 }
 
 function getImageMaxLongEdge(settings: any): number {
@@ -122,7 +122,7 @@ function formatBytes(bytes: number) {
 }
 
 function shouldUseReencodedImage(sourceSize: number, outputSize: number) {
-    // 无论是原格式压缩还是转换为 WebP，都只采用确实更小的结果。
+    // 无论是原格式压缩还是转换格式，都只采用确实更小的结果。
     return outputSize > 0 && outputSize < sourceSize;
 }
 
@@ -136,8 +136,8 @@ function getAutomaticImageProcessingMessage(
         convertedCount === 0
             ? `已自动压缩 ${processedCount} 张上传图片`
             : convertedCount === processedCount
-              ? `已自动将 ${convertedCount} 张上传图片转换为 WebP`
-              : `已自动处理 ${processedCount} 张上传图片，其中 ${convertedCount} 张转换为 WebP`;
+              ? `已自动压缩并转换 ${convertedCount} 张上传图片的格式`
+              : `已自动处理 ${processedCount} 张上传图片，其中 ${convertedCount} 张转换了格式`;
     return `${action}：${formatBytes(originalTotalSize)} -> ${formatBytes(outputTotalSize)}`;
 }
 
@@ -964,9 +964,10 @@ export default class PluginSample extends Plugin {
             return;
         }
         const settings = { ...this.settings };
+        const format = getCompressionFormat(settings);
         showImageCompressionDialog({
             title, items,
-            defaultFormat: settings.convertToWebP === true ? 'webp' : items.length === 1 ? items[0].format : 'original',
+            defaultFormat: format === 'original' && items.length === 1 ? items[0].format : format,
             limitLongEdge: settings.limitImageLongEdge === true,
             maxLongEdge: getImageMaxLongEdge(settings),
             defaults: format => ({
@@ -2017,7 +2018,7 @@ export default class PluginSample extends Plugin {
     async loadSettings() {
         const settings = await this.loadData(SETTINGS_FILE);
         const defaultSettings = getDefaultSettings();
-        return { ...defaultSettings, ...settings };
+        return { ...defaultSettings, ...settings, compressionFormat: getCompressionFormat(settings) };
     }
 
     /**

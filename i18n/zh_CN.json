@@ -94,11 +94,11 @@
         },
         "enableImageCompression": {
             "title": "编辑保存后压缩图片",
-            "description": "开启后保存编辑结果时自动进行压缩；启用下方 WebP 转换后，PNG、JPG/JPEG 将改存为 WebP。"
+            "description": "开启后按所选格式和参数压缩编辑结果；保存为 JPG 时，编辑数据另存为 JSON 备份。"
         },
-        "convertToWebP": {
-            "title": "PNG/JPG 转换为 WebP",
-            "description": "开启后会尝试将 PNG、JPG/JPEG 转为 WebP；手动压缩及粘贴/拖拽自动压缩仅在 WebP 更小时采用，否则保留原文件。编辑保存仍会按此选项改存为 WebP，工程数据会写入 XMP 元数据。"
+        "compressionFormat": {
+            "title": "压缩格式",
+            "original": "保持源格式"
         },
         "webpQuality": {
             "title": "WebP 压缩质量",
@@ -122,7 +122,7 @@
         },
         "enablePasteImageCompression": {
             "title": "粘贴图片自动压缩",
-            "description": "开启后，粘贴或拖拽 PNG、JPG/JPEG、WebP 图片时先插入原图，再在后台压缩；仅采用体积更小的结果。同格式压缩保留原文件名和链接；转换为 WebP 时只替换扩展名并更新链接。失败则保留原图。默认关闭。"
+            "description": "粘贴或拖拽图片后按所选格式在后台压缩，仅采用更小的结果。同格式保留文件名和链接，转换格式时更新链接，失败保留原图。默认关闭。"
         },
         "limitImageLongEdge": {
             "title": "图片压缩时限制最长边",

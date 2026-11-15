@@ -94,11 +94,11 @@
         },
         "enableImageCompression": {
             "title": "Compress images when saving",
-            "description": "Automatically compress edited images when saving. When WebP conversion is enabled below, PNG and JPG/JPEG images are saved as WebP."
+            "description": "Compress edited images using the selected format and settings. JPG output stores editable project data in a separate JSON backup."
         },
-        "convertToWebP": {
-            "title": "Convert PNG/JPG to WebP",
-            "description": "Try converting PNG and JPG/JPEG to WebP. Manual and paste/drop compression use WebP only when it is smaller; otherwise the original file is kept. Edited images are saved as WebP with project data in XMP metadata."
+        "compressionFormat": {
+            "title": "Compression format",
+            "original": "Keep source format"
         },
         "webpQuality": {
             "title": "WebP quality",
@@ -122,7 +122,7 @@
         },
         "enablePasteImageCompression": {
             "title": "Compress pasted images",
-            "description": "Insert pasted or dropped PNG, JPG/JPEG and WebP images first, then compress them in the background. Use only smaller results. Same-format compression preserves the filename and link; WebP conversion changes only the extension and updates the link. Keep the original on failure. Disabled by default."
+            "description": "Compress pasted or dropped images in the background using the selected format, applying only smaller results. Preserve filenames and links for the same format; update links after conversion. Keep originals on failure. Disabled by default."
         },
         "limitImageLongEdge": {
             "title": "Limit longest edge when compressing images",

@@ -21,6 +21,7 @@ function loadSource(path, imports = {}) {
 }
 
 const { observeAssetUploads } = loadSource('src/utils/assetUploadObserver.ts');
+const compressionSettings = loadSource('src/defaultSettings.ts');
 const assetImageRefresh = loadSource('src/utils/assetImageRefresh.ts');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const deferred = () => {
@@ -165,15 +166,51 @@ class ImageBlock {
 function createPlugin(api, utils = {}) {
     const Plugin = loadSource('src/index.ts', {
         siyuan: { Plugin: class {} }, '@/index.scss': {}, './Settings.svelte': {},
-        './components/ImageEditor.svelte': {}, './defaultSettings': {}, './utils/i18n': { t: key => key },
+        './components/ImageEditor.svelte': {}, './defaultSettings': compressionSettings, './utils/i18n': { t: key => key },
         './ScreenshotManager': {}, './utils/assetUploadObserver': { observeAssetUploads },
         './utils/assetImageRefresh': assetImageRefresh,
         './utils': utils, './api': api,
     }).default;
     const plugin = new Plugin();
-    plugin.settings = { enablePasteImageCompression: true };
+    plugin.settings = { enablePasteImageCompression: true, convertToWebP: false };
     return plugin;
 }
+
+test('compression format defaults to WebP and migrates the legacy switch without overriding a saved format', async () => {
+    const plugin = createPlugin({});
+    for (const [stored, expected] of [
+        [null, 'webp'], [{}, 'webp'], [{ convertToWebP: false }, 'original'],
+        [{ convertToWebP: true }, 'webp'], [{ compressionFormat: 'png', convertToWebP: true }, 'png'],
+        [{ compressionFormat: 'jpeg' }, 'jpeg'], [{ compressionFormat: 'original' }, 'original'],
+        [{ compressionFormat: 'invalid' }, 'webp'],
+    ]) {
+        plugin.loadData = async () => stored;
+        const settings = await plugin.loadSettings();
+        assert.equal(settings.compressionFormat, expected);
+        assert.equal(settings.pngQuality, 92);
+    }
+});
+
+test('automatic compression follows the selected global format and its quality for every source format', async () => {
+    const source = new Blob(['source']);
+    const plugin = createPlugin({ getFileBlob: async () => source });
+    const encoded = [];
+    plugin.compressImageBlob = async (_source, input, output, options) => {
+        encoded.push({ input, output, options });
+        return new Blob(['small']);
+    };
+    for (const compressionFormat of ['png', 'jpeg', 'webp', 'original']) {
+        plugin.settings = { compressionFormat, pngCompressionMode: 'lossy', pngQuality: 70, jpegQuality: 80, webpQuality: 90 };
+        for (const [extension, input] of [['png', 'png'], ['jpg', 'jpeg'], ['webp', 'webp']]) {
+            await plugin.prepareImageCompression(`assets/a.${extension}`);
+            const output = compressionFormat === 'original' ? input : compressionFormat;
+            const actual = encoded.at(-1);
+            assert.equal(actual.output, output);
+            assert.equal(actual.options.quality, { png: 0.7, jpeg: 0.8, webp: 0.9 }[output]);
+            if (output === 'png') assert.equal(actual.options.pngMode, 'lossy');
+        }
+    }
+});
 
 test('background queue waits for insertion and saves the new link with current text', async () => {
     setBrowser();
@@ -320,11 +357,11 @@ test('single-image pixel overrides reach the encoder without changing global set
         },
         getMimeByFormat: () => 'image/png', locatePNGtEXt: () => false,
     });
-    plugin.settings = { limitImageLongEdge: true, imageMaxLongEdge: 2000 };
-    await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, maxLongEdge: 1200 });
-    await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, maxLongEdge: undefined });
+    plugin.settings = { limitImageLongEdge: true, imageMaxLongEdge: 2000, compressionFormat: 'original' };
+    assert.equal((await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, maxLongEdge: 1200 })).status, 'compressed');
+    assert.equal((await plugin.compressImageAsset('assets/a.png', undefined, { silent: true, maxLongEdge: undefined })).status, 'compressed');
     assert.deepEqual(limits, [1200, undefined]);
-    assert.deepEqual(plugin.settings, { limitImageLongEdge: true, imageMaxLongEdge: 2000 });
+    assert.deepEqual(plugin.settings, { limitImageLongEdge: true, imageMaxLongEdge: 2000, compressionFormat: 'original' });
 });
 
 test('document compression shares the chosen pixel limit across unique images', async () => {
