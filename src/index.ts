@@ -651,7 +651,8 @@ export default class PluginSample extends Plugin {
     private async replaceImageAssetReferenceInBlock(
         blockID: string,
         originalPath: string,
-        savedPath: string
+        savedPath: string,
+        sourceBlock?: HTMLElement
     ) {
         if (!blockID || originalPath === savedPath) return;
         // The live DOM may already have been refreshed to savedPath.
@@ -659,14 +660,23 @@ export default class PluginSample extends Plugin {
             [originalPath, savedPath],
             [savedPath, savedPath],
         ]);
-        const liveBlock = Array.from(document.querySelectorAll('[data-node-id]')).find(
-            element => element.getAttribute('data-node-id') === blockID
-        ) as HTMLElement | undefined;
+        // Gutter buttons also carry data-node-id; only editor content is a block.
+        const liveBlocks = Array.from(document.querySelectorAll<HTMLElement>('.protyle-wysiwyg [data-node-id]'))
+            .filter(element => element.getAttribute('data-node-id') === blockID);
+        const selectionNode = window.getSelection()?.anchorNode;
+        const liveBlock = liveBlocks.find(block => block === sourceBlock) ||
+            liveBlocks.find(block => selectionNode && block.contains(selectionNode)) || liveBlocks[0];
         const { getBlockDOM, updateBlock } = await import('./api');
 
         if (liveBlock) {
-            this.updateImageElementsWithPathMap(liveBlock, pathMap);
-            await updateBlock('dom', liveBlock.outerHTML, blockID);
+            // Preserve the live content until the reference has been persisted.
+            // If the image was removed/replaced during compression, leave it alone.
+            const clone = liveBlock.cloneNode(true) as HTMLElement;
+            const changedBlock = this.updateImageElementsWithPathMap(clone, pathMap).get(blockID);
+            if (!changedBlock) return;
+            const updated = await updateBlock('dom', changedBlock.outerHTML, blockID);
+            if (!updated) throw new Error('Unable to save compressed image reference');
+            for (const block of liveBlocks) this.updateImageElementsWithPathMap(block, pathMap);
             return;
         }
 
@@ -676,9 +686,10 @@ export default class PluginSample extends Plugin {
         if (!html) throw new Error('Unable to load image block for WebP reference update');
         const parsed = new DOMParser().parseFromString(html, 'text/html');
         const changedBlocks = this.updateImageElementsWithPathMap(parsed, pathMap);
-        const changedBlock = changedBlocks.get(blockID) || Array.from(changedBlocks.values())[0];
+        const changedBlock = changedBlocks.get(blockID);
         if (!changedBlock) throw new Error('Image reference was not found in its block');
-        await updateBlock('dom', changedBlock.outerHTML, blockID);
+        const updated = await updateBlock('dom', changedBlock.outerHTML, blockID);
+        if (!updated) throw new Error('Unable to save compressed image reference');
     }
 
     private getDocIDFromEditorTitleDetail(detail: any) {
@@ -1390,7 +1401,8 @@ export default class PluginSample extends Plugin {
                             await this.replaceImageAssetReferenceInBlock(
                                 blockID,
                                 imageURL,
-                                newPath
+                                newPath,
+                                blockElement
                             );
                         }
                     }
@@ -1413,7 +1425,8 @@ export default class PluginSample extends Plugin {
                                 await this.replaceImageAssetReferenceInBlock(
                                     blockID || '',
                                     result.originalPath,
-                                    result.savedPath
+                                    result.savedPath,
+                                    blockElement
                                 );
                             } catch (error) {
                                 console.error('Failed to update converted WebP block reference:', error);

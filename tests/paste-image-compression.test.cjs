@@ -493,7 +493,10 @@ test('single-image compression and editor saves update references without starti
     plugin.compressImageAsset = async () => ({
         status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp', originalSize: 100, savedSize: 40,
     });
-    plugin.replaceImageAssetReferenceInBlock = async (...args) => references.push(args);
+    plugin.replaceImageAssetReferenceInBlock = async (...args) => {
+        assert.equal(args[3], live, 'Use the block belonging to the clicked image');
+        references.push(args.slice(0, 3));
+    };
     await plugin.openMenuImageHandler({ detail: { element: { querySelector: () => live.image, closest: () => live } } });
     await items.get('compress-image').click();
     let onSave;
