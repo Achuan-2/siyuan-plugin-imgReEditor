@@ -102,7 +102,7 @@
         },
         "webpQuality": {
             "title": "WebP 压缩质量",
-            "description": "默认 100（无损压缩）。低于 100 时会使用有损压缩，可能使橙色等高饱和颜色发暗、发灰；仅在转换为 WebP 或压缩 WebP 时生效。"
+            "description": "默认 100（无损压缩）。"
         },
         "pngCompressionMode": {
             "title": "PNG 压缩模式",

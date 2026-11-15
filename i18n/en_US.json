@@ -102,7 +102,7 @@
         },
         "webpQuality": {
             "title": "WebP quality",
-            "description": "Default: 100 (lossless). Lower values use lossy compression and may darken or dull saturated colors such as orange. Applies only to WebP conversion or compression."
+            "description": "Default: 100 (lossless)."
         },
         "pngCompressionMode": {
             "title": "PNG compression mode",
