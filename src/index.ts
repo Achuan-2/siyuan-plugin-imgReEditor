@@ -628,6 +628,8 @@ export default class PluginSample extends Plugin {
         return changedBlocks;
     }
 
+    // Keep resource disposal in SiYuan's explicit unused-asset cleanup. Running
+    // its global reference scan after every save races ongoing document edits.
     private async replaceImageAssetReferencesInDocument(
         docID: string,
         pathMap: Map<string, string>
@@ -677,16 +679,6 @@ export default class PluginSample extends Plugin {
         const changedBlock = changedBlocks.get(blockID) || Array.from(changedBlocks.values())[0];
         if (!changedBlock) throw new Error('Image reference was not found in its block');
         await updateBlock('dom', changedBlock.outerHTML, blockID);
-    }
-
-    private async removeConvertedSourceIfUnused(originalPath: string) {
-        try {
-            const { request } = await import('./api');
-            return !!(await request('/api/asset/removeUnusedAsset', { path: originalPath }));
-        } catch (error) {
-            console.warn('Converted source image is still referenced or could not be removed:', error);
-            return false;
-        }
     }
 
     private getDocIDFromEditorTitleDetail(detail: any) {
@@ -1042,9 +1034,6 @@ export default class PluginSample extends Plugin {
         if (convertedPaths.size > 0) {
             try {
                 await this.replaceImageAssetReferencesInDocument(docID, convertedPaths);
-                for (const originalPath of convertedPaths.keys()) {
-                    await this.removeConvertedSourceIfUnused(originalPath);
-                }
             } catch (error) {
                 console.error('Failed to update converted WebP references in document:', error);
                 await pushErrMsg(t('documentImageCompression.referenceUpdateFailed'));
@@ -1402,7 +1391,6 @@ export default class PluginSample extends Plugin {
                                 imageURL,
                                 newPath
                             );
-                            await this.removeConvertedSourceIfUnused(imageURL);
                         }
                     }
                 );
@@ -1426,7 +1414,6 @@ export default class PluginSample extends Plugin {
                                     result.originalPath,
                                     result.savedPath
                                 );
-                                await this.removeConvertedSourceIfUnused(result.originalPath);
                             } catch (error) {
                                 console.error('Failed to update converted WebP block reference:', error);
                                 const { pushErrMsg } = await import('./api');
@@ -1553,7 +1540,6 @@ export default class PluginSample extends Plugin {
                                       sourcePath,
                                       newPath
                                   );
-                                  await this.removeConvertedSourceIfUnused(sourcePath);
                               };
                         void Promise.resolve(updateReference()).catch(error => {
                             console.error('Failed to update saved image reference:', error);
@@ -1590,7 +1576,6 @@ export default class PluginSample extends Plugin {
                     result.sourcePath,
                     result.newPath
                 );
-                await this.removeConvertedSourceIfUnused(result.sourcePath);
             }
             return true;
         };
@@ -1642,7 +1627,6 @@ export default class PluginSample extends Plugin {
                 result.sourcePath,
                 result.newPath
             )
-                .then(() => this.removeConvertedSourceIfUnused(result.sourcePath))
                 .catch(async error => {
                     console.error('Failed to update saved canvas reference:', error);
                     const { pushErrMsg } = await import('./api');
@@ -1692,7 +1676,6 @@ export default class PluginSample extends Plugin {
                             result.sourcePath,
                             result.newPath
                         );
-                        await this.removeConvertedSourceIfUnused(result.sourcePath);
                     }
                     pendingTabSave = null;
                 }
@@ -1785,7 +1768,6 @@ export default class PluginSample extends Plugin {
                                         sourcePath,
                                         newPath
                                     )
-                                    .then(() => plugin.removeConvertedSourceIfUnused(sourcePath))
                                     .catch(error => {
                                         console.error('Failed to update saved image reference:', error);
                                     });
@@ -1830,7 +1812,6 @@ export default class PluginSample extends Plugin {
                             result.sourcePath,
                             result.newPath
                         );
-                        await plugin.removeConvertedSourceIfUnused(result.sourcePath);
                     }
                     return true;
                 };
@@ -1887,7 +1868,6 @@ export default class PluginSample extends Plugin {
                             result.sourcePath,
                             result.newPath
                         )
-                        .then(() => plugin.removeConvertedSourceIfUnused(result.sourcePath))
                         .catch(async error => {
                             console.error('Failed to update saved canvas reference:', error);
                             const { pushErrMsg } = await import('./api');
@@ -2181,7 +2161,8 @@ export default class PluginSample extends Plugin {
                             path, result.savedPath, [...new Set([...references, ...currentReferences])], isActive
                         );
                         if (replaced === 0) {
-                            await this.removeConvertedSourceIfUnused(result.savedPath);
+                            // Keep unreferenced output for SiYuan's explicit cleanup.
+                            // Per-image cleanup can race ongoing document transactions.
                             continue;
                         }
                     }

@@ -100,6 +100,8 @@ The single-image and document compression dialogs offer temporary PNG, JPEG or W
 
 Manual compression, batch compression, and automatic paste/drop compression use the result only if it is smaller; otherwise, the original image is kept. Same-format compression preserves the filename and link. WebP conversion changes only the extension and updates the corresponding image references. Saving edits follows the WebP conversion setting when choosing the output format.
 
+Original assets are retained after format conversion. Use SiYuan's unused-asset cleanup to remove them together, avoiding cleanup conflicts while you continue editing your notes.
+
 ## Usage Tips
 
 **Common keyboard shortcuts**

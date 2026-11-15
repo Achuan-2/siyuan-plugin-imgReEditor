@@ -412,7 +412,6 @@ test('same-path background compression does not rewrite blocks or delete the ass
         assert.equal(options.createNewAsset, undefined);
         return { status: 'compressed', originalSize: 100, savedSize: 40, savedPath: 'assets/a.png' };
     };
-    plugin.removeConvertedSourceIfUnused = async () => { assert.fail('The original asset must remain'); };
     await plugin.queueAutomaticImageCompression(['assets/a.png'], 'doc', () => true);
     assert.equal(live.image.dataset.src, 'assets/a.png');
     assert.equal(messages.length, 1);
@@ -439,4 +438,67 @@ test('failed same-path write verification restores the source without refreshing
     assert.equal(result.reason, 'write-failed');
     assert.equal(writes.length, 2);
     assert.equal(await stored.text(), await source.text());
+});
+
+test('single-image compression and editor saves update references without starting global asset cleanup', async () => {
+    setBrowser();
+    const items = new Map();
+    window.siyuan = { menus: { menu: { addItem: item => items.set(item.id, item) } } };
+    const live = new ImageBlock('assets/a.png');
+    let cleanupCalls = 0;
+    const references = [];
+    const plugin = createPlugin({
+        getFileBlob: async () => null,
+        request: async () => { cleanupCalls++; return null; },
+        pushErrMsg: async () => assert.fail('Reference updates should succeed'),
+    });
+    plugin.showImageCompressionDialog = async (_title, _paths, confirm) => confirm({ outputFormat: 'webp' });
+    plugin.compressImageAsset = async () => ({
+        status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp', originalSize: 100, savedSize: 40,
+    });
+    plugin.replaceImageAssetReferenceInBlock = async (...args) => references.push(args);
+    await plugin.openMenuImageHandler({ detail: { element: { querySelector: () => live.image, closest: () => live } } });
+    await items.get('compress-image').click();
+    let onSave;
+    plugin.openImageEditorDialog = (...args) => { onSave = args[4]; };
+    await items.get('edit-image').click();
+    await onSave('assets/edited.webp');
+    assert.deepEqual(references, [
+        ['block', 'assets/a.png', 'assets/a.webp'], ['block', 'assets/a.png', 'assets/edited.webp'],
+    ]);
+    assert.equal(cleanupCalls, 0, 'Continue editing without triggering the kernel cleanup race');
+});
+
+test('document conversion saves every reference without per-image cleanup requests', async () => {
+    setBrowser();
+    let cleanupCalls = 0;
+    const references = [];
+    const plugin = createPlugin({
+        request: async () => { cleanupCalls++; return null; },
+        pushMsg: async () => {}, pushErrMsg: async () => assert.fail('Document conversion should succeed'),
+    });
+    plugin.compressImageAsset = async path => ({
+        status: 'compressed', originalPath: path, savedPath: path.replace(/\.png$/, '.webp'), originalSize: 100, savedSize: 40,
+    });
+    plugin.replaceImageAssetReferencesInDocument = async (id, paths) => references.push([id, [...paths]]);
+    await plugin.compressDocumentImageAssets('doc', ['assets/a.png', 'assets/b.png'], { outputFormat: 'webp' });
+    assert.deepEqual(references, [['doc', [['assets/a.png', 'assets/a.webp'], ['assets/b.png', 'assets/b.webp']]]]);
+    assert.equal(cleanupCalls, 0);
+});
+
+test('a paste removed during compression leaves the unused output for explicit SiYuan cleanup', async () => {
+    setBrowser();
+    let cleanupCalls = 0;
+    const plugin = createPlugin({
+        request: async () => { cleanupCalls++; return null; },
+        pushMsg: async () => assert.fail('Removed images must not be reported as compressed'), pushErrMsg: async () => assert.fail(),
+    });
+    plugin.waitForAutomaticImageReferences = async () => ['block'];
+    plugin.getAutomaticImageReferenceBlocks = async () => [];
+    plugin.replaceAutomaticImageReferences = async () => 0;
+    plugin.compressImageAsset = async () => ({
+        status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp', originalSize: 100, savedSize: 40,
+    });
+    await plugin.queueAutomaticImageCompression(['assets/a.png'], 'doc', () => true);
+    assert.equal(cleanupCalls, 0);
 });

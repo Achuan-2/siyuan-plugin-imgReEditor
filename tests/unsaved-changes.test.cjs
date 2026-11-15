@@ -244,7 +244,6 @@ function loadTabSwitch(editor, { onSaveCallback, openTab, updateReference } = {}
     install.call({
         openImageEditorInTab: async (...args) => { opened.push(args); if (openTab) await openTab(...args); },
         replaceImageAssetReferenceInBlock: async (...args) => { if (updateReference) await updateReference(...args); },
-        removeConvertedSourceIfUnused: async () => {},
     }, {
         comp: { ...editor, $on: (event, callback) => { listener = callback; } }, dialog,
         imagePath: 'assets/example.png', blockID: 'block', onSaveCallback,
