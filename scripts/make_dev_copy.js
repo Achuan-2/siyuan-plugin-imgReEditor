@@ -45,17 +45,18 @@ if (!fs.existsSync(targetDir)) {
 }
 
 /**
- * 2. The dev directory, which contains the compiled plugin code
+ * 2. The build output directory; default to dev for the watch-build hook
  */
-const devDir = `${process.cwd()}/dev`;
-if (!fs.existsSync(devDir)) {
-    error(`Failed! Dev directory not exists: "${devDir}"`);
-    error('Please run "pnpm run build" or "pnpm run dev" first to generate the dev directory');
+const outputDir = process.argv[2] || 'dev';
+const sourceDir = path.resolve(process.cwd(), outputDir);
+if (!fs.existsSync(sourceDir)) {
+    error(`Failed! Build output directory not exists: "${sourceDir}"`);
+    error(`Please build the plugin first to generate the ${outputDir} directory`);
     process.exit(1);
 }
 
 /**
- * 3. The target directory to copy dev directory contents
+ * 3. The target directory to copy build output contents
  */
 const name = getThisPluginName();
 if (name === null) {
@@ -75,8 +76,9 @@ if (!fs.existsSync(targetPath)) {
 }
 
 /**
- * 5. Copy/update all contents from dev directory to target directory
+ * 5. Copy/update all contents from build output to target directory
  * This will only update changed files instead of deleting everything
  */
-copyDirectory(devDir, targetPath);
+log(`>>> Synchronizing build output: ${sourceDir}`);
+copyDirectory(sourceDir, targetPath);
 log(`>>> Successfully synchronized all files to SiYuan plugins directory!`);
