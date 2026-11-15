@@ -2,7 +2,6 @@ import {
     Plugin,
     Dialog,
     Menu,
-    confirm,
     openTab,
     showMessage
 } from "siyuan";
@@ -15,6 +14,7 @@ import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
 import { observeAssetUploads } from './utils/assetUploadObserver';
 import { refreshAssetImages } from './utils/assetImageRefresh';
+import type { ImageCompressionChoice, CompressionPreviewItem } from './utils/imageCompressionDialog';
 import {
     reencodeImageBlob,
     getMimeByFormat,
@@ -956,66 +956,49 @@ export default class PluginSample extends Plugin {
         return stats;
     }
 
-    /** Inherit global dimensions, allowing overrides for this image/document only. */
-    private showImageCompressionDialog(
+    /** Temporary choices inherit settings and never write back to the global profile. */
+    private async showImageCompressionDialog(
         title: string,
-        message: string,
-        onConfirm: (maxLongEdge?: number) => Promise<void>
-    ): void {
-        const dialog = new Dialog({
-            title,
-            content: `<form>
-<div class="b3-dialog__content">
-    <div data-message class="ft__breakword"></div>
-    <label class="fn__flex" style="align-items:center;margin-top:16px;gap:16px">
-        <span data-limit-label class="fn__flex-1"></span>
-        <input data-limit type="checkbox" class="b3-switch">
-    </label>
-    <label data-pixels-row class="fn__flex fn__none" style="align-items:center;margin-top:12px;gap:16px">
-        <span data-pixels-label class="fn__flex-1"></span>
-        <input data-pixels type="number" min="1" step="1" required class="b3-text-field" style="width:120px">
-    </label>
-</div>
-<div class="b3-dialog__action">
-    <button data-cancel type="button" class="b3-button b3-button--cancel"></button><div class="fn__space"></div>
-    <button data-confirm type="submit" class="b3-button b3-button--text"></button>
-</div>
-</form>`,
-            width: '520px',
-        });
-        const root = dialog.element;
-        root.querySelector('[data-message]').textContent = message;
-        root.querySelector('[data-limit-label]').textContent = t('imageCompression.limitLongEdge');
-        root.querySelector('[data-pixels-label]').textContent = t('imageCompression.maxLongEdge');
-        root.querySelector('[data-cancel]').textContent = window.siyuan.languages.cancel;
-        root.querySelector('[data-confirm]').textContent = window.siyuan.languages.confirm;
-        const limit = root.querySelector<HTMLInputElement>('[data-limit]');
-        const pixels = root.querySelector<HTMLInputElement>('[data-pixels]');
-        limit.checked = this.settings?.limitImageLongEdge === true;
-        pixels.value = String(getImageMaxLongEdge(this.settings));
-        const updateLimit = () => {
-            pixels.disabled = !limit.checked;
-            root.querySelector('[data-pixels-row]').classList.toggle('fn__none', !limit.checked);
-        };
-        updateLimit();
-        limit.addEventListener('change', updateLimit);
-        root.querySelector('[data-cancel]').addEventListener('click', () => dialog.destroy());
-        root.querySelector('form').addEventListener('submit', async event => {
-            event.preventDefault();
-            if (limit.checked && !pixels.reportValidity()) return;
-            const maxLongEdge = limit.checked ? pixels.valueAsNumber : undefined;
-            dialog.destroy();
-            try {
-                await onConfirm(maxLongEdge);
-            } catch (error) {
-                console.error('Image compression failed:', error);
-                const { pushErrMsg } = await import('./api');
-                await pushErrMsg(t('imageCompression.failed'));
-            }
+        imageURLs: string[],
+        onConfirm: (choice: ImageCompressionChoice) => Promise<void>
+    ): Promise<void> {
+        const { showImageCompressionDialog } = await import('./utils/imageCompressionDialog');
+        const { getFileBlob, pushErrMsg } = await import('./api');
+        const items: CompressionPreviewItem[] = [...new Set(imageURLs.map(normalizeAssetPath))]
+            .filter((path): path is string => !!path && !!getCompressibleImageFormat(path))
+            .map(path => ({ path, format: getCompressibleImageFormat(path)! }));
+        if (!items.length) {
+            await pushErrMsg(t('imageCompression.unsupported'));
+            return;
+        }
+        const settings = { ...this.settings };
+        showImageCompressionDialog({
+            title, items,
+            defaultFormat: settings.convertToWebP === true ? 'webp' : items.length === 1 ? items[0].format : 'original',
+            limitLongEdge: settings.limitImageLongEdge === true,
+            maxLongEdge: getImageMaxLongEdge(settings),
+            defaults: format => ({
+                ...getFormatCompressionOptions(settings, format),
+                ...(format === 'webp' ? { effort: 'fast' as const } : {}),
+            }),
+            load: async item => {
+                const blob = await getFileBlob(`data/${item.path}`);
+                if (!blob?.size) throw new Error(t('imageEditor.emptyImage'));
+                return blob;
+            },
+            encode: async (item, source, choice) =>
+                (await this.prepareImageCompression(item.path, choice, source)).compressedBlob,
+            confirm: async choice => {
+                try { await onConfirm(choice); }
+                catch (error) {
+                    console.error('Image compression failed:', error);
+                    await pushErrMsg(t('imageCompression.failed'));
+                }
+            },
         });
     }
 
-    private async compressDocumentImageAssets(docID: string, imageURLs: string[], maxLongEdge?: number) {
+    private async compressDocumentImageAssets(docID: string, imageURLs: string[], choice: ImageCompressionChoice = {}) {
         const { pushMsg, pushErrMsg } = await import('./api');
         const uniqueURLs = Array.from(new Set(imageURLs
             .map((imageURL) => normalizeAssetPath(imageURL))
@@ -1039,7 +1022,7 @@ export default class PluginSample extends Plugin {
         const convertedPaths = new Map<string, string>();
 
         for (const imageURL of uniqueURLs) {
-            const result = await this.compressImageAsset(imageURL, undefined, { silent: true, maxLongEdge });
+            const result = await this.compressImageAsset(imageURL, undefined, { ...choice, silent: true });
             if (result.status === 'compressed') {
                 stats.compressed += 1;
                 stats.originalSize += result.originalSize;
@@ -1100,10 +1083,77 @@ export default class PluginSample extends Plugin {
         }));
     }
 
+    /** Preview and saving share the exact encoder and metadata preparation. */
+    private async prepareImageCompression(imagePath: string, options: ImageCompressionChoice = {}, sourceBlob?: Blob) {
+        const { getFileBlob } = await import('./api');
+        const fileName = imagePath.split('/').pop() || '';
+        const format = getCompressibleImageFormat(fileName);
+        if (!format) throw new Error(t('imageCompression.unsupported'));
+        const blob = sourceBlob || await getFileBlob(`data/${imagePath}`);
+        if (!blob || blob.size === 0) {
+            throw new Error(t('imageEditor.emptyImage'));
+        }
+
+        const outputFormat = options.outputFormat === 'original' ? format
+            : options.outputFormat || getCompressionOutputFormat(this.settings, format);
+        const savedFileName =
+            outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
+        const savedPath = imagePath.replace(/[^/]+$/, savedFileName);
+        const compressionOptions = {
+            ...getFormatCompressionOptions(this.settings, outputFormat),
+            ...options.formatOptions?.[outputFormat],
+            ...(options.quality !== undefined ? { quality: options.quality } : {}),
+            ...(options.pngMode !== undefined ? { pngMode: options.pngMode } : {}),
+            ...(options.effort !== undefined ? { effort: options.effort } : {}),
+        };
+        compressionOptions.maxLongEdge = options.maxLongEdge;
+
+        let sidecarText: string | null = null;
+        if (savedPath !== imagePath) {
+            try {
+                const sidecar = await getFileBlob(`${EDITOR_BACKUP_DIR}/${fileName}.json`);
+                if (sidecar && sidecar.size > 0) sidecarText = await sidecar.text();
+            } catch {
+                // Most images do not have editor sidecar data.
+            }
+        }
+
+        let metadataOverride: string | null = null;
+        if (sidecarText && outputFormat !== 'jpeg') {
+            try {
+                const sidecarData = JSON.parse(sidecarText);
+                if (this.settings?.storageMode === 'backup') {
+                    const { canvasJSON: _canvasJSON, ...embeddedPointer } = sidecarData;
+                    metadataOverride = JSON.stringify({
+                        ...embeddedPointer,
+                        backupFileName: `${savedFileName}.json`,
+                    });
+                } else {
+                    metadataOverride = JSON.stringify({
+                        ...sidecarData,
+                        backupFileName: undefined,
+                    });
+                }
+            } catch {
+                metadataOverride = sidecarText;
+            }
+        }
+
+        const compressedBlob = await this.compressImageBlob(
+            blob,
+            format,
+            outputFormat,
+            compressionOptions,
+            metadataOverride
+        );
+
+        return { blob, format, outputFormat, savedFileName, savedPath, sidecarText, compressedBlob };
+    }
+
     private async compressImageAsset(
         imageURL: string,
         imageElement?: HTMLImageElement,
-        options: { silent?: boolean; isActive?: () => boolean; maxLongEdge?: number } = {}
+        options: ImageCompressionChoice & { silent?: boolean; isActive?: () => boolean } = {}
     ): Promise<CompressionResult> {
         const imagePath = normalizeAssetPath(imageURL);
         const fileName = imagePath?.split('/').pop() || '';
@@ -1122,58 +1172,8 @@ export default class PluginSample extends Plugin {
         }
 
         try {
-            const blob = await getFileBlob(`data/${imagePath}`);
-            if (!blob || blob.size === 0) {
-                await notifyErr(t('imageEditor.emptyImage'));
-                return { status: 'skipped', reason: 'empty' };
-            }
-
-            const outputFormat = getCompressionOutputFormat(this.settings, format);
-            const savedFileName =
-                outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
-            const savedPath = imagePath.replace(/[^/]+$/, savedFileName);
-            const compressionOptions = getFormatCompressionOptions(this.settings, outputFormat);
-            compressionOptions.maxLongEdge = options.maxLongEdge;
-
-            let sidecarText: string | null = null;
-            if (savedPath !== imagePath) {
-                try {
-                    const sidecar = await getFileBlob(`${EDITOR_BACKUP_DIR}/${fileName}.json`);
-                    if (sidecar && sidecar.size > 0) sidecarText = await sidecar.text();
-                } catch {
-                    // Most images do not have editor sidecar data.
-                }
-            }
-
-            let metadataOverride: string | null = null;
-            if (sidecarText && outputFormat === 'webp') {
-                try {
-                    const sidecarData = JSON.parse(sidecarText);
-                    if (this.settings?.storageMode === 'backup') {
-                        const { canvasJSON: _canvasJSON, ...embeddedPointer } = sidecarData;
-                        metadataOverride = JSON.stringify({
-                            ...embeddedPointer,
-                            backupFileName: `${savedFileName}.json`,
-                        });
-                    } else {
-                        metadataOverride = JSON.stringify({
-                            ...sidecarData,
-                            backupFileName: undefined,
-                        });
-                    }
-                } catch {
-                    metadataOverride = sidecarText;
-                }
-            }
-
-            const compressedBlob = await this.compressImageBlob(
-                blob,
-                format,
-                outputFormat,
-                compressionOptions,
-                metadataOverride
-            );
-
+            const { blob, outputFormat, savedFileName, savedPath, sidecarText, compressedBlob } =
+                await this.prepareImageCompression(imagePath, options);
             const isFormatConversion = outputFormat !== format;
             if (
                 !shouldUseReencodedImage(blob.size, compressedBlob.size)
@@ -1216,7 +1216,7 @@ export default class PluginSample extends Plugin {
                         updatedSidecar
                     );
                 } catch (error) {
-                    console.warn('Failed to copy editor backup metadata for converted WebP', error);
+                    console.warn('Failed to copy editor backup metadata for converted image', error);
                 }
             }
 
@@ -1284,7 +1284,7 @@ export default class PluginSample extends Plugin {
         const compressedBlob = await reencodeImageBlob(blob, outputFormat, effectiveOptions);
         if (metadata === null) return compressedBlob;
         if (outputFormat !== 'png' && outputFormat !== 'webp') {
-            throw new Error('Output format cannot preserve editor metadata');
+            throw new Error(t('imageCompression.metadataFormatError'));
         }
 
         const compressedBuffer = new Uint8Array(await compressedBlob.arrayBuffer());
@@ -1328,16 +1328,11 @@ export default class PluginSample extends Plugin {
                         return;
                     }
 
-                    this.showImageCompressionDialog(
+                    await this.showImageCompressionDialog(
                         t('documentImageCompression.title'),
-                        t(
-                            this.settings?.convertToWebP === true
-                                ? 'documentImageCompression.confirmConvert'
-                                : 'documentImageCompression.confirmOverwrite',
-                            { count: String(compressibleImageURLs.length) }
-                        ),
-                        async (maxLongEdge) => {
-                            await this.compressDocumentImageAssets(docID, compressibleImageURLs, maxLongEdge);
+                        compressibleImageURLs,
+                        async (choice) => {
+                            await this.compressDocumentImageAssets(docID, compressibleImageURLs, choice);
                         }
                     );
                 } catch (error) {
@@ -1419,13 +1414,11 @@ export default class PluginSample extends Plugin {
             label: t('imageCompression.title'),
             index: 1,
             click: async () => {
-                this.showImageCompressionDialog(
+                await this.showImageCompressionDialog(
                     t('imageCompression.title'),
-                    this.settings?.convertToWebP === true && getCompressibleImageFormat(imageURL) !== 'webp'
-                        ? t('imageCompression.confirmConvert')
-                        : t('imageCompression.confirmOverwrite'),
-                    async (maxLongEdge) => {
-                        const result = await this.compressImageAsset(imageURL, imageElement, { maxLongEdge });
+                    [imageURL],
+                    async (choice) => {
+                        const result = await this.compressImageAsset(imageURL, imageElement, choice);
                         if (result.status === 'compressed' && result.originalPath !== result.savedPath) {
                             try {
                                 await this.replaceImageAssetReferenceInBlock(

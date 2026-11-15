@@ -87,7 +87,10 @@
         "saveCompressionSpeed": {
             "title": "Save compression speed",
             "description": "Fast by default. Controls PNG / WebP encoding effort when saving edits and screenshots. Export dimensions, quality settings and editable data are preserved; fast mode may produce larger files. Batch and paste compression still use balanced mode.",
-            "options": { "fast": "Fast (prioritize saving speed)", "balanced": "Balanced (prioritize file size)" }
+            "options": {
+                "fast": "Fast (prioritize saving speed)",
+                "balanced": "Balanced (prioritize file size)"
+            }
         },
         "enableImageCompression": {
             "title": "Compress images when saving",
@@ -189,7 +192,22 @@
         "success": "Compression complete: ${originalSize} -> ${savedSize}",
         "converted": "Conversion complete: ${originalSize} -> ${savedSize}, saved as ${fileName}",
         "failed": "Failed to compress the image.",
-        "referenceUpdateFailed": "The image was converted to WebP, but its block reference could not be updated. The original image was kept."
+        "referenceUpdateFailed": "The image was converted, but its block reference could not be updated. The original image was kept.",
+        "estimatedTotal": "Estimated saved total",
+        "preview": "Compressed",
+        "quality": "Image quality",
+        "keepSmaller": "Save only smaller results. Keep the original for other images.",
+        "apply": "Compress images",
+        "estimatedSize": "Estimated saved size",
+        "previewProgress": "Previewing ${current}/${total} images",
+        "originalKept": "Original will be kept",
+        "previewImage": "Preview image",
+        "previewFailed": "Unable to read or preview this image",
+        "original": "Original",
+        "originalFormat": "Original format",
+        "format": "Output format",
+        "lossless": "Lossless",
+        "metadataFormatError": "This image contains editable project data. Choose PNG or WebP to preserve it."
     },
     "documentImageCompression": {
         "title": "Compress document images",
@@ -199,7 +217,7 @@
         "confirmOverwrite": "Overwrite ${count} images in the current document using the current compression settings. Keep originals if compression does not reduce their size. Continue?",
         "scanFailed": "Failed to scan document images.",
         "started": "Compressing ${count} document images...",
-        "referenceUpdateFailed": "Images were converted to WebP, but document references could not be updated. The original images were kept.",
+        "referenceUpdateFailed": "Images were converted, but document references could not be updated. The original images were kept.",
         "sizeChange": ", ${originalSize} -> ${savedSize}",
         "skipped": ", ${count} skipped",
         "summary": "Document image compression complete: ${compressed}/${total} compressed${skippedText}${sizeText}",

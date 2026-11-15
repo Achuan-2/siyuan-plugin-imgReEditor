@@ -334,8 +334,30 @@ test('document compression shares the chosen pixel limit across unique images', 
         calls.push([path, options.maxLongEdge]);
         return { status: 'skipped', reason: 'not-smaller' };
     };
-    await plugin.compressDocumentImageAssets('doc', ['assets/a.png', 'assets/b.jpg', 'assets/a.png'], 1800);
+    await plugin.compressDocumentImageAssets('doc', ['assets/a.png', 'assets/b.jpg', 'assets/a.png'], { maxLongEdge: 1800 });
     assert.deepEqual(calls, [['assets/a.png', 1800], ['assets/b.jpg', 1800]]);
+});
+
+test('manual format and quality overrides preserve global defaults and resolve mixed formats independently', async () => {
+    setBrowser();
+    const source = new Blob(['source image']);
+    const plugin = createPlugin({ getFileBlob: async path => path.startsWith('data/assets/') ? source : null });
+    plugin.settings = { convertToWebP: true, pngCompressionMode: 'lossless', pngQuality: 92, jpegQuality: 85 };
+    const settings = { ...plugin.settings };
+    const encoded = [];
+    plugin.compressImageBlob = async (_source, input, output, options) => {
+        encoded.push({ input, output, options });
+        return new Blob(['compressed']);
+    };
+    await plugin.prepareImageCompression('assets/a.png', { outputFormat: 'jpeg', quality: 0.6 });
+    await plugin.prepareImageCompression('assets/b.jpg', {
+        outputFormat: 'original', formatOptions: { png: { quality: 0.5, pngMode: 'lossy' }, jpeg: { quality: 0.85 } },
+    });
+    assert.equal(encoded[0].output, 'jpeg');
+    assert.equal(encoded[0].options.quality, 0.6);
+    assert.equal(encoded[1].output, 'jpeg', 'Original format bypasses the global WebP conversion switch');
+    assert.equal(encoded[1].options.quality, 0.85);
+    assert.deepEqual(plugin.settings, settings);
 });
 
 test('automatic compression uses the global pixel switch and validates saved limits', async () => {

@@ -87,7 +87,10 @@
         "saveCompressionSpeed": {
             "title": "保存压缩速度",
             "description": "默认快速。控制编辑器和截图保存时 PNG / WebP 的压缩耗时，不改变导出尺寸、质量设置和编辑数据；快速模式文件可能稍大。批量和粘贴压缩仍使用均衡模式。",
-            "options": { "fast": "快速（优先保存速度）", "balanced": "均衡（优先压缩体积）" }
+            "options": {
+                "fast": "快速（优先保存速度）",
+                "balanced": "均衡（优先压缩体积）"
+            }
         },
         "enableImageCompression": {
             "title": "编辑保存后压缩图片",
@@ -189,7 +192,22 @@
         "success": "压缩完成：${originalSize} -> ${savedSize}",
         "converted": "转换完成：${originalSize} -> ${savedSize}，已保存为 ${fileName}",
         "failed": "压缩图片失败",
-        "referenceUpdateFailed": "图片已转换为 WebP，但更新图片块引用失败；原图片未删除"
+        "referenceUpdateFailed": "图片已转换，但更新图片块引用失败；原图片未删除",
+        "estimatedTotal": "预计保存总大小",
+        "preview": "压缩效果",
+        "quality": "图片质量",
+        "keepSmaller": "仅保存体积更小的结果，其他图片保留原图。",
+        "apply": "压缩图片",
+        "estimatedSize": "预计保存大小",
+        "previewProgress": "正在预览 ${current}/${total} 张",
+        "originalKept": "保存时保留原图",
+        "previewImage": "预览图片",
+        "previewFailed": "无法读取或预览该图片",
+        "original": "原图",
+        "originalFormat": "跟随原图",
+        "format": "输出格式",
+        "lossless": "无损",
+        "metadataFormatError": "此图片包含可编辑数据，请选择 PNG 或 WebP 以保留编辑数据。"
     },
     "documentImageCompression": {
         "title": "批量压缩文档图片",
@@ -199,7 +217,7 @@
         "confirmOverwrite": "将使用当前压缩设置覆盖当前文档中的 ${count} 张图片，并跳过压缩后不变小的图片。继续吗？",
         "scanFailed": "扫描文档图片失败",
         "started": "开始压缩 ${count} 张文档图片...",
-        "referenceUpdateFailed": "图片已转换为 WebP，但更新文档图片引用失败；原图片未删除",
+        "referenceUpdateFailed": "图片已转换，但更新文档图片引用失败；原图片未删除",
         "sizeChange": "，${originalSize} -> ${savedSize}",
         "skipped": "，跳过 ${count} 张",
         "summary": "文档图片压缩完成：成功 ${compressed}/${total} 张${skippedText}${sizeText}",

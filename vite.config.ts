@@ -113,6 +113,9 @@ export default defineConfig({
             external: ["siyuan", "process"],
 
             output: {
+                // SiYuan evaluates index.js with a restricted require function.
+                // Keep lazy internal modules inside the plugin's single entry file.
+                inlineDynamicImports: true,
                 entryFileNames: "[name].js",
                 assetFileNames: (assetInfo) => {
                     if (assetInfo.name === "style.css") {

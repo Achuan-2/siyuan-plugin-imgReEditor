@@ -96,6 +96,8 @@ Compress PNG, JPG/JPEG, and WebP images to reduce the space used by attachments 
 
 The **Compression** settings let you choose lossless or lossy PNG compression, adjust JPG/JPEG and WebP quality, and enable PNG/JPG conversion to WebP. PNG compression is lossless by default, and the default WebP quality is 100 (lossless).
 
+The single-image and document compression dialogs offer temporary PNG, JPEG or WebP output, a quality slider, a longest-edge limit, original/compressed previews and file sizes. Defaults follow global settings and source formats; enabling WebP conversion selects WebP by default. Document compression includes individual previews and the estimated saved total. Temporary choices do not change global settings. PNG quality 100 means lossless compression; images with editable project data must remain PNG or WebP to preserve that data.
+
 Manual compression, batch compression, and automatic paste/drop compression use the result only if it is smaller; otherwise, the original image is kept. Same-format compression preserves the filename and link. WebP conversion changes only the extension and updates the corresponding image references. Saving edits follows the WebP conversion setting when choosing the output format.
 
 ## Usage Tips

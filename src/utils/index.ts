@@ -171,20 +171,26 @@ export async function reencodeImageBlob(
 
     // The encoders below only emit a single image. Never pass animated WebP
     // through them, otherwise automatic compression would silently discard frames.
-    if (format === 'webp' && (await isAnimatedWebPBlob(blob))) {
-        return blob;
+    const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+    const sourceIsWebP = header[0] === 82 && header[1] === 73 && header[2] === 70 && header[3] === 70 &&
+        header[8] === 87 && header[9] === 69 && header[10] === 66 && header[11] === 80;
+    if (sourceIsWebP && await isAnimatedWebPBlob(blob)) {
+        if (format === 'webp') return blob;
+        throw new Error('Animated WebP conversion is not supported');
     }
 
     const losslessPNG = format === 'png' && pngMode === 'lossless';
+    const needsPNGConversion = losslessPNG &&
+        ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => header[index] === byte);
     const hasSizeLimit = Number.isFinite(options.maxLongEdge) && options.maxLongEdge >= 1;
     // Keep the original lossless PNG fast path when dimensions are unrestricted.
-    const raster = !losslessPNG || hasSizeLimit
+    const raster = !losslessPNG || hasSizeLimit || needsPNGConversion
         ? await rasterizeImage(blob, format, options.maxLongEdge)
         : null;
 
     if (losslessPNG) {
         // After downsampling, a worker failure must keep the resized PNG.
-        const input = raster?.resized ? await encodeCanvas(raster.canvas, 'png') : blob;
+        const input = raster?.resized || needsPNGConversion ? await encodeCanvas(raster.canvas, 'png') : blob;
         try {
             const optimized = await optimizePNGBlob(input, {
                 level: options.effort === 'fast' ? 0 : 2, optimiseAlpha: true,
@@ -1265,5 +1271,3 @@ export function hasImageHistoryInPNG(dataUrl: string): boolean {
         return false;
     }
 }
-
-

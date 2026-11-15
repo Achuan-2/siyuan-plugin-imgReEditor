@@ -87,7 +87,7 @@ test('lossless compression failures keep the PNG without main-thread encoding', 
         './webpEncoder.worker?worker&inline': {},
         './pngEncoder': { optimizePNGBlob: async () => { throw new Error('Worker unavailable'); } },
     });
-    const input = new Blob(['original'], { type: 'image/png' });
+    const input = new Blob([Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]), 'original'], { type: 'image/png' });
     assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless' }), input);
 });
 
@@ -99,7 +99,7 @@ test('PNG effort selects a faster lossless search without changing quality or re
         './webpEncoder.worker?worker&inline': {},
         './pngEncoder': { optimizePNGBlob: async (_input, options) => { calls.push(options); return result; } },
     });
-    const input = new Blob(['large original PNG'], { type: 'image/png' });
+    const input = new Blob([Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]), 'large original PNG'], { type: 'image/png' });
     assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless', effort: 'fast' }), small);
     assert.equal(await utils.reencodeImageBlob(input, 'png', { pngMode: 'lossless' }), small);
     assert.deepEqual(calls.map(options => options.level), [0, 2]);
