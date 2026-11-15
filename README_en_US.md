@@ -92,7 +92,7 @@ Compress PNG, JPG/JPEG, and WebP images to reduce the space used by attachments 
 - **Batch compress document images**: Open the document title icon menu and choose **Batch compress document images** to process images in the current document.
 - **Compress all asset images**: In the plugin's **Compression** settings, click **Compress all images** to process images in `data/assets` and its subfolders. This preserves formats, filenames, and note references regardless of the WebP conversion setting. Unchanged images already processed with the same settings are skipped automatically.
 - **Automatically compress on save**: Compress images when saving edits. Enabled by default; you can turn it off in settings.
-- **Automatically compress pasted or dropped images**: Enable **Compress pasted images** in settings to insert the original image first, then compress it in the background while you continue editing your notes. Disabled by default. You can separately turn off notifications showing file size changes after successful compression.
+- **Automatically compress pasted or dropped images**: Enable **Compress pasted images** in settings to insert the original image first, then compress it in the background while you continue editing your notes. Pasted network images are also compressed after SiYuan converts them to local assets. Disabled by default. You can separately turn off notifications showing file size changes after successful compression.
 
 The **Compression** settings let you choose lossless or lossy PNG compression, adjust JPG/JPEG and WebP quality, and enable PNG/JPG conversion to WebP. PNG compression is lossless by default, and the default WebP quality is 100 (lossless).
 

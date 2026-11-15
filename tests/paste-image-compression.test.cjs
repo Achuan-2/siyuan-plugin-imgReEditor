@@ -29,18 +29,7 @@ const deferred = () => {
     return { promise, resolve };
 };
 
-class FakeXHR extends EventTarget {
-    open(method, url) { this.method = method; this.url = url; }
-    send(body) { this.sentBody = body; }
-    finish(data, status = 200) {
-        this.status = status;
-        this.responseText = JSON.stringify(data);
-        this.dispatchEvent(new Event('loadend'));
-    }
-}
-
 function setBrowser(fetch = () => Promise.reject(new Error('Unexpected fetch'))) {
-    global.XMLHttpRequest = FakeXHR;
     global.File = File;
     global.window = {
         fetch,
@@ -50,27 +39,49 @@ function setBrowser(fetch = () => Promise.reject(new Error('Unexpected fetch')))
     };
 }
 
-test('XHR uploads the original immediately and starts compression after editor completion', async () => {
+class EventBus {
+    listeners = new Map();
+    on(type, listener) { this.listeners.set(type, listener); }
+    off(type, listener) {
+        if (this.listeners.get(type) === listener) this.listeners.delete(type);
+    }
+    emit(type, detail) { return this.listeners.get(type)?.({ detail }); }
+}
+
+function uploadEvent(bus, overrides = {}) {
+    let complete;
+    const detail = {
+        protyle: { block: { rootID: 'doc' } }, target: 'editor',
+        signal: new AbortController().signal,
+        onComplete(callback) { complete = callback; },
+        respondWith() { assert.fail('Background compression must not delay uploads'); },
+        ...overrides,
+    };
+    assert.equal(bus.emit('before-upload-assets', detail), undefined);
+    return complete;
+}
+
+test('host upload completion returns immediately and compresses with the original document and snapshot', async () => {
     setBrowser();
+    const bus = new EventBus();
     const compression = deferred();
     const events = [];
-    const stop = observeAssetUploads(() => true, async (paths, docID) => {
+    const context = [{ image: 'previous image' }];
+    const stop = observeAssetUploads(bus, () => true, async (paths, docID, snapshot) => {
         assert.deepEqual(paths, ['assets/a.png']);
         assert.equal(docID, 'doc');
+        assert.equal(snapshot, context);
         events.push('compression');
         await compression.promise;
         events.push('replacement');
-    });
+    }, () => context, () => null);
     try {
-        const body = new FormData();
-        body.append('id', 'doc');
-        body.append('file[]', new File(['original'], 'a.png', { type: 'image/png' }));
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/asset/upload');
-        xhr.send(body);
-        assert.equal(xhr.sentBody, body);
-        xhr.addEventListener('loadend', () => events.push('editor insertion'));
-        xhr.finish({ code: 0, data: { succMap: { 'a.png': 'assets/a.png' } } });
+        const protyle = { block: { rootID: 'doc' } };
+        const complete = uploadEvent(bus, { protyle });
+        assert.equal(typeof complete, 'function', 'onComplete must register synchronously');
+        protyle.block.rootID = 'different-doc';
+        assert.equal(complete({ status: 'success', succMap: { 'a.png': 'assets/a.png' } }), undefined);
+        events.push('editor insertion');
         assert.deepEqual(events, ['editor insertion']);
         await delay(10);
         assert.deepEqual(events, ['editor insertion', 'compression']);
@@ -80,55 +91,58 @@ test('XHR uploads the original immediately and starts compression after editor c
     } finally { stop(); }
 });
 
-test('fetch local uploads return the original Promise and readable response during compression', async () => {
-    const response = Response.json({ code: 0, data: { succMap: { 'a.png': 'assets/a.png' } } });
-    const upload = Promise.resolve(response);
-    let sentInit;
-    setBrowser((_input, init) => { sentInit = init; return upload; });
-    const compression = deferred();
-    let started = false;
-    const stop = observeAssetUploads(() => true, async (_paths, docID) => {
-        assert.equal(docID, 'doc');
-        started = true;
-        await compression.promise;
-    });
+test('partial uploads preserve duplicate-name successes and ignore unsuccessful results and abort', async () => {
+    setBrowser();
+    const bus = new EventBus();
+    const calls = [];
+    const stop = observeAssetUploads(bus, () => true, async (...args) => { calls.push(args); }, () => 'snapshot', () => null);
     try {
-        const init = { method: 'POST', body: JSON.stringify({ id: 'doc', assetPaths: ['C:/a.png'] }) };
-        const result = window.fetch('/api/asset/insertLocalAssets', init);
-        assert.equal(result, upload);
-        assert.equal(sentInit, init);
-        assert.deepEqual(await (await result).json(), { code: 0, data: { succMap: { 'a.png': 'assets/a.png' } } });
-        await delay(20);
-        assert.equal(started, true);
-        compression.resolve();
+        uploadEvent(bus)({ status: 'partial',
+            succFiles: [{ path: 'assets/first.png' }, { path: 'assets/second.png' }, { path: 'assets/first.png' }],
+            succMap: { 'image.png': 'assets/second.png' },
+        });
+        for (const status of ['failed', 'canceled']) {
+            uploadEvent(bus)({ status, succMap: { 'a.png': 'assets/a.png' } });
+        }
+        uploadEvent(bus)({ status: 'success', succFiles: [], succMap: { 'a.png': 'assets/a.png' } });
+        const controller = new AbortController();
+        const aborted = uploadEvent(bus, { signal: controller.signal });
+        controller.abort();
+        aborted({ status: 'success', succMap: { 'a.png': 'assets/a.png' } });
+        await delay(10);
+        assert.deepEqual(calls, [[['assets/first.png', 'assets/second.png'], 'doc', 'snapshot']]);
     } finally { stop(); }
 });
 
-test('Request uploads preserve duplicate-name successes and ignore failed uploads and unload', async () => {
-    setBrowser(() => Promise.resolve(Response.json({ code: 0, data: {
-        succFiles: [{ path: 'assets/first.png' }, { path: 'assets/second.png' }, { path: 'assets/first.png' }],
-        succMap: { 'image.png': 'assets/second.png' },
-    } })));
-    const calls = [];
-    const stop = observeAssetUploads(() => true, async (...args) => { calls.push(args); });
-    const request = new Request('http://localhost:6806/api/asset/insertLocalAssets', {
-        method: 'POST', body: JSON.stringify({ id: 'doc', assetPaths: ['C:/first.png', 'C:/second.png'] }),
-    });
-    await window.fetch(request);
-    await delay(20);
-    assert.deepEqual(calls, [[['assets/first.png', 'assets/second.png'], 'doc', undefined]]);
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/asset/upload');
-    xhr.send(new FormData());
-    xhr.finish({ code: -1, data: { succMap: { 'a.png': 'assets/a.png' } } });
-    xhr.finish({ code: 0, data: {} }, 500);
-    const pendingXHR = new XMLHttpRequest();
-    pendingXHR.open('POST', '/api/asset/upload');
-    pendingXHR.send(new FormData());
-    pendingXHR.finish({ code: 0, data: { succMap: { 'a.png': 'assets/a.png' } } });
-    stop();
+test('disabled compression, missing documents and non-editor uploads do not register completion work', () => {
+    const bus = new EventBus();
+    let enabled = false;
+    const stop = observeAssetUploads(bus, () => enabled, async () => assert.fail(), () => undefined, () => null);
+    try {
+        assert.equal(uploadEvent(bus), undefined);
+        enabled = true;
+        assert.equal(uploadEvent(bus, { protyle: undefined }), undefined);
+        assert.equal(uploadEvent(bus, { target: 'av-cell' }), undefined);
+        assert.equal(uploadEvent(bus, { target: 'background' }), undefined);
+    } finally { stop(); }
+});
+
+test('turning compression off or unloading cancels pending and future completion work', async () => {
+    const bus = new EventBus();
+    let enabled = true;
+    const stop = observeAssetUploads(bus, () => enabled, async () => assert.fail(), () => undefined, () => null);
+    const first = uploadEvent(bus);
+    first({ status: 'success', succMap: { a: 'assets/a.png' } });
+    enabled = false;
     await delay(10);
-    assert.equal(calls.length, 1);
+    enabled = true;
+    const second = uploadEvent(bus);
+    const third = uploadEvent(bus);
+    second({ status: 'success', succMap: { b: 'assets/b.png' } });
+    stop();
+    third({ status: 'success', succMap: { c: 'assets/c.png' } });
+    await delay(10);
+    assert.equal(bus.listeners.size, 0);
 });
 
 class ImageBlock {

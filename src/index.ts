@@ -392,7 +392,7 @@ export default class PluginSample extends Plugin {
         }];
 
         await this.applyScreenshotFeatureSettings();
-        this.setupNetworkInterceptors();
+        this.setupAutomaticImageCompression();
     }
 
     private isScreenshotEnabled() {
@@ -486,7 +486,7 @@ export default class PluginSample extends Plugin {
         this.assetCompressionStatus = null;
         // 移除所有已注册的事件监听
         try {
-            this.teardownNetworkInterceptors();
+            this.teardownAutomaticImageCompression();
             if (this._openMenuImageHandler) {
                 this.eventBus.off('open-menu-image', this._openMenuImageHandler);
                 this._openMenuImageHandler = null;
@@ -2054,10 +2054,11 @@ export default class PluginSample extends Plugin {
         await this.saveData(SETTINGS_FILE, settings);
     }
 
-    private setupNetworkInterceptors() {
+    private setupAutomaticImageCompression() {
         const isActive = () => this.stopObservingAssetUploads === stop &&
             this.settings?.enablePasteImageCompression === true;
         const stop = observeAssetUploads(
+            this.eventBus,
             () => this.settings?.enablePasteImageCompression === true,
             (paths, docID, previousImages) => this.queueAutomaticImageCompression(paths, docID, isActive, previousImages),
             () => Array.from(document.querySelectorAll<HTMLImageElement>('.protyle-wysiwyg img'))
@@ -2065,12 +2066,13 @@ export default class PluginSample extends Plugin {
                     image,
                     path: normalizeAssetPath(image.dataset.src || image.getAttribute('src')),
                     blockID: image.closest('[data-node-id]')?.getAttribute('data-node-id') || '',
-                }))
+                })),
+            normalizeAssetPath
         );
         this.stopObservingAssetUploads = stop;
     }
 
-    private teardownNetworkInterceptors() {
+    private teardownAutomaticImageCompression() {
         this.stopObservingAssetUploads?.();
         this.stopObservingAssetUploads = null;
     }
