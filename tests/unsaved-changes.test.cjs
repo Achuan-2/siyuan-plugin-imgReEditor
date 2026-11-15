@@ -19,7 +19,7 @@ function evaluate(source, imports, suffix = '', fetchImplementation = async () =
     return module.exports;
 }
 
-function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write, read, fetchImplementation,
+function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, canvasHistory, write, read, fetchImplementation,
     compression = false, effort, blobExporter, format } = {}) {
     const closes = [];
     const writes = [];
@@ -55,17 +55,147 @@ function loadEditor({ choice = 'cancel', dirty = true, screenshot = false, write
             settings = { storageMode: 'metadata', enableImageCompression: fixture.compression,
                 saveCompressionSpeed: fixture.effort, compressionFormat: fixture.format ?? 'original' };
             isScreenshotMode = fixture.screenshot; onClose = fixture.onClose;
+            isCanvasMode = !!fixture.canvasHistory;
             canvasEditorRef = {
                 getHistoryIndex: () => fixture.dirty ? 1 : 0,
                 toJSON: async () => ({}),
                 toDataURL: async () => 'data:image/png;base64,cGl4ZWxz',
             };
+            if (fixture.canvasHistory) Object.assign(canvasEditorRef, fixture.canvasHistory);
             if (fixture.blobExporter) canvasEditorRef.toBlob = fixture.blobExporter;
         } };
     `, fetchImplementation);
-    editor.configure({ dirty, screenshot, compression, effort, blobExporter, format, onClose: (...args) => closes.push(args) });
+    editor.configure({ dirty, screenshot, canvasHistory, compression, effort, blobExporter, format, onClose: (...args) => closes.push(args) });
     return { ...editor, closes, writes, errors, encodes, prompts: () => prompts };
 }
+
+function loadCanvasHistory() {
+    const source = readFileSync(resolve(__dirname, '../src/components/editor/CanvasEditor.svelte'), 'utf8')
+        .match(/<script lang="ts">([\s\S]*?)<\/script>/)[1];
+    const parsed = ts.createSourceFile('CanvasEditor.ts', source, ts.ScriptTarget.Latest, true);
+    const names = new Set(['isDirty', 'markSaved', 'getHistoryIndex', 'pushHistory', 'pushInitialHistory',
+        'notifyHistoryUpdate']);
+    const functions = parsed.statements.filter(node => ts.isFunctionDeclaration(node) && names.has(node.name.text))
+        .map(node => node.getText(parsed).replace(/^export\s+/, '')).join('\n');
+    const schedule = parsed.statements.find(node => ts.isVariableStatement(node) &&
+        node.declarationList.declarations.some(declaration => declaration.name.getText(parsed) === 'schedulePushWithType'))
+        .getText(parsed);
+    return evaluate(`
+        let history = [], historyIndex = -1, savedHistoryState = null;
+        let pendingActionType = null, lastActionType = null, lastPushTime = 0;
+        let version = 0, now = 1000, timer = null;
+        const Date = { now: () => now };
+        const setTimeout = callback => { timer = callback; return 1; };
+        const clearTimeout = () => { timer = null; };
+        const isCanvasMode = true, isHistoryProcessing = false, cropMode = false;
+        const HISTORY_PROPS = [], MAX_HISTORY = 60;
+        const canvas = { toJSON: () => ({ version }), getObjects: () => [],
+            getWidth: () => 800, getHeight: () => 600 };
+        const getCanvasLayout = () => ({ width: 800, height: 600 });
+        const dispatch = () => {};
+        ${functions}
+        ${schedule}
+        pushInitialHistory();
+        module.exports = { isDirty, markSaved, getHistoryIndex, reset: pushInitialHistory,
+            edit(type = 'modified') { version++; schedulePushWithType(type); },
+            flush(elapsed = 200) { now += elapsed; const callback = timer; timer = null; callback?.(); },
+            restore(index) { historyIndex = index; },
+            hasPendingUpdate: () => timer !== null,
+        };
+    `, {});
+}
+
+test('canvas exit prompts even before the debounced history update', async () => {
+    for (const choice of ['cancel', 'discard', 'save']) {
+        const canvasHistory = loadCanvasHistory();
+        canvasHistory.edit();
+        assert.equal(canvasHistory.getHistoryIndex(), 0);
+        const editor = loadEditor({ choice, canvasHistory });
+        await editor.requestClose();
+        assert.equal(editor.prompts(), 1);
+        assert.equal(editor.closes.length, choice === 'cancel' ? 0 : 1);
+        assert.equal(editor.writes.length, choice === 'save' ? 1 : 0);
+        if (choice === 'save') {
+            assert.equal(editor.closes[0][0], true);
+            assert.equal(editor.isDirty(), false);
+            assert.equal(canvasHistory.hasPendingUpdate(), false);
+        }
+    }
+});
+
+test('canvas save establishes a clean state and later edits prompt again', async () => {
+    const canvasHistory = loadCanvasHistory();
+    const clean = loadEditor({ canvasHistory });
+    await clean.requestClose();
+    assert.equal(clean.prompts(), 0);
+    canvasHistory.edit();
+    canvasHistory.flush();
+    const editor = loadEditor({ canvasHistory });
+    await editor.saveForSwitch();
+    assert.equal(editor.isDirty(), false);
+    canvasHistory.edit();
+    canvasHistory.flush();
+    await editor.requestClose();
+    assert.equal(editor.prompts(), 1);
+    assert.equal(editor.closes.length, 0);
+});
+
+test('canvas dirty state survives history merges, replacement branches and the history limit', () => {
+    const canvas = loadCanvasHistory();
+    canvas.edit();
+    canvas.flush();
+    canvas.edit();
+    canvas.flush();
+    assert.equal(canvas.getHistoryIndex(), 1);
+    assert.equal(canvas.isDirty(), true);
+    canvas.markSaved();
+    canvas.restore(0);
+    assert.equal(canvas.isDirty(), true);
+    canvas.edit('added');
+    canvas.flush();
+    assert.equal(canvas.getHistoryIndex(), 1);
+    assert.equal(canvas.isDirty(), true);
+    canvas.markSaved();
+    canvas.edit();
+    canvas.flush();
+    canvas.restore(1);
+    assert.equal(canvas.isDirty(), false);
+
+    for (let i = 0; i < 65; i++) {
+        canvas.edit('added');
+        canvas.flush(1000);
+    }
+    assert.equal(canvas.getHistoryIndex(), 59);
+    canvas.markSaved();
+    canvas.edit();
+    canvas.flush(1000);
+    assert.equal(canvas.getHistoryIndex(), 59);
+    assert.equal(canvas.isDirty(), true);
+});
+
+test('failed canvas saves retain unsaved edits and prompt again', async context => {
+    context.mock.method(console, 'error', () => {});
+    const canvasHistory = loadCanvasHistory();
+    canvasHistory.edit();
+    const editor = loadEditor({ choice: 'save', canvasHistory, write: () => { throw new Error('Write denied'); } });
+    await editor.requestClose();
+    assert.equal(editor.closes.length, 0);
+    assert.equal(editor.isDirty(), true);
+    await editor.requestClose();
+    assert.equal(editor.prompts(), 2);
+});
+
+test('loading a canvas clears pending initialization history and starts clean', () => {
+    const canvas = loadCanvasHistory();
+    canvas.edit();
+    canvas.reset();
+    assert.equal(canvas.isDirty(), false);
+    assert.equal(canvas.hasPendingUpdate(), false);
+    canvas.flush();
+    assert.equal(canvas.getHistoryIndex(), 0);
+    canvas.edit();
+    assert.equal(canvas.isDirty(), true);
+});
 
 test('discard exits without writing; cancelling the prompt preserves edits', async () => {
     const discard = loadEditor({ choice: 'discard' });

@@ -73,7 +73,7 @@ function editorFixture() {
         const HISTORY_PROPS = [], MAX_HISTORY = 50;
         let activeTool = null, activeToolOptions = {}, guideSegments = [], canvasLayoutState = normalizeCanvasLayout();
         let guideDrag = null, guideOverlay = overlayElement;
-        let isHistoryProcessing = false, history = [], historyIndex = -1;
+        let isHistoryProcessing = false, history = [], historyIndex = -1, savedHistoryState = null;
         let lastActionType = null, pendingActionType = null, lastPushTime = 0;
         const schedulePushWithType = type => { pendingActionType = type; };
         const notifyHistoryUpdate = () => {}, restoreObjectSelectionStates = () => {},

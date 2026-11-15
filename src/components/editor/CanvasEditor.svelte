@@ -296,7 +296,21 @@
     let contextMenuTarget: any = null;
 
     export function isDirty() {
-        return historyIndex > 0;
+        if (!savedHistoryState) return false;
+        return pendingActionType !== null || history[historyIndex] !== savedHistoryState;
+    }
+
+    export function markSaved() {
+        // Include edits still waiting for the debounced history update.
+        if (pendingActionType) {
+            clearTimeout((schedulePushWithType as any)._t);
+            pushHistory();
+            pendingActionType = null;
+        }
+        savedHistoryState = history[historyIndex] ?? null;
+        // The next edit must remain a separate undo step from the saved state.
+        lastActionType = null;
+        lastPushTime = 0;
     }
 
     export function getHistoryIndex() {
@@ -311,6 +325,7 @@
     // History (undo/redo)
     let history: any[] = [];
     let historyIndex = -1;
+    let savedHistoryState: any = null;
     const MAX_HISTORY = 60;
     const HISTORY_PROPS = [
         'selectable',
@@ -5013,6 +5028,10 @@
     function pushInitialHistory() {
         try {
             if (!canvas) return;
+            clearTimeout((schedulePushWithType as any)._t);
+            pendingActionType = null;
+            lastActionType = null;
+            lastPushTime = 0;
             history = [];
             historyIndex = -1;
             const json = (canvas as any).toJSON(HISTORY_PROPS);
@@ -5054,6 +5073,7 @@
             }
             history.push(json);
             historyIndex = 0;
+            savedHistoryState = json;
             notifyHistoryUpdate();
         } catch (e) {}
     }

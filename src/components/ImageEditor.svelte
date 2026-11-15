@@ -129,6 +129,9 @@
     const CANVAS_MIN_WIDTH = 180;
 
     export function isDirty() {
+        if (isCanvasMode && typeof canvasEditorRef?.isDirty === 'function') {
+            return canvasEditorRef.isDirty();
+        }
         if (!canvasEditorRef || typeof canvasEditorRef.getHistoryIndex !== 'function') return false;
 
         const currentIndex = canvasEditorRef.getHistoryIndex();
@@ -1195,6 +1198,7 @@
             if (canvasEditorRef && typeof canvasEditorRef.getHistoryIndex === 'function') {
                 lastSavedCanvasHistoryIndex = canvasEditorRef.getHistoryIndex();
             }
+            if (isCanvasMode) canvasEditorRef?.markSaved?.();
             if (!closeAfterSave) {
                 canvasItems = canvasItems.map(item =>
                     item.blockId === sourceBlockId && item.path === sourcePath
