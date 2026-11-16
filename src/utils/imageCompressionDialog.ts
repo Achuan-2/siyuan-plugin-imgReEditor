@@ -162,7 +162,7 @@ export function showImageCompressionDialog(options: DialogOptions): void {
         if (outputURL) URL.revokeObjectURL(outputURL);
         originalURL = result?.source ? URL.createObjectURL(result.source) : '';
         outputURL = result?.output ? URL.createObjectURL(result.output) : '';
-        const url = view === 'original' ? originalURL : outputURL;
+        const url = view === 'original' ? originalURL : outputURL || originalURL;
         preview.hidden = !url;
         if (url) preview.src = url;
         else preview.removeAttribute('src');

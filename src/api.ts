@@ -494,7 +494,9 @@ export const getFileBlob = async (path: string): Promise<Blob | null> => {
             path: path
         })
     });
-    if (!response.ok) {
+    // SiYuan returns HTTP 202 with a JSON error envelope for missing files.
+    // Only HTTP 200 contains the requested file, including legitimate JSON files.
+    if (response.status !== 200) {
         return null;
     }
     let data = await response.blob();
@@ -507,7 +509,7 @@ export async function getFileSize(path: string): Promise<number | null> {
         method: 'POST',
         body: JSON.stringify({ path }),
     });
-    if (!response.ok) return null;
+    if (response.status !== 200) return null;
     const length = response.headers.get('content-length');
     const encoding = response.headers.get('content-encoding');
     const size = length === null ? NaN : Number(length);

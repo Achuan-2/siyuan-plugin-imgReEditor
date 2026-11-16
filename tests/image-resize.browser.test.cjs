@@ -19,7 +19,7 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
 }, async () => {
     const temporary = mkdtempSync(path.join(tmpdir(), 'imgreeditor-resize-'));
     try {
-        const browserCase = async ({ utilsSource, pluginSource, dialogSource, settingsSource, translations, upngPath }) => {
+        const browserCase = async ({ utilsSource, pluginSource, dialogSource, settingsSource, apiSource, translations, upngPath }) => {
             const assert = require('node:assert/strict');
             const UPNG = require(upngPath);
             const evaluate = (source, imports) => {
@@ -117,8 +117,22 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
                 ['data/assets/b.jpg', new Blob([jpegSource, new Uint8Array(6000)], { type: 'image/jpeg' })],
             ]);
             const loadedPaths = [];
+            const originalFetch = window.fetch.bind(window);
+            window.fetch = async (input, init) => {
+                if (input !== '/api/file/getFile') return originalFetch(input, init);
+                const { path } = JSON.parse(init.body);
+                loadedPaths.push(path);
+                const file = stored.get(path);
+                // Match the real kernel: a missing conversion target is a 2xx
+                // JSON error, not a usable Blob and not an HTTP 404 response.
+                return file ? new Response(file, { status: 200 }) : new Response(
+                    JSON.stringify({ code: 404, msg: 'file does not exist', data: null }),
+                    { status: 202, headers: { 'content-type': 'application/json' } }
+                );
+            };
+            const fileAPI = evaluate(apiSource, { siyuan: {} });
             const api = {
-                getFileBlob: async path => { loadedPaths.push(path); return stored.get(path); },
+                getFileBlob: fileAPI.getFileBlob,
                 putFile: async (path, _dir, blob) => stored.set(path, blob),
                 pushMsg: async () => {}, pushErrMsg: async () => {},
             };
@@ -263,6 +277,7 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             await waitUntil(() => !!form.root.querySelector('[data-error]').textContent);
             assert.ok(form.root.querySelector('[data-error]').textContent.includes('可编辑数据'));
             assert.equal(form.confirm.disabled, true);
+            assert.equal(form.root.querySelector('[data-preview]').hidden, false, 'An encoding failure must still show the source');
             form.close();
             assert.equal(choices.length, 3);
 
@@ -285,6 +300,9 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             });
             const lazyRoot = currentDialog.element;
             await waitUntil(() => !!releaseEncode);
+            const pendingPreview = lazyRoot.querySelector('[data-preview]');
+            assert.equal(pendingPreview.hidden, false, 'The source remains visible while the selected output is encoding');
+            assert.deepEqual((await decode(await (await fetch(pendingPreview.src)).blob())).size, [400, 240]);
             change(lazyRoot.querySelector('[data-file]'), '1', 'change');
             change(lazyRoot.querySelector('[data-file]'), '2', 'change');
             assert.equal(lazyRoot.querySelector('[data-confirm]').disabled, true);
@@ -302,9 +320,9 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             assert.deepEqual(previewLoads, ['assets/a.png', 'assets/c.png', 'assets/a.png']);
             assert.equal(previewEncodes.length, 3);
 
-            // Keep a settled dialog open for the host-side screenshot inspection.
+            // Keep a settled single-image dialog open for screenshot inspection.
             plugin.settings = { ...globalSettings };
-            form = await open(['assets/a.png', 'assets/b.jpg']);
+            form = await open(['assets/a.png']);
             change(form.format, 'webp', 'change');
             change(form.quality, '80');
             await form.settle();
@@ -317,6 +335,7 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             utilsSource: compile('src/utils/index.ts'), pluginSource: compile('src/index.ts'),
             settingsSource: compile('src/defaultSettings.ts'),
             dialogSource: compile('src/utils/imageCompressionDialog.ts'), translations: require('../i18n/zh_CN.json'),
+            apiSource: compile('src/api.ts'),
             upngPath: require.resolve('upng-js'),
         };
         const html = path.join(temporary, 'index.html');

@@ -318,7 +318,7 @@ test('save completion does not wait for a duplicate asset refresh request', asyn
 test('file size verification cancels the body when a reliable length is available', async () => {
     let cancelled = false;
     const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '', async () => ({
-        ok: true, headers: new Headers({ 'content-length': '123' }),
+        ok: true, status: 200, headers: new Headers({ 'content-length': '123' }),
         body: { cancel: async () => { cancelled = true; } },
         blob: () => { throw new Error('File contents must not be downloaded'); },
     }));
@@ -329,12 +329,33 @@ test('file size verification cancels the body when a reliable length is availabl
 test('file size verification falls back to the decoded body for missing or compressed length headers', async () => {
     for (const headers of [{}, { 'content-length': '3', 'content-encoding': 'gzip' }]) {
         const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '', async () => ({
-            ok: true, headers: new Headers(headers), blob: async () => new Blob(['decoded']),
+            ok: true, status: 200, headers: new Headers(headers), blob: async () => new Blob(['decoded']),
         }));
         assert.equal(await api.getFileSize('data/assets/example.png'), 7);
     }
     const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '', async () => ({ ok: false }));
     assert.equal(await api.getFileSize('data/assets/missing.png'), null);
+});
+
+test('file reads and size checks reject SiYuan HTTP 202 JSON errors instead of treating them as files', async () => {
+    const error = JSON.stringify({ code: 404, msg: 'file does not exist', data: null });
+    const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '',
+        async () => new Response(error, { status: 202, headers: { 'content-type': 'application/json' } }));
+    assert.equal(await api.getFileBlob('data/assets/missing.webp'), null);
+    assert.equal(await api.getFileSize('data/assets/missing.webp'), null);
+});
+
+test('successful file reads preserve image bytes and actual JSON backup files', async () => {
+    for (const [body, type] of [
+        [new Uint8Array([137, 80, 78, 71]), 'image/png'],
+        [JSON.stringify({ version: 1, canvasJSON: { objects: [] } }), 'application/json'],
+    ]) {
+        const api = evaluate(readFileSync(resolve(__dirname, '../src/api.ts'), 'utf8'), { siyuan: {} }, '',
+            async () => new Response(body, { status: 200, headers: { 'content-type': type } }));
+        const blob = await api.getFileBlob('data/assets/example');
+        assert.equal(blob.type, type);
+        assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), new Uint8Array(await new Blob([body]).arrayBuffer()));
+    }
 });
 
 test('write failures keep both image and screenshot editors open for retry', async context => {
