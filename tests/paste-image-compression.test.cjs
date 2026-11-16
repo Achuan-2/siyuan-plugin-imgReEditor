@@ -176,6 +176,15 @@ function createPlugin(api, utils = {}) {
     return plugin;
 }
 
+// Model both the document lookup and keyset pagination of the global asset index.
+function referenceSQL(getReferences) {
+    return async stmt => {
+        const rows = getReferences().map((row, index) => ({ id: String(index + 1).padStart(6, '0'), ...row }));
+        const cursor = stmt.match(/AND id > '([^']*)'/)?.[1];
+        return cursor === undefined ? rows : rows.filter(row => row.id > cursor).slice(0, 256);
+    };
+}
+
 test('compression format defaults to WebP and migrates the legacy switch without overriding a saved format', async () => {
     const plugin = createPlugin({});
     for (const [stored, expected] of [
@@ -193,7 +202,7 @@ test('compression format defaults to WebP and migrates the legacy switch without
 
 test('automatic compression follows the selected global format and its quality for every source format', async () => {
     const source = new Blob(['source']);
-    const plugin = createPlugin({ getFileBlob: async () => source });
+    const plugin = createPlugin({ getFileBlob: async path => /^data\/assets\/a\.(png|jpg|webp)$/.test(path) ? source : null });
     const encoded = [];
     plugin.compressImageBlob = async (_source, input, output, options) => {
         encoded.push({ input, output, options });
@@ -221,7 +230,7 @@ test('background queue waits for insertion and saves the new link with current t
     const savedBlocks = [];
     let compressionCount = 0;
     const plugin = createPlugin({
-        sql: async () => indexed ? [{ block_id: 'block', path: 'assets/a.png' }] : [],
+        sql: referenceSQL(() => indexed ? [{ block_id: 'block', path: 'assets/a.png' }] : []),
         getBlockDOM: async () => ({ dom: '<stale block>' }),
         updateBlock: async (_type, html) => { savedBlocks.push(html); return [{}]; },
         pushMsg: async () => {}, pushErrMsg: async () => {},
@@ -249,18 +258,91 @@ test('background queue waits for insertion and saves the new link with current t
 test('deleted/replaced images and failed saves leave the original live block untouched', async () => {
     setBrowser();
     const live = new ImageBlock('assets/other.png');
-    global.document = { querySelectorAll: () => [live] };
+    global.document = { querySelectorAll: selector => selector.endsWith('img') ? [live.image] : [live] };
     let saves = 0;
     const plugin = createPlugin({
+        sql: referenceSQL(() => [{ block_id: 'block', path: 'assets/a.png' }]),
         getBlockDOM: async () => ({ dom: '<stale block>' }),
         updateBlock: async () => { saves += 1; return null; },
     });
-    assert.equal(await plugin.replaceAutomaticImageReferences('assets/a.png', 'assets/new.webp', ['block'], () => true), 0);
+    assert.equal(await plugin.replaceImageAssetReferencesEverywhere('assets/a.png', 'assets/new.webp'), 0);
     assert.equal(saves, 0);
     live.image.dataset.src = 'assets/a.png';
     live.image.src = 'assets/a.png';
-    await assert.rejects(plugin.replaceAutomaticImageReferences('assets/a.png', 'assets/new.webp', ['block'], () => true));
+    await assert.rejects(plugin.replaceImageAssetReferencesEverywhere('assets/a.png', 'assets/new.webp'));
     assert.equal(live.image.dataset.src, 'assets/a.png');
+});
+
+test('global conversion reads every index page, matches decoded full paths and deduplicates blocks', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    const original = "assets/测试图 '1.png";
+    const saved = "assets/测试图 '1.webp";
+    const rows = Array.from({ length: 300 }, (_, index) => ({
+        block_id: `block-${index}`, path: index % 2 ? encodeURI(original) + '?width=300#preview' : original,
+    }));
+    rows.push(rows[0], { block_id: 'other-directory', path: "assets/other/测试图 '1.png" },
+        { block_id: 'other-file', path: original + '.bak' });
+    const queries = [];
+    const query = referenceSQL(() => rows);
+    const plugin = createPlugin({ sql: async stmt => { queries.push(stmt); return query(stmt); } });
+    const updates = [];
+    plugin.replaceImageAssetReferenceInBlock = async (id, before, after) => {
+        assert.equal(before, original);
+        assert.equal(after, saved);
+        updates.push(id);
+        return true;
+    };
+    assert.equal(await plugin.replaceImageAssetReferencesEverywhere(original, saved), 300);
+    assert.equal(new Set(updates).size, 300);
+    assert.ok(!updates.includes('other-directory') && !updates.includes('other-file'));
+    assert.equal(queries.length, 3);
+    assert.ok(queries.every(stmt => !stmt.includes('root_id') && stmt.includes("''1.png")));
+});
+
+test('global conversion updates live references in other documents and preserves URL suffixes and text', async () => {
+    setBrowser();
+    const first = new ImageBlock('assets/a.png', 'new text', 'first');
+    const second = new ImageBlock('assets/a.png?width=300#preview', 'another document', 'second');
+    const untouched = new ImageBlock('assets/other.png', 'unrelated', 'untouched');
+    const blocks = [first, second, untouched];
+    global.document = { querySelectorAll: selector => selector.endsWith('img') ? blocks.map(b => b.image) : blocks };
+    const writes = [];
+    const plugin = createPlugin({
+        sql: referenceSQL(() => [{ block_id: 'first', path: 'assets/a.png' }]),
+        updateBlock: async (_type, html, id) => { writes.push({ html, id }); return [{}]; },
+    });
+    assert.equal(await plugin.replaceImageAssetReferencesEverywhere('assets/a.png', 'assets/a.webp', first), 2);
+    assert.deepEqual(writes.map(write => write.id), ['first', 'second']);
+    assert.match(writes[0].html, /new text/);
+    assert.match(writes[1].html, /another document/);
+    assert.equal(second.image.dataset.src, 'assets/a.webp?width=300#preview');
+    assert.equal(untouched.image.dataset.src, 'assets/other.png');
+});
+
+test('global reference lookup failures and cancellation never write blocks or delete resources', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    const plugin = createPlugin({ sql: async () => null });
+    plugin.replaceImageAssetReferenceInBlock = async () => assert.fail('No blocks should be written');
+    await assert.rejects(plugin.replaceImageAssetReferencesEverywhere('assets/a.png', 'assets/a.webp'), /Unable to load/);
+    assert.equal(await plugin.replaceImageAssetReferencesEverywhere('assets/a.png', 'assets/a.webp', undefined, () => false), 0);
+});
+
+test('cancellation while reading a closed block prevents its pending reference update', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    const read = deferred();
+    let active = true;
+    const plugin = createPlugin({
+        getBlockDOM: async () => { await read.promise; return { dom: '<closed block>' }; },
+        updateBlock: async () => assert.fail('Cancelled compression must not write the block'),
+    });
+    const update = plugin.replaceImageAssetReferenceInBlock('block', 'assets/a.png', 'assets/a.webp', undefined, () => active);
+    await delay(0);
+    active = false;
+    read.resolve();
+    assert.equal(await update, false);
 });
 
 test('repeated paste waits for the new image even when an old reference is already indexed', async () => {
@@ -289,7 +371,7 @@ test('a second paste of the same asset during compression gets its own reference
     const compression = deferred();
     let compressionCount = 0;
     const plugin = createPlugin({
-        sql: async () => blocks.map(block => ({ block_id: block.id, path: block.image.dataset.src })),
+        sql: referenceSQL(() => blocks.map(block => ({ block_id: block.id, path: block.image.dataset.src }))),
         getBlockDOM: async () => ({ dom: '' }), updateBlock: async () => [{}],
         pushMsg: async () => {}, pushErrMsg: async () => {},
     });
@@ -378,7 +460,7 @@ test('document compression shares the chosen pixel limit across unique images', 
 test('manual format and quality overrides preserve global defaults and resolve mixed formats independently', async () => {
     setBrowser();
     const source = new Blob(['source image']);
-    const plugin = createPlugin({ getFileBlob: async path => path.startsWith('data/assets/') ? source : null });
+    const plugin = createPlugin({ getFileBlob: async path => /^data\/assets\/[ab]\.(png|jpg)$/.test(path) ? source : null });
     plugin.settings = { convertToWebP: true, pngCompressionMode: 'lossless', pngQuality: 92, jpegQuality: 85 };
     const settings = { ...plugin.settings };
     const encoded = [];
@@ -412,15 +494,18 @@ test('automatic compression uses the global pixel switch and validates saved lim
     assert.deepEqual(limits, [2000, undefined, 1200, 2000, 2000]);
 });
 
-test('WebP conversion changes only the extension even when the target already exists', async () => {
+test('WebP conversion preserves an existing target and chooses a separate filename', async () => {
     setBrowser();
     const source = new Blob(['original image bytes']);
     let target = new Blob(['previous WebP bytes']);
     const writes = [];
+    const files = new Map([
+        ['data/assets/测试图片-20261001000000-abcdefg.PNG', source],
+        ['data/assets/测试图片-20261001000000-abcdefg.webp', target],
+    ]);
     const plugin = createPlugin({
-        getFileBlob: async path => path === 'data/assets/测试图片-20261001000000-abcdefg.PNG' ? source :
-            path === 'data/assets/测试图片-20261001000000-abcdefg.webp' ? target : null,
-        putFile: async (path, _isDir, file) => { writes.push({ path, file }); target = file; },
+        getFileBlob: async path => files.get(path) || null,
+        putFile: async (path, _isDir, file) => { writes.push({ path, file }); files.set(path, file); },
         pushMsg: async () => {}, pushErrMsg: async () => {},
     }, {
         reencodeImageBlob: async (_blob, format) => { assert.equal(format, 'webp'); return new Blob(['small']); },
@@ -429,10 +514,12 @@ test('WebP conversion changes only the extension even when the target already ex
     plugin.settings.convertToWebP = true;
     const result = await plugin.compressImageAsset('assets/测试图片-20261001000000-abcdefg.PNG', undefined, { silent: true });
     assert.equal(result.status, 'compressed');
-    assert.equal(result.savedPath, 'assets/测试图片-20261001000000-abcdefg.webp');
+    assert.equal(result.savedPath, 'assets/测试图片-20261001000000-abcdefg-1.webp');
+    assert.equal(files.get('data/assets/测试图片-20261001000000-abcdefg.webp'), target);
+    assert.equal(files.get('data/assets/测试图片-20261001000000-abcdefg.PNG'), source);
     assert.equal(writes.length, 1);
     assert.equal(writes[0].path, `data/${result.savedPath}`);
-    assert.equal(writes[0].file.name, '测试图片-20261001000000-abcdefg.webp');
+    assert.equal(writes[0].file.name, '测试图片-20261001000000-abcdefg-1.webp');
 });
 
 test('same-path background compression does not rewrite blocks or delete the asset', async () => {
@@ -493,10 +580,11 @@ test('single-image compression and editor saves update references without starti
     plugin.compressImageAsset = async () => ({
         status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp', originalSize: 100, savedSize: 40,
     });
-    plugin.replaceImageAssetReferenceInBlock = async (...args) => {
-        assert.equal(args[3], live, 'Use the block belonging to the clicked image');
-        references.push(args.slice(0, 3));
+    plugin.replaceImageAssetReferencesEverywhere = async (...args) => {
+        assert.equal(args[2], live, 'Use the block belonging to the clicked image');
+        references.push(['global', ...args.slice(0, 2)]);
     };
+    plugin.replaceImageAssetReferenceInBlock = async (...args) => references.push(args.slice(0, 3));
     await plugin.openMenuImageHandler({ detail: { element: { querySelector: () => live.image, closest: () => live } } });
     await items.get('compress-image').click();
     let onSave;
@@ -504,7 +592,7 @@ test('single-image compression and editor saves update references without starti
     await items.get('edit-image').click();
     await onSave('assets/edited.webp');
     assert.deepEqual(references, [
-        ['block', 'assets/a.png', 'assets/a.webp'], ['block', 'assets/a.png', 'assets/edited.webp'],
+        ['global', 'assets/a.png', 'assets/a.webp'], ['block', 'assets/a.png', 'assets/edited.webp'],
     ]);
     assert.equal(cleanupCalls, 0, 'Continue editing without triggering the kernel cleanup race');
 });
@@ -520,9 +608,9 @@ test('document conversion saves every reference without per-image cleanup reques
     plugin.compressImageAsset = async path => ({
         status: 'compressed', originalPath: path, savedPath: path.replace(/\.png$/, '.webp'), originalSize: 100, savedSize: 40,
     });
-    plugin.replaceImageAssetReferencesInDocument = async (id, paths) => references.push([id, [...paths]]);
+    plugin.replaceImageAssetReferencesEverywhere = async (...args) => references.push(args);
     await plugin.compressDocumentImageAssets('doc', ['assets/a.png', 'assets/b.png'], { outputFormat: 'webp' });
-    assert.deepEqual(references, [['doc', [['assets/a.png', 'assets/a.webp'], ['assets/b.png', 'assets/b.webp']]]]);
+    assert.deepEqual(references, [['assets/a.png', 'assets/a.webp'], ['assets/b.png', 'assets/b.webp']]);
     assert.equal(cleanupCalls, 0);
 });
 
@@ -535,7 +623,7 @@ test('a paste removed during compression leaves the unused output for explicit S
     });
     plugin.waitForAutomaticImageReferences = async () => ['block'];
     plugin.getAutomaticImageReferenceBlocks = async () => [];
-    plugin.replaceAutomaticImageReferences = async () => 0;
+    plugin.replaceImageAssetReferencesEverywhere = async () => 0;
     plugin.compressImageAsset = async () => ({
         status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp', originalSize: 100, savedSize: 40,
     });

@@ -15,7 +15,8 @@ test('manual compression preserves image blocks when gutter buttons share the bl
         const source = ts.createSourceFile('index.ts', readFileSync(path.resolve(__dirname, '../src/index.ts'), 'utf8'),
             ts.ScriptTarget.Latest, true);
         const plugin = source.statements.find(ts.isClassDeclaration);
-        const names = new Set(['updateImageElementsWithPathMap', 'replaceImageAssetReferenceInBlock', 'openMenuImageHandler']);
+        const names = new Set(['updateImageElementsWithPathMap', 'replaceImageAssetReferenceInBlock',
+            'replaceImageAssetReferencesEverywhere', 'openMenuImageHandler']);
         const methods = plugin.members.filter(node => names.has(node.name?.getText(source)))
             .map(node => node.getText(source)).join('\n');
         const normalize = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name.text === 'normalizeAssetPath');
@@ -31,15 +32,21 @@ test('manual compression preserves image blocks when gutter buttons share the bl
             const saved = 'assets/pasted.webp';
             const items = new Map();
             const writes = [];
-            let stored, failWrite = false, reads = 0;
+            let stored, failWrite = false, reads = 0, closedStored;
+            const closedID = '20261115120000-closed1';
             const api = {
-                getBlockDOM: async () => { reads++; return { dom: stored }; },
+                sql: async stmt => stmt.includes("AND id > ''") ? [
+                    { id: 'ref-1', block_id: id, path: original },
+                    ...(closedStored ? [{ id: 'ref-2', block_id: closedID, path: original }] : []),
+                ] : [],
+                getBlockDOM: async blockID => { reads++; return { dom: blockID === closedID ? closedStored : stored }; },
                 updateBlock: async (type, html, blockID) => {
                     check.equal(type, 'dom');
-                    check.equal(blockID, id);
+                    check.ok(blockID === id || blockID === closedID);
                     writes.push(html);
                     if (failWrite) return null;
-                    stored = lute.SpinBlockDOM(html);
+                    if (blockID === closedID) closedStored = lute.SpinBlockDOM(html);
+                    else stored = lute.SpinBlockDOM(html);
                     return [{}];
                 },
                 pushErrMsg: message => check.fail(message),
@@ -120,6 +127,18 @@ test('manual compression preserves image blocks when gutter buttons share the bl
             await plugin.replaceImageAssetReferenceInBlock(id, original, saved);
             verifySaved();
             check.equal(reads, 1);
+
+            // A global conversion also persists all copies in a closed document.
+            block = mount();
+            closedStored = lute.Md2BlockDOM(`closed ![one](${original}) ![two](${original}?width=300#preview) ![other](assets/other.png)`)
+                .replace(/data-node-id="[^"]+"/, `data-node-id="${closedID}"`);
+            check.equal(await plugin.replaceImageAssetReferencesEverywhere(original, saved, block), 2);
+            verifySaved();
+            const closedMarkdown = lute.BlockDOM2StdMd(closedStored);
+            check.ok(closedMarkdown.includes(`![one](${saved})`), closedMarkdown);
+            check.ok(closedMarkdown.includes(`![two](${saved}?width=300#preview)`), closedMarkdown);
+            check.ok(closedMarkdown.includes('![other](assets/other.png)'), closedMarkdown);
+            check.ok(closedMarkdown.includes('closed'), closedMarkdown);
             return 'reference update passed';
         };
         const html = path.join(temporary, 'index.html');

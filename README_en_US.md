@@ -98,7 +98,7 @@ The **Compression** settings place automatic paste compression at the top. Choos
 
 The single-image and document compression dialogs offer temporary PNG, JPEG or WebP output, a quality slider, a longest-edge limit, original/compressed previews and file sizes. Defaults follow the global format and parameters. Document compression includes individual previews and the estimated saved total. Temporary choices do not change global settings. PNG quality 100 means lossless compression; images with editable project data must remain PNG or WebP to preserve that data.
 
-Manual compression, batch compression, and automatic paste/drop compression use the result only if it is smaller; otherwise, the original image is kept. Same-format compression preserves the filename and link. Format conversion changes only the extension and updates the corresponding image references. Saving edits follows the selected compression format; JPG output stores editable project data in a separate JSON backup.
+Manual compression, batch compression, and automatic paste/drop compression use the result only if it is smaller; otherwise, the original image is kept. Same-format compression preserves the filename and link. Format conversion updates references to that image across all documents, including closed documents and repeated references. It normally changes only the extension; if the target file already exists, a numeric suffix is added to avoid overwriting another image. Saving edits follows the selected compression format; JPG output stores editable project data in a separate JSON backup.
 
 Original assets are retained after format conversion. Use SiYuan's unused-asset cleanup to remove them together, avoiding cleanup conflicts while you continue editing your notes.
 

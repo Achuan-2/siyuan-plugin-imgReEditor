@@ -613,14 +613,14 @@ export default class PluginSample extends Plugin {
         const changedBlocks = new Map<string, HTMLElement>();
         root.querySelectorAll('img').forEach((element: Element) => {
             const image = element as HTMLImageElement;
-            const currentPath = normalizeAssetPath(
-                image.dataset?.src || image.getAttribute('data-src') || image.getAttribute('src')
-            );
+            const currentURL = image.dataset?.src || image.getAttribute('data-src') || image.getAttribute('src');
+            const currentPath = normalizeAssetPath(currentURL);
             const newPath = currentPath ? pathMap.get(currentPath) : null;
             if (!newPath) return;
 
-            image.setAttribute('data-src', newPath);
-            image.setAttribute('src', newPath);
+            const newURL = newPath + (currentURL?.match(/[?#].*$/)?.[0] || '');
+            image.setAttribute('data-src', newURL);
+            image.setAttribute('src', newURL);
             const block = image.closest('[data-node-id]') as HTMLElement | null;
             const blockID = block?.getAttribute('data-node-id');
             if (block && blockID) changedBlocks.set(blockID, block);
@@ -630,31 +630,66 @@ export default class PluginSample extends Plugin {
 
     // Keep resource disposal in SiYuan's explicit unused-asset cleanup. Running
     // its global reference scan after every save races ongoing document edits.
-    private async replaceImageAssetReferencesInDocument(
-        docID: string,
-        pathMap: Map<string, string>
-    ) {
-        if (pathMap.size === 0) return;
-        const { getBlockDOM, updateBlock } = await import('./api');
-        const blockDOM = await getBlockDOM(docID) as any;
-        const html =
-            typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || blockDOM?.content || '';
-        if (!html) throw new Error('Unable to load document DOM for WebP reference update');
-
-        const parsed = new DOMParser().parseFromString(html, 'text/html');
-        const changedBlocks = this.updateImageElementsWithPathMap(parsed, pathMap);
-        for (const [blockID, block] of changedBlocks) {
-            await updateBlock('dom', block.outerHTML, blockID);
+    /** Resolve all pages before writing blocks, since writes change the asset index. */
+    private async replaceImageAssetReferencesEverywhere(
+        originalPath: string,
+        savedPath: string,
+        sourceBlock?: HTMLElement,
+        isActive: () => boolean = () => true
+    ): Promise<number> {
+        if (originalPath === savedPath) return 0;
+        const { sql } = await import('./api');
+        const escape = (value: string) => value.replace(/'/g, "''");
+        const fileName = originalPath.split('/').pop()!;
+        const names = [...new Set([fileName, encodeURIComponent(fileName)])];
+        const condition = names.map(name => `instr(lower(path), lower('${escape(name)}')) > 0`).join(' OR ');
+        const blockIDs = new Set<string>();
+        let cursor = '';
+        while (isActive()) {
+            const references = await sql(
+                `SELECT id, block_id, path FROM assets WHERE (${condition}) AND id > '${escape(cursor)}' ORDER BY id LIMIT 256`
+            );
+            if (!Array.isArray(references)) throw new Error('Unable to load image references');
+            if (references.length === 0) break;
+            for (const reference of references) {
+                if (normalizeAssetPath(reference.path) === originalPath && reference.block_id) {
+                    blockIDs.add(reference.block_id);
+                }
+            }
+            const nextCursor = references[references.length - 1].id;
+            if (typeof nextCursor !== 'string' || nextCursor <= cursor) {
+                throw new Error('Unable to paginate image references');
+            }
+            cursor = nextCursor;
         }
+
+        // Include images inserted before their asset-index transaction completes.
+        document.querySelectorAll<HTMLImageElement>('.protyle-wysiwyg img').forEach(image => {
+            if (normalizeAssetPath(image.dataset.src || image.getAttribute('src')) !== originalPath) return;
+            const id = image.closest('[data-node-id]')?.getAttribute('data-node-id');
+            if (id) blockIDs.add(id);
+        });
+        const sourceID = sourceBlock?.getAttribute('data-node-id');
+        if (sourceID) blockIDs.add(sourceID);
+
+        let replaced = 0;
+        for (const blockID of blockIDs) {
+            if (!isActive()) break;
+            if (await this.replaceImageAssetReferenceInBlock(blockID, originalPath, savedPath, sourceBlock, isActive)) {
+                replaced += 1;
+            }
+        }
+        return replaced;
     }
 
     private async replaceImageAssetReferenceInBlock(
         blockID: string,
         originalPath: string,
         savedPath: string,
-        sourceBlock?: HTMLElement
+        sourceBlock?: HTMLElement,
+        isActive: () => boolean = () => true
     ) {
-        if (!blockID || originalPath === savedPath) return;
+        if (!isActive() || !blockID || originalPath === savedPath) return false;
         // The live DOM may already have been refreshed to savedPath.
         const pathMap = new Map([
             [originalPath, savedPath],
@@ -673,23 +708,25 @@ export default class PluginSample extends Plugin {
             // If the image was removed/replaced during compression, leave it alone.
             const clone = liveBlock.cloneNode(true) as HTMLElement;
             const changedBlock = this.updateImageElementsWithPathMap(clone, pathMap).get(blockID);
-            if (!changedBlock) return;
+            if (!changedBlock) return false;
             const updated = await updateBlock('dom', changedBlock.outerHTML, blockID);
             if (!updated) throw new Error('Unable to save compressed image reference');
             for (const block of liveBlocks) this.updateImageElementsWithPathMap(block, pathMap);
-            return;
+            return true;
         }
 
         const blockDOM = await getBlockDOM(blockID) as any;
+        if (!isActive()) return false;
         const html =
             typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || blockDOM?.content || '';
         if (!html) throw new Error('Unable to load image block for WebP reference update');
         const parsed = new DOMParser().parseFromString(html, 'text/html');
         const changedBlocks = this.updateImageElementsWithPathMap(parsed, pathMap);
         const changedBlock = changedBlocks.get(blockID);
-        if (!changedBlock) throw new Error('Image reference was not found in its block');
+        if (!changedBlock) return false;
         const updated = await updateBlock('dom', changedBlock.outerHTML, blockID);
         if (!updated) throw new Error('Unable to save compressed image reference');
+        return true;
     }
 
     private getDocIDFromEditorTitleDetail(detail: any) {
@@ -1045,9 +1082,11 @@ export default class PluginSample extends Plugin {
 
         if (convertedPaths.size > 0) {
             try {
-                await this.replaceImageAssetReferencesInDocument(docID, convertedPaths);
+                for (const [originalPath, savedPath] of convertedPaths) {
+                    await this.replaceImageAssetReferencesEverywhere(originalPath, savedPath);
+                }
             } catch (error) {
-                console.error('Failed to update converted WebP references in document:', error);
+                console.error('Failed to update global image references for document compression:', docID, error);
                 await pushErrMsg(t('documentImageCompression.referenceUpdateFailed'));
                 return;
             }
@@ -1097,9 +1136,19 @@ export default class PluginSample extends Plugin {
 
         const outputFormat = options.outputFormat === 'original' ? format
             : options.outputFormat || getCompressionOutputFormat(this.settings, format);
-        const savedFileName =
+        let savedFileName =
             outputFormat === format ? fileName : replaceFileExtension(fileName, outputFormat);
-        const savedPath = imagePath.replace(/[^/]+$/, savedFileName);
+        let savedPath = imagePath.replace(/[^/]+$/, savedFileName);
+        if (savedPath !== imagePath) {
+            const targetName = savedFileName;
+            let suffix = 1;
+            // Different source formats can share a stem. Never overwrite another
+            // converted asset which may already be referenced by other notes.
+            while (await getFileBlob(`data/${savedPath}`)) {
+                savedFileName = targetName.replace(/\.[^.]+$/, `-${suffix++}.${outputFormat}`);
+                savedPath = imagePath.replace(/[^/]+$/, savedFileName);
+            }
+        }
         const compressionOptions = {
             ...getFormatCompressionOptions(this.settings, outputFormat),
             ...options.formatOptions?.[outputFormat],
@@ -1422,14 +1471,13 @@ export default class PluginSample extends Plugin {
                         const result = await this.compressImageAsset(imageURL, imageElement, choice);
                         if (result.status === 'compressed' && result.originalPath !== result.savedPath) {
                             try {
-                                await this.replaceImageAssetReferenceInBlock(
-                                    blockID || '',
+                                await this.replaceImageAssetReferencesEverywhere(
                                     result.originalPath,
                                     result.savedPath,
                                     blockElement
                                 );
                             } catch (error) {
-                                console.error('Failed to update converted WebP block reference:', error);
+                                console.error('Failed to update converted image references:', error);
                                 const { pushErrMsg } = await import('./api');
                                 await pushErrMsg(t('imageCompression.referenceUpdateFailed'));
                             }
@@ -2100,39 +2148,6 @@ export default class PluginSample extends Plugin {
         return [];
     }
 
-    private async replaceAutomaticImageReferences(
-        originalPath: string,
-        savedPath: string,
-        blockIDs: string[],
-        isActive: () => boolean
-    ): Promise<number> {
-        const { getBlockDOM, updateBlock } = await import('./api');
-        const pathMap = new Map([[originalPath, savedPath]]);
-        let replaced = 0;
-        for (const blockID of blockIDs) {
-            if (!isActive()) break;
-            const blockDOM = await getBlockDOM(blockID) as any;
-            if (!isActive()) break;
-            const html = typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || '';
-            const liveBlocks = Array.from(document.querySelectorAll('.protyle-wysiwyg [data-node-id]'))
-                .filter(element => element.getAttribute('data-node-id') === blockID);
-            const selectionNode = window.getSelection()?.anchorNode;
-            const liveBlock = liveBlocks.find(block => selectionNode && block.contains(selectionNode)) || liveBlocks[0];
-            // Clone the current block after the async read to preserve text entered
-            // during compression. If the user removed/replaced the image, skip it.
-            const root = liveBlock ? liveBlock.cloneNode(true) as HTMLElement :
-                new DOMParser().parseFromString(html, 'text/html');
-            const changed = this.updateImageElementsWithPathMap(root, pathMap);
-            const block = changed.get(blockID);
-            if (!block) continue;
-            const updated = await updateBlock('dom', block.outerHTML, blockID);
-            if (!updated) throw new Error('Unable to save compressed image reference');
-            replaced += 1;
-            for (const live of liveBlocks) this.updateImageElementsWithPathMap(live, pathMap);
-        }
-        return replaced;
-    }
-
     private queueAutomaticImageCompression(
         uploadedPaths: string[],
         docID: string,
@@ -2170,9 +2185,8 @@ export default class PluginSample extends Plugin {
                     }
                     if (result.status !== 'compressed' || !isActive()) continue;
                     if (result.savedPath !== path) {
-                        const currentReferences = await this.getAutomaticImageReferenceBlocks(path, docID);
-                        const replaced = await this.replaceAutomaticImageReferences(
-                            path, result.savedPath, [...new Set([...references, ...currentReferences])], isActive
+                        const replaced = await this.replaceImageAssetReferencesEverywhere(
+                            path, result.savedPath, undefined, isActive
                         );
                         if (replaced === 0) {
                             // Keep unreferenced output for SiYuan's explicit cleanup.
