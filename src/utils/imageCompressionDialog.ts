@@ -24,6 +24,14 @@ interface DialogOptions {
     confirm: (choice: ImageCompressionChoice) => Promise<void>;
 }
 
+interface PreviewResult {
+    sourceSize: number;
+    outputSize?: number;
+    source?: Blob;
+    output?: Blob;
+    error?: string;
+}
+
 function bytes(size: number) {
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
@@ -41,7 +49,7 @@ export function showImageCompressionDialog(options: DialogOptions): void {
     let originalURL = '';
     let outputURL = '';
     let view: 'original' | 'output' = 'output';
-    const results = new Map<string, { sourceSize: number; outputSize?: number; source?: Blob; output?: Blob; error?: string }>();
+    let result: PreviewResult | undefined;
     // Keep quality overrides per format. Untouched formats inherit global values.
     const overrides = new Map<CompressibleImageFormat, ReencodeOptions>();
     const dispose = () => {
@@ -50,7 +58,7 @@ export function showImageCompressionDialog(options: DialogOptions): void {
         clearTimeout(timer);
         if (originalURL) URL.revokeObjectURL(originalURL);
         if (outputURL) URL.revokeObjectURL(outputURL);
-        results.clear();
+        result = undefined;
     };
     const dialog = new Dialog({
         title: options.title,
@@ -95,7 +103,7 @@ export function showImageCompressionDialog(options: DialogOptions): void {
     <div><label class="ic-row"><span data-limit-label></span><input data-limit type="checkbox" class="b3-switch"></label>
       <label data-pixels-row class="ic-row" style="margin-top:12px"><span data-pixels-label></span><input data-pixels type="number" min="1" step="1" required class="b3-text-field" style="width:100px"></label>
     </div>
-    <div style="margin-top:auto"><div data-progress role="status"></div><div class="ic-row" style="margin-top:12px"><span data-total-label></span><span data-total>—</span></div></div>
+    <div class="ic-row" style="margin-top:auto"><span data-total-label></span><span data-total>—</span></div>
     <div data-note></div>
   </div>
 </div>
@@ -109,7 +117,7 @@ export function showImageCompressionDialog(options: DialogOptions): void {
         ['[data-original]', 'original'], ['[data-output]', 'preview'], ['[data-format-label]', 'format'],
         ['[data-original-format]', 'originalFormat'], ['[data-quality-label]', 'quality'],
         ['[data-limit-label]', 'limitLongEdge'], ['[data-pixels-label]', 'maxLongEdge'],
-        ['[data-total-label]', items.length > 1 ? 'estimatedTotal' : 'estimatedSize'],
+        ['[data-total-label]', 'estimatedSize'],
         ['[data-note]', 'keepSmaller'], ['[data-confirm]', 'apply'],
     ]) text(selector, key);
     find('[data-cancel]').textContent = window.siyuan.languages.cancel;
@@ -150,8 +158,6 @@ export function showImageCompressionDialog(options: DialogOptions): void {
         find('[data-quality-value]').textContent = lossless ? `100 · ${t('imageCompression.lossless')}` : quality.value;
     };
     const render = () => {
-        const item = selected();
-        const result = results.get(item.path);
         if (originalURL) URL.revokeObjectURL(originalURL);
         if (outputURL) URL.revokeObjectURL(outputURL);
         originalURL = result?.source ? URL.createObjectURL(result.source) : '';
@@ -166,69 +172,52 @@ export function showImageCompressionDialog(options: DialogOptions): void {
             : result?.sourceSize ? bytes(result.sourceSize) : '';
         find('[data-error]').textContent = result?.error || '';
     };
-    const refreshTotal = () => {
-        let total = 0;
-        for (const result of results.values()) total += Math.min(result.sourceSize, result.outputSize ?? result.sourceSize);
-        find('[data-total]').textContent = results.size === items.length && [...results.values()].every(result => result.sourceSize > 0) ? bytes(total) : '—';
-        find('[data-progress]').textContent = results.size < items.length
-            ? t('imageCompression.previewProgress', { current: String(results.size), total: String(items.length) }) : '';
-        confirm.disabled = results.size !== items.length || ![...results.values()].some(result => result.outputSize !== undefined);
+    const refreshStatus = () => {
+        find('[data-total]').textContent = result?.outputSize !== undefined
+            ? bytes(Math.min(result.sourceSize, result.outputSize)) : '—';
+        confirm.disabled = result?.outputSize === undefined;
     };
     // One encoding at a time; moving the slider supersedes stale work rather
-    // than launching a worker job for every input event. Preview selected first.
+    // than launching a worker job for every input event. Only load the selected image.
     const run = async () => {
         if (closed || running || (limit.checked && !pixels.validity.valid)) return;
+        clearTimeout(timer);
         running = true;
         const current = revision;
         try {
-            const first = selected();
-            const ordered = [first, ...items.filter(item => item !== first)];
-            for (const item of ordered) {
-                if (closed || current !== revision) break;
-                const cached = results.get(item.path);
-                if (cached && (cached.outputSize !== undefined || cached.error) &&
-                    (item !== selected() || (cached.source && (cached.output || cached.error)))) continue;
-                let source: Blob | undefined;
-                try {
-                    source = await options.load(item);
-                    if (!source?.size) throw new Error(t('imageCompression.previewFailed'));
-                    if (closed || current !== revision) break;
-                    // Show the source while the first encode is still pending.
-                    results.set(item.path, { sourceSize: source.size, source: item === selected() ? source : undefined });
-                    if (item === selected()) render();
-                    const encoded = await options.encode(item, source, choiceFor(item));
-                    if (closed || current !== revision) break;
-                    // Keep encoded blobs only for the selected image to bound memory.
-                    results.set(item.path, {
-                        sourceSize: source.size, outputSize: encoded.size,
-                        source: item === selected() ? source : undefined,
-                        output: item === selected() ? encoded : undefined,
-                    });
-                } catch (error) {
-                    if (closed || current !== revision) break;
-                    results.set(item.path, {
-                        sourceSize: source?.size || 0, source: item === selected() ? source : undefined,
-                        error: error instanceof Error ? error.message : t('imageCompression.previewFailed'),
-                    });
-                }
-                if (item === selected()) render();
-                refreshTotal();
+            const item = selected();
+            let source: Blob | undefined;
+            try {
+                source = await options.load(item);
+                if (!source?.size) throw new Error(t('imageCompression.previewFailed'));
+                if (closed || current !== revision) return;
+                // Show the source while its encode is still pending.
+                result = { sourceSize: source.size, source };
+                render();
+                const encoded = await options.encode(item, source, choiceFor(item));
+                if (closed || current !== revision) return;
+                result = { sourceSize: source.size, outputSize: encoded.size, source, output: encoded };
+            } catch (error) {
+                if (closed || current !== revision) return;
+                result = {
+                    sourceSize: source?.size || 0, source,
+                    error: error instanceof Error ? error.message : t('imageCompression.previewFailed'),
+                };
             }
+            render();
+            refreshStatus();
         } finally {
             running = false;
-            const currentResult = results.get(selected().path);
-            if (!closed && (current !== revision ||
-                (currentResult?.outputSize !== undefined && !currentResult.output))) void run();
+            if (!closed && current !== revision) void run();
         }
     };
-    const schedule = () => {
+    const schedule = (delay = 250) => {
         revision++;
         clearTimeout(timer);
-        results.clear();
+        result = undefined;
         render();
-        confirm.disabled = true;
-        refreshTotal();
-        timer = setTimeout(() => void run(), 250);
+        refreshStatus();
+        timer = setTimeout(() => void run(), delay);
     };
     const syncLimit = () => {
         pixels.disabled = !limit.checked;
@@ -250,12 +239,8 @@ export function showImageCompressionDialog(options: DialogOptions): void {
         else { revision++; clearTimeout(timer); confirm.disabled = true; }
     });
     file.addEventListener('change', () => {
-        for (const [path, result] of results) {
-            if (path !== selected().path) { result.source = undefined; result.output = undefined; }
-        }
         syncQuality();
-        render();
-        void run();
+        schedule(0);
     });
     for (const tab of ['original', 'output'] as const) find(`[data-${tab}]`).addEventListener('click', () => {
         view = tab;
@@ -279,6 +264,6 @@ export function showImageCompressionDialog(options: DialogOptions): void {
     });
     syncQuality();
     syncLimit();
-    refreshTotal();
+    refreshStatus();
     void run();
 }

@@ -116,8 +116,9 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
                 ['data/assets/a.png', new Blob([source, new Uint8Array(6000)], { type: 'image/png' })],
                 ['data/assets/b.jpg', new Blob([jpegSource, new Uint8Array(6000)], { type: 'image/jpeg' })],
             ]);
+            const loadedPaths = [];
             const api = {
-                getFileBlob: async path => stored.get(path),
+                getFileBlob: async path => { loadedPaths.push(path); return stored.get(path); },
                 putFile: async (path, _dir, blob) => stored.set(path, blob),
                 pushMsg: async () => {}, pushErrMsg: async () => {},
             };
@@ -212,13 +213,19 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             assert.equal(stored.get('data/assets/a.jpeg').type, 'image/jpeg');
             assert.deepEqual(plugin.settings, globalSettings);
 
+            loadedPaths.length = 0;
             form = await open(['assets/a.png', 'assets/b.jpg', 'assets/a.png']);
             assert.equal(form.file.options.length, 2, 'Deduplicate repeated document resources');
             assert.equal(form.format.value, 'original');
+            assert.equal(form.root.querySelector('[data-total-label]').textContent, translate('imageCompression.estimatedSize'));
+            await new Promise(resolve => setTimeout(resolve, 300));
+            assert.deepEqual(loadedPaths, ['data/assets/a.png'], 'Opening a document preview only loads its selected image');
             change(form.quality, '50');
             await form.settle();
+            assert.deepEqual(loadedPaths, ['data/assets/a.png', 'data/assets/a.png'], 'Changing quality only reloads the selected image');
             change(form.file, '1', 'change');
-            await waitUntil(() => !form.root.querySelector('[data-preview]').hidden);
+            await form.settle();
+            assert.deepEqual(loadedPaths, ['data/assets/a.png', 'data/assets/a.png', 'data/assets/b.jpg']);
             assert.equal(form.quality.value, '85', 'Mixed-format quality follows each format independently');
             assert.ok(form.root.querySelector('[data-total]').textContent !== '—');
             form.submit();
@@ -258,6 +265,42 @@ test('pixel limits resize PNG/JPEG/WebP and manual dialogs inherit globals witho
             assert.equal(form.confirm.disabled, true);
             form.close();
             assert.equal(choices.length, 3);
+
+            // Switching during an encode must discard stale output and skip unselected images.
+            const previewLoads = [];
+            const previewEncodes = [];
+            let releaseEncode;
+            dialogModule.showImageCompressionDialog({
+                title: '按需预览',
+                items: ['a', 'b', 'c'].map(name => ({ path: `assets/${name}.png`, format: 'png' })),
+                defaultFormat: 'png', limitLongEdge: false, maxLongEdge: 2000,
+                defaults: () => ({ pngMode: 'lossless' }),
+                load: async item => { previewLoads.push(item.path); return source; },
+                encode: async item => {
+                    previewEncodes.push(item.path);
+                    if (item.path === 'assets/a.png') await new Promise(resolve => { releaseEncode = resolve; });
+                    return source;
+                },
+                confirm: async () => {},
+            });
+            const lazyRoot = currentDialog.element;
+            await waitUntil(() => !!releaseEncode);
+            change(lazyRoot.querySelector('[data-file]'), '1', 'change');
+            change(lazyRoot.querySelector('[data-file]'), '2', 'change');
+            assert.equal(lazyRoot.querySelector('[data-confirm]').disabled, true);
+            releaseEncode();
+            await waitUntil(() => !lazyRoot.querySelector('[data-confirm]').disabled);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            assert.deepEqual(previewLoads, ['assets/a.png', 'assets/c.png']);
+            assert.deepEqual(previewEncodes, ['assets/a.png', 'assets/c.png']);
+            // Closing during an encode must discard its result without starting more work.
+            change(lazyRoot.querySelector('[data-file]'), '0', 'change');
+            await waitUntil(() => previewEncodes.length === 3);
+            lazyRoot.querySelector('[data-cancel]').click();
+            releaseEncode();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            assert.deepEqual(previewLoads, ['assets/a.png', 'assets/c.png', 'assets/a.png']);
+            assert.equal(previewEncodes.length, 3);
 
             // Keep a settled dialog open for the host-side screenshot inspection.
             plugin.settings = { ...globalSettings };
