@@ -238,6 +238,7 @@ function normalizeAssetPath(rawPath?: string | null) {
 export default class PluginSample extends Plugin {
     _openMenuImageHandler: any;
     _clickEditorTitleIconHandler: any;
+    _openMenuDocTreeHandler: any;
     settings: any;
     screenshotManager: ScreenshotManager | null = null;
     private topBarElement: HTMLElement | null = null;
@@ -379,6 +380,9 @@ export default class PluginSample extends Plugin {
         this._clickEditorTitleIconHandler = this.openEditorTitleIconHandler.bind(this);
         this.eventBus.on('click-editortitleicon', this._clickEditorTitleIconHandler);
 
+        this._openMenuDocTreeHandler = this.openMenuDocTreeHandler.bind(this);
+        this.eventBus.on('open-menu-doctree', this._openMenuDocTreeHandler);
+
         // 注册斜杠菜单
         this.protyleSlash = [{
             filter: ["canvas", "huabu", "画布", "imgreeditor", "画板", "图片"],
@@ -495,6 +499,10 @@ export default class PluginSample extends Plugin {
                 this.eventBus.off('click-editortitleicon', this._clickEditorTitleIconHandler);
                 this._clickEditorTitleIconHandler = null;
             }
+            if (this._openMenuDocTreeHandler) {
+                this.eventBus.off('open-menu-doctree', this._openMenuDocTreeHandler);
+                this._openMenuDocTreeHandler = null;
+            }
             if (this.topBarElement) {
                 this.topBarElement.remove();
                 this.topBarElement = null;
@@ -607,6 +615,35 @@ export default class PluginSample extends Plugin {
         }
 
         return Array.from(paths);
+    }
+
+    private async getDocumentAndDescendantIDs(docID: string): Promise<string[]> {
+        const { getBlockByID, request } = await import('./api');
+        const root = await getBlockByID(docID);
+        if (root?.type !== 'd' || !root.box || !root.path) {
+            throw new Error(`Unable to locate document: ${docID}`);
+        }
+
+        const documentIDs = new Set([docID]);
+        const directories = [root.path];
+        for (let index = 0; index < directories.length; index += 1) {
+            const result = await request('/api/filetree/listDocsByPath', {
+                notebook: root.box,
+                path: directories[index],
+                maxListCount: 0,
+                ignoreMaxListHint: true,
+                showHidden: true,
+            });
+            if (!Array.isArray(result?.files)) {
+                throw new Error(`Unable to list child documents: ${directories[index]}`);
+            }
+            for (const child of result.files) {
+                if (!child?.id || !child.path || documentIDs.has(child.id)) continue;
+                documentIDs.add(child.id);
+                if (child.subFileCount > 0) directories.push(child.path);
+            }
+        }
+        return Array.from(documentIDs);
     }
 
     private updateImageElementsWithPathMap(root: ParentNode, pathMap: Map<string, string>) {
@@ -1361,36 +1398,71 @@ export default class PluginSample extends Plugin {
             icon: 'iconImage',
             label: t('documentImageCompression.title'),
             index: 1,
-            click: async () => {
-                const { pushMsg, pushErrMsg } = await import('./api');
-
-                try {
-                    const imageURLs = await this.getDocumentImageAssetPaths(docID, detail.protyle);
-                    const compressibleImageURLs = imageURLs.filter((imageURL) => getCompressibleImageFormat(imageURL));
-
-                    if (imageURLs.length === 0) {
-                        await pushMsg(t('documentImageCompression.noLocalImages'));
-                        return;
-                    }
-
-                    if (compressibleImageURLs.length === 0) {
-                        await pushMsg(t('documentImageCompression.noCompressibleImages'));
-                        return;
-                    }
-
-                    await this.showImageCompressionDialog(
-                        t('documentImageCompression.title'),
-                        compressibleImageURLs,
-                        async (choice) => {
-                            await this.compressDocumentImageAssets(docID, compressibleImageURLs, choice);
-                        }
-                    );
-                } catch (error) {
-                    console.error('Compress document images failed:', error);
-                    await pushErrMsg(t('documentImageCompression.scanFailed'));
-                }
-            }
+            click: () => this.openDocumentImageCompression(docID, detail.protyle),
         });
+    }
+
+    openMenuDocTreeHandler({ detail }) {
+        if (!detail?.menu || detail.type !== 'doc') return;
+        const elements = Array.from(detail.elements || []) as HTMLElement[];
+        if (elements.length > 1 || detail.items?.length > 1) return;
+        const element = elements[0];
+        const item = detail.items?.[0];
+        const docID = item?.id || element?.getAttribute('data-node-id');
+        const childCount = item?.subFileCount ?? element?.getAttribute('data-count');
+        const toggle = element?.querySelector('.b3-list-item__toggle');
+        const arrow = toggle?.querySelector('.b3-list-item__arrow');
+        // Register synchronously: SiYuan builds the plugin submenu before awaiting any work.
+        const hasChildren = childCount != null
+            ? Number(childCount) > 0
+            : !!toggle && ![toggle, arrow].some(node =>
+                node?.classList.contains('fn__hidden') || node?.classList.contains('fn__none'));
+        if (!docID || !hasChildren) return;
+
+        detail.menu.addItem({
+            id: 'compress-document-tree-images',
+            icon: 'iconImage',
+            label: t('documentImageCompression.titleWithChildren'),
+            click: () => this.openDocumentImageCompression(docID, undefined, true),
+        });
+    }
+
+    private async openDocumentImageCompression(docID: string, protyle?: any, includeDescendants = false) {
+        const { pushMsg, pushErrMsg } = await import('./api');
+        const title = t(includeDescendants
+            ? 'documentImageCompression.titleWithChildren'
+            : 'documentImageCompression.title');
+        const emptyMessage = includeDescendants
+            ? 'documentImageCompression.noLocalImagesWithChildren'
+            : 'documentImageCompression.noLocalImages';
+        const unsupportedMessage = includeDescendants
+            ? 'documentImageCompression.noCompressibleImagesWithChildren'
+            : 'documentImageCompression.noCompressibleImages';
+
+        try {
+            const documentIDs = includeDescendants ? await this.getDocumentAndDescendantIDs(docID) : [docID];
+            const paths = new Set<string>();
+            // Scan documents in order so large document trees do not load all DOMs at once.
+            for (const id of documentIDs) {
+                const imageURLs = await this.getDocumentImageAssetPaths(id, id === docID ? protyle : undefined);
+                imageURLs.forEach(path => paths.add(path));
+            }
+            if (paths.size === 0) {
+                await pushMsg(t(emptyMessage));
+                return;
+            }
+            const imageURLs = Array.from(paths).filter(path => getCompressibleImageFormat(path));
+            if (imageURLs.length === 0) {
+                await pushMsg(t(unsupportedMessage));
+                return;
+            }
+            await this.showImageCompressionDialog(title, imageURLs, choice =>
+                this.compressDocumentImageAssets(docID, imageURLs, choice)
+            );
+        } catch (error) {
+            console.error('Compress document images failed:', error);
+            await pushErrMsg(t('documentImageCompression.scanFailed'));
+        }
     }
 
     async openMenuImageHandler({ detail }) {

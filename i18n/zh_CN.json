@@ -211,8 +211,11 @@
     },
     "documentImageCompression": {
         "title": "批量压缩文档图片",
+        "titleWithChildren": "压缩当前文档及其子文档的图片",
         "noLocalImages": "当前文档没有本地图片",
+        "noLocalImagesWithChildren": "当前文档及其子文档没有本地图片",
         "noCompressibleImages": "当前文档没有可压缩的 PNG/JPG/JPEG/WebP 图片",
+        "noCompressibleImagesWithChildren": "当前文档及其子文档没有可压缩的 PNG/JPG/JPEG/WebP 图片",
         "confirmConvert": "将尝试把文档中的 ${count} 张图片转换为 WebP；仅采用体积更小的结果，并同步更新其他文档中这些图片的引用；原资源保留供思源统一清理。继续吗？",
         "confirmOverwrite": "将使用当前压缩设置覆盖当前文档中的 ${count} 张图片，并跳过压缩后不变小的图片。继续吗？",
         "scanFailed": "扫描文档图片失败",
