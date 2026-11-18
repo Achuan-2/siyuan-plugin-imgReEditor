@@ -212,6 +212,9 @@
     "documentImageCompression": {
         "title": "批量压缩文档图片",
         "titleWithChildren": "压缩当前文档及其子文档的图片",
+        "scanning": "正在扫描文档图片",
+        "compressing": "正在压缩图片",
+        "updatingReferences": "正在更新图片引用",
         "noLocalImages": "当前文档没有本地图片",
         "noLocalImagesWithChildren": "当前文档及其子文档没有本地图片",
         "noCompressibleImages": "当前文档没有可压缩的 PNG/JPG/JPEG/WebP 图片",

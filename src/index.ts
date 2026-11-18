@@ -1085,6 +1085,7 @@ export default class PluginSample extends Plugin {
 
     private async compressDocumentImageAssets(docID: string, imageURLs: string[], choice: ImageCompressionChoice = {}) {
         const { pushMsg, pushErrMsg } = await import('./api');
+        const { showImageCompressionProgress } = await import('./utils/imageCompressionProgress');
         const uniqueURLs = Array.from(new Set(imageURLs
             .map((imageURL) => normalizeAssetPath(imageURL))
             .filter((imageURL): imageURL is string => !!imageURL && !!getCompressibleImageFormat(imageURL))));
@@ -1094,77 +1095,88 @@ export default class PluginSample extends Plugin {
             return;
         }
 
-        await pushMsg(t('documentImageCompression.started', { count: String(uniqueURLs.length) }));
+        const progress = showImageCompressionProgress(t('documentImageCompression.title'));
+        try {
+            const stats = {
+                compressed: 0,
+                skipped: 0,
+                failed: 0,
+                writeFailed: 0,
+                originalSize: 0,
+                savedSize: 0,
+            };
+            const convertedPaths = new Map<string, string>();
+            let completed = 0;
 
-        const stats = {
-            compressed: 0,
-            skipped: 0,
-            failed: 0,
-            writeFailed: 0,
-            originalSize: 0,
-            savedSize: 0,
-        };
-        const convertedPaths = new Map<string, string>();
-
-        for (const imageURL of uniqueURLs) {
-            const result = await this.compressImageAsset(imageURL, undefined, { ...choice, silent: true });
-            if (result.status === 'compressed') {
-                stats.compressed += 1;
-                stats.originalSize += result.originalSize;
-                stats.savedSize += result.savedSize;
-                if (result.originalPath !== result.savedPath) {
-                    convertedPaths.set(result.originalPath, result.savedPath);
+            for (const imageURL of uniqueURLs) {
+                const fileName = imageURL.split('/').pop() || imageURL;
+                progress.update({ phase: 'compressing', current: completed, total: uniqueURLs.length, fileName });
+                const result = await this.compressImageAsset(imageURL, undefined, { ...choice, silent: true });
+                if (result.status === 'compressed') {
+                    stats.compressed += 1;
+                    stats.originalSize += result.originalSize;
+                    stats.savedSize += result.savedSize;
+                    if (result.originalPath !== result.savedPath) {
+                        convertedPaths.set(result.originalPath, result.savedPath);
+                    }
+                } else if (result.status === 'failed') {
+                    stats.failed += 1;
+                } else if (result.reason === 'write-failed') {
+                    stats.writeFailed += 1;
+                } else {
+                    stats.skipped += 1;
                 }
-            } else if (result.status === 'failed') {
-                stats.failed += 1;
-            } else if (result.reason === 'write-failed') {
-                stats.writeFailed += 1;
-            } else {
-                stats.skipped += 1;
+                progress.update({ phase: 'compressing', current: ++completed, total: uniqueURLs.length, fileName });
             }
-        }
 
-        if (convertedPaths.size > 0) {
-            try {
-                for (const [originalPath, savedPath] of convertedPaths) {
-                    await this.replaceImageAssetReferencesEverywhere(originalPath, savedPath);
+            if (convertedPaths.size > 0) {
+                try {
+                    let updated = 0;
+                    for (const [originalPath, savedPath] of convertedPaths) {
+                        const fileName = originalPath.split('/').pop() || originalPath;
+                        progress.update({ phase: 'updatingReferences', current: updated, total: convertedPaths.size, fileName });
+                        await this.replaceImageAssetReferencesEverywhere(originalPath, savedPath);
+                        progress.update({ phase: 'updatingReferences', current: ++updated, total: convertedPaths.size, fileName });
+                    }
+                } catch (error) {
+                    console.error('Failed to update global image references for document compression:', docID, error);
+                    await pushErrMsg(t('documentImageCompression.referenceUpdateFailed'));
+                    return;
                 }
-            } catch (error) {
-                console.error('Failed to update global image references for document compression:', docID, error);
-                await pushErrMsg(t('documentImageCompression.referenceUpdateFailed'));
+            }
+
+            const failedCount = stats.failed + stats.writeFailed;
+            const sizeText = stats.compressed > 0
+                ? t('documentImageCompression.sizeChange', {
+                    originalSize: formatBytes(stats.originalSize),
+                    savedSize: formatBytes(stats.savedSize),
+                })
+                : '';
+
+            if (failedCount > 0) {
+                await pushErrMsg(
+                    t('documentImageCompression.summaryWithFailures', {
+                        compressed: String(stats.compressed),
+                        failed: String(failedCount),
+                        skipped: String(stats.skipped),
+                        sizeText,
+                    })
+                );
                 return;
             }
+
+            const skippedText = stats.skipped > 0
+                ? t('documentImageCompression.skipped', { count: String(stats.skipped) })
+                : '';
+            await pushMsg(t('documentImageCompression.summary', {
+                compressed: String(stats.compressed),
+                total: String(uniqueURLs.length),
+                skippedText,
+                sizeText,
+            }));
+        } finally {
+            progress.close();
         }
-
-        const failedCount = stats.failed + stats.writeFailed;
-        const sizeText = stats.compressed > 0
-            ? t('documentImageCompression.sizeChange', {
-                originalSize: formatBytes(stats.originalSize),
-                savedSize: formatBytes(stats.savedSize),
-            })
-            : '';
-
-        if (failedCount > 0) {
-            await pushErrMsg(
-                t('documentImageCompression.summaryWithFailures', {
-                    compressed: String(stats.compressed),
-                    failed: String(failedCount),
-                    skipped: String(stats.skipped),
-                    sizeText,
-                })
-            );
-            return;
-        }
-
-        const skippedText = stats.skipped > 0
-            ? t('documentImageCompression.skipped', { count: String(stats.skipped) })
-            : '';
-        await pushMsg(t('documentImageCompression.summary', {
-            compressed: String(stats.compressed),
-            total: String(uniqueURLs.length),
-            skippedText,
-            sizeText,
-        }));
     }
 
     /** Preview and saving share the exact encoder and metadata preparation. */
@@ -1436,6 +1448,7 @@ export default class PluginSample extends Plugin {
 
     private async openDocumentImageCompression(docID: string, protyle?: any, includeDescendants = false) {
         const { pushMsg, pushErrMsg } = await import('./api');
+        const { showImageCompressionProgress } = await import('./utils/imageCompressionProgress');
         const title = t(includeDescendants
             ? 'documentImageCompression.titleWithChildren'
             : 'documentImageCompression.title');
@@ -1446,14 +1459,19 @@ export default class PluginSample extends Plugin {
             ? 'documentImageCompression.noCompressibleImagesWithChildren'
             : 'documentImageCompression.noCompressibleImages';
 
+        const progress = showImageCompressionProgress(title);
         try {
             const documentIDs = includeDescendants ? await this.getDocumentAndDescendantIDs(docID) : [docID];
             const paths = new Set<string>();
+            let scanned = 0;
+            progress.update({ phase: 'scanning', current: 0, total: documentIDs.length });
             // Scan documents in order so large document trees do not load all DOMs at once.
             for (const id of documentIDs) {
                 const imageURLs = await this.getDocumentImageAssetPaths(id, id === docID ? protyle : undefined);
                 imageURLs.forEach(path => paths.add(path));
+                progress.update({ phase: 'scanning', current: ++scanned, total: documentIDs.length });
             }
+            progress.close();
             if (paths.size === 0) {
                 await pushMsg(t(emptyMessage));
                 return;
@@ -1469,6 +1487,8 @@ export default class PluginSample extends Plugin {
         } catch (error) {
             console.error('Compress document images failed:', error);
             await pushErrMsg(t('documentImageCompression.scanFailed'));
+        } finally {
+            progress.close();
         }
     }
 

@@ -64,6 +64,9 @@ test('manual and subtree WebP conversion persist all image and link references w
             const module = { exports: {} };
             const t = key => key;
             new Function('require', 'module', 'exports', 't', code)(name => {
+                if (name === './utils/imageCompressionProgress') {
+                    return { showImageCompressionProgress: () => ({ update() {}, close() {} }) };
+                }
                 check.equal(name, './api');
                 return api;
             }, module, module.exports, t);

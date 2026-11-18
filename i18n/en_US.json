@@ -212,6 +212,9 @@
     "documentImageCompression": {
         "title": "Compress document images",
         "titleWithChildren": "Compress images in this document and its subdocuments",
+        "scanning": "Scanning document images",
+        "compressing": "Compressing images",
+        "updatingReferences": "Updating image references",
         "noLocalImages": "No local images found in the current document.",
         "noLocalImagesWithChildren": "No local images found in the current document or its subdocuments.",
         "noCompressibleImages": "No compressible PNG, JPG/JPEG or WebP images found in the current document.",

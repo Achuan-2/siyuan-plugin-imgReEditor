@@ -171,6 +171,7 @@ function createPlugin(api, utils = {}) {
         './ScreenshotManager': {}, './utils/assetUploadObserver': { observeAssetUploads },
         './utils/assetImageRefresh': assetImageRefresh,
         './utils': utils, './api': api,
+        './utils/imageCompressionProgress': { showImageCompressionProgress: () => ({ update() {}, close() {} }) },
     }).default;
     const plugin = new Plugin();
     plugin.settings = { enablePasteImageCompression: true, convertToWebP: false };

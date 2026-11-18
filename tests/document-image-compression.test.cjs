@@ -8,7 +8,7 @@ const source = ts.transpileModule(readFileSync(resolve(__dirname, '../src/index.
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 
-function createPlugin(api = {}) {
+function createPlugin(api = {}, progressDialogs = []) {
     const module = { exports: {} };
     const imports = {
         siyuan: { Plugin: class {} }, '@/index.scss': {}, './Settings.svelte': {},
@@ -16,6 +16,14 @@ function createPlugin(api = {}) {
         './utils/i18n': { t: key => key, setPluginInstance() {} },
         './ScreenshotManager': {}, './utils/assetUploadObserver': {},
         './utils/assetImageRefresh': {}, './utils': {}, './api': api,
+        './utils/imageCompressionProgress': { showImageCompressionProgress(title) {
+            const progress = { title, states: [], closed: false };
+            progressDialogs.push(progress);
+            return {
+                update: state => { if (!progress.closed) progress.states.push(state); },
+                close: () => { progress.closed = true; },
+            };
+        } },
     };
     const document = { createElement: () => ({ remove() {} }) };
     new Function('require', 'module', 'exports', 'document', 'console', source)(name => {
@@ -202,13 +210,76 @@ test('empty and unsupported subtree results show messages matching the selected 
 
 test('a failed child listing reports the scan failure before offering partial compression', async () => {
     const messages = [];
+    const dialogs = [];
     const plugin = createPlugin({
         getBlockByID: async () => ({ type: 'd', box: 'notebook', path: '/parent.sy' }),
         request: async () => null,
         pushErrMsg: async text => messages.push(text),
-    });
+    }, dialogs);
     plugin.getDocumentImageAssetPaths = async () => assert.fail();
     plugin.showImageCompressionDialog = async () => assert.fail();
     await plugin.openDocumentImageCompression('parent', undefined, true);
     assert.deepEqual(messages, ['documentImageCompression.scanFailed']);
+    assert.equal(dialogs[0].closed, true);
+});
+
+test('scan progress counts documents and closes before opening compression settings', async () => {
+    const dialogs = [];
+    const plugin = createPlugin({}, dialogs);
+    plugin.getDocumentAndDescendantIDs = async () => ['parent', 'child'];
+    plugin.getDocumentImageAssetPaths = async () => ['assets/shared.png'];
+    plugin.showImageCompressionDialog = async () => assert.equal(dialogs[0].closed, true);
+    await plugin.openDocumentImageCompression('parent', undefined, true);
+    assert.deepEqual(dialogs[0].states.map(state => [state.phase, state.current, state.total]), [
+        ['scanning', 0, 2], ['scanning', 1, 2], ['scanning', 2, 2],
+    ]);
+});
+
+test('compression progress counts completed images including skips and failures, then reference updates', async () => {
+    const dialogs = [];
+    const errors = [];
+    const plugin = createPlugin({ pushMsg: async () => {}, pushErrMsg: async message => errors.push(message) }, dialogs);
+    const results = [
+        { status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp', originalSize: 100, savedSize: 40 },
+        { status: 'skipped', reason: 'not-smaller' }, { status: 'failed' },
+    ];
+    plugin.compressImageAsset = async () => {
+        const state = dialogs[0].states.at(-1);
+        assert.equal(state.current, 3 - results.length, 'Pending images must not count as completed');
+        return results.shift();
+    };
+    plugin.replaceImageAssetReferencesEverywhere = async () => {
+        assert.deepEqual(dialogs[0].states.at(-1), {
+            phase: 'updatingReferences', current: 0, total: 1, fileName: 'a.png',
+        });
+        assert.equal(dialogs[0].closed, false);
+    };
+    await plugin.compressDocumentImageAssets('parent', ['assets/a.png', 'assets/a.png', 'assets/b.jpg', 'assets/c.png']);
+    assert.deepEqual(dialogs[0].states.map(state => [state.phase, state.current, state.total]), [
+        ['compressing', 0, 3], ['compressing', 1, 3], ['compressing', 1, 3],
+        ['compressing', 2, 3], ['compressing', 2, 3], ['compressing', 3, 3],
+        ['updatingReferences', 0, 1], ['updatingReferences', 1, 1],
+    ]);
+    assert.equal(dialogs[0].closed, true);
+    assert.deepEqual(errors, ['documentImageCompression.summaryWithFailures']);
+});
+
+test('reference update errors and unexpected compression errors always close the progress dialog', async () => {
+    for (const phase of ['compressing', 'updatingReferences']) {
+        const dialogs = [];
+        const errors = [];
+        const plugin = createPlugin({ pushMsg: async () => {}, pushErrMsg: async message => errors.push(message) }, dialogs);
+        plugin.compressImageAsset = async () => {
+            if (phase === 'compressing') throw new Error('encoder unavailable');
+            return { status: 'compressed', originalPath: 'assets/a.png', savedPath: 'assets/a.webp' };
+        };
+        plugin.replaceImageAssetReferencesEverywhere = async () => { throw new Error('reference write failed'); };
+        const pending = plugin.compressDocumentImageAssets('parent', ['assets/a.png']);
+        if (phase === 'compressing') await assert.rejects(pending, /encoder unavailable/);
+        else {
+            await pending;
+            assert.deepEqual(errors, ['documentImageCompression.referenceUpdateFailed']);
+        }
+        assert.equal(dialogs[0].closed, true);
+    }
 });
