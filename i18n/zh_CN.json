@@ -211,6 +211,7 @@
     },
     "documentImageCompression": {
         "title": "批量压缩文档图片",
+        "titleCurrent": "压缩当前文档的图片",
         "titleWithChildren": "压缩当前文档及其子文档的图片",
         "scanning": "正在扫描文档图片",
         "compressing": "正在压缩图片",

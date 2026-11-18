@@ -1428,6 +1428,15 @@ export default class PluginSample extends Plugin {
         const element = elements[0];
         const item = detail.items?.[0];
         const docID = item?.id || element?.getAttribute('data-node-id');
+        if (!docID) return;
+
+        detail.menu.addItem({
+            id: 'compress-document-images',
+            icon: 'iconImage',
+            label: t('documentImageCompression.titleCurrent'),
+            click: () => this.openDocumentImageCompression(docID),
+        });
+
         const childCount = item?.subFileCount ?? element?.getAttribute('data-count');
         const toggle = element?.querySelector('.b3-list-item__toggle');
         const arrow = toggle?.querySelector('.b3-list-item__arrow');
@@ -1436,7 +1445,7 @@ export default class PluginSample extends Plugin {
             ? Number(childCount) > 0
             : !!toggle && ![toggle, arrow].some(node =>
                 node?.classList.contains('fn__hidden') || node?.classList.contains('fn__none'));
-        if (!docID || !hasChildren) return;
+        if (!hasChildren) return;
 
         detail.menu.addItem({
             id: 'compress-document-tree-images',

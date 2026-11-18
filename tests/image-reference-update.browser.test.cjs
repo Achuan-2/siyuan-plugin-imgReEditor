@@ -189,8 +189,8 @@ test('manual and subtree WebP conversion persist all image and link references w
                 type: 'doc', items: [{ id: 'parent-doc', subFileCount: 1 }],
                 menu: { addItem: item => treeItems.push(item) },
             } });
-            check.equal(treeItems.length, 1);
-            await treeItems[0].click();
+            check.equal(treeItems.length, 2);
+            await treeItems.find(item => item.id === 'compress-document-tree-images').click();
             check.equal(compressionCount, 1, 'Shared assets must only be compressed once');
             verifySaved();
             check.ok(lute.BlockDOM2StdMd(closedStored).includes(`![copy](${saved})`));

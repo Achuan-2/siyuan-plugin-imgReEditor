@@ -53,26 +53,44 @@ function openTreeMenu(plugin, detail = {}) {
     return items;
 }
 
-test('a parent document gets its subtree compression entry synchronously without scanning', async () => {
+test('a parent document gets separate current-document and subtree entries synchronously without scanning', async () => {
     const plugin = createPlugin();
     const calls = [];
     plugin.openDocumentImageCompression = async (...args) => calls.push(args);
     const items = openTreeMenu(plugin);
-    assert.equal(items.length, 1);
-    assert.equal(items[0].id, 'compress-document-tree-images');
-    assert.equal(items[0].label, 'documentImageCompression.titleWithChildren');
+    assert.equal(items.length, 2);
+    assert.equal(items[0].id, 'compress-document-images');
+    assert.equal(items[0].label, 'documentImageCompression.titleCurrent');
+    assert.equal(items[1].id, 'compress-document-tree-images');
+    assert.equal(items[1].label, 'documentImageCompression.titleWithChildren');
     assert.deepEqual(calls, []);
     await items[0].click();
-    assert.deepEqual(calls, [['parent', undefined, true]]);
+    await items[1].click();
+    assert.deepEqual(calls, [['parent'], ['parent', undefined, true]]);
 });
 
-test('leaf documents, notebooks, multiple selections and missing identities do not get the entry', () => {
+test('leaf documents expose current-document compression without the subtree entry', async () => {
     const plugin = createPlugin();
-    for (const detail of [
+    const calls = [];
+    plugin.openDocumentImageCompression = async (...args) => calls.push(args);
+    const cases = [
         { elements: [treeRow({ count: '0', hidden: true })] },
         { elements: [treeRow({ count: '0' })] },
         { elements: [treeRow({ arrowHidden: true })] },
         { elements: [treeRow({ toggle: false })] },
+    ];
+    for (const detail of cases) {
+        const items = openTreeMenu(plugin, detail);
+        assert.equal(items.length, 1);
+        assert.equal(items[0].id, 'compress-document-images');
+        await items[0].click();
+    }
+    assert.deepEqual(calls, cases.map(() => ['parent']));
+});
+
+test('notebooks, multiple selections and missing identities do not get document compression entries', () => {
+    const plugin = createPlugin();
+    for (const detail of [
         { type: 'notebook' }, { type: 'docs' },
         { elements: [treeRow(), treeRow()] },
         { items: [{ id: 'a' }, { id: 'b' }] },
@@ -87,11 +105,12 @@ test('the menu supports legacy child counts and document identities from virtual
     const plugin = createPlugin();
     const calls = [];
     plugin.openDocumentImageCompression = async (...args) => calls.push(args);
-    assert.equal(openTreeMenu(plugin, { elements: [treeRow({ count: '2', toggle: false })] }).length, 1);
+    assert.equal(openTreeMenu(plugin, { elements: [treeRow({ count: '2', toggle: false })] }).length, 2);
     const items = openTreeMenu(plugin, { items: [{ id: 'virtual-parent' }], elements: [treeRow({ id: '' })] });
-    assert.equal(items.length, 1);
+    assert.equal(items.length, 2);
     await items[0].click();
-    assert.deepEqual(calls, [['virtual-parent', undefined, true]]);
+    await items[1].click();
+    assert.deepEqual(calls, [['virtual-parent'], ['virtual-parent', undefined, true]]);
 });
 
 test('loading and unloading registers and removes the same document tree event handler', async () => {

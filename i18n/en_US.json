@@ -211,6 +211,7 @@
     },
     "documentImageCompression": {
         "title": "Compress document images",
+        "titleCurrent": "Compress images in this document",
         "titleWithChildren": "Compress images in this document and its subdocuments",
         "scanning": "Scanning document images",
         "compressing": "Compressing images",
