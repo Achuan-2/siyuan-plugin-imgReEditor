@@ -7,7 +7,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const ts = require('typescript');
 
-test('manual compression preserves image blocks when gutter buttons share the block ID', {
+test('manual and subtree WebP conversion persist all image and link references without losing block content', {
     skip: !process.env.IMG_TEST_ELECTRON || !process.env.IMG_TEST_LUTE_JS,
 }, async () => {
     const temporary = mkdtempSync(path.join(tmpdir(), 'imgreeditor-reference-'));
@@ -15,12 +15,15 @@ test('manual compression preserves image blocks when gutter buttons share the bl
         const source = ts.createSourceFile('index.ts', readFileSync(path.resolve(__dirname, '../src/index.ts'), 'utf8'),
             ts.ScriptTarget.Latest, true);
         const plugin = source.statements.find(ts.isClassDeclaration);
-        const names = new Set(['updateImageElementsWithPathMap', 'replaceImageAssetReferenceInBlock',
-            'replaceImageAssetReferencesEverywhere', 'openMenuImageHandler']);
+        const names = new Set(['updateImageAssetReferencesWithPathMap', 'replaceImageAssetReferenceInBlock',
+            'replaceImageAssetReferencesEverywhere', 'openMenuImageHandler',
+            'openMenuDocTreeHandler', 'openDocumentImageCompression', 'compressDocumentImageAssets']);
         const methods = plugin.members.filter(node => names.has(node.name?.getText(source)))
             .map(node => node.getText(source)).join('\n');
-        const normalize = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name.text === 'normalizeAssetPath');
-        const code = ts.transpileModule(`${normalize.getText(source)}\nclass Fixture { ${methods} }\nmodule.exports = Fixture;`, {
+        const helperNames = new Set(['normalizeAssetPath', 'getFileExtension', 'getCompressibleImageFormat', 'formatBytes']);
+        const helpers = source.statements.filter(node => ts.isFunctionDeclaration(node) && helperNames.has(node.name.text))
+            .map(node => node.getText(source)).join('\n');
+        const code = ts.transpileModule(`${helpers}\nclass Fixture { ${methods} }\nmodule.exports = Fixture;`, {
             compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
         }).outputText;
         const browserCase = async (code, luteSource) => {
@@ -32,24 +35,31 @@ test('manual compression preserves image blocks when gutter buttons share the bl
             const saved = 'assets/pasted.webp';
             const items = new Map();
             const writes = [];
-            let stored, failWrite = false, reads = 0, closedStored;
+            let stored, failWrite = false, reads = 0, closedStored, linkStored;
             const closedID = '20261115120000-closed1';
+            const linkID = '20261115120000-links01';
             const api = {
                 sql: async stmt => stmt.includes("AND id > ''") ? [
                     { id: 'ref-1', block_id: id, path: original },
                     ...(closedStored ? [{ id: 'ref-2', block_id: closedID, path: original }] : []),
+                    ...(linkStored ? [{ id: 'ref-3', block_id: linkID, path: original }] : []),
                 ] : [],
-                getBlockDOM: async blockID => { reads++; return { dom: blockID === closedID ? closedStored : stored }; },
+                getBlockDOM: async blockID => {
+                    reads++;
+                    return { dom: blockID === closedID ? closedStored : blockID === linkID ? linkStored : stored };
+                },
                 updateBlock: async (type, html, blockID) => {
                     check.equal(type, 'dom');
-                    check.ok(blockID === id || blockID === closedID);
+                    check.ok(blockID === id || blockID === closedID || blockID === linkID);
                     writes.push(html);
                     if (failWrite) return null;
                     if (blockID === closedID) closedStored = lute.SpinBlockDOM(html);
+                    else if (blockID === linkID) linkStored = lute.SpinBlockDOM(html);
                     else stored = lute.SpinBlockDOM(html);
                     return [{}];
                 },
                 pushErrMsg: message => check.fail(message),
+                pushMsg: () => {},
             };
             const module = { exports: {} };
             const t = key => key;
@@ -139,6 +149,62 @@ test('manual compression preserves image blocks when gutter buttons share the bl
             check.ok(closedMarkdown.includes(`![two](${saved}?width=300#preview)`), closedMarkdown);
             check.ok(closedMarkdown.includes('![other](assets/other.png)'), closedMarkdown);
             check.ok(closedMarkdown.includes('closed'), closedMarkdown);
+
+            // The tree scope selects assets; references outside that scope are also updated.
+            block = mount();
+            closedStored = lute.Md2BlockDOM(`outside subtree ![copy](${original})`)
+                .replace(/data-node-id="[^"]+"/, `data-node-id="${closedID}"`);
+            linkStored = lute.Md2BlockDOM(`download [original image](${original}?width=300#preview) [unrelated](assets/other.png)`)
+                .replace(/data-node-id="[^"]+"/, `data-node-id="${linkID}"`);
+            const liveLinkID = '20261115120000-live001';
+            const liveLink = document.createElement('div');
+            liveLink.className = 'protyle-wysiwyg';
+            liveLink.innerHTML = lute.Md2BlockDOM(`not yet indexed [new link](${original})`)
+                .replace(/data-node-id="[^"]+"/, `data-node-id="${liveLinkID}"`);
+            document.body.append(liveLink);
+            const updateBlock = api.updateBlock;
+            let liveLinkMarkdown;
+            api.updateBlock = async (type, html, blockID) => {
+                if (blockID === liveLinkID) {
+                    liveLinkMarkdown = lute.BlockDOM2StdMd(lute.SpinBlockDOM(html));
+                    return [{}];
+                }
+                return updateBlock(type, html, blockID);
+            };
+            plugin.getDocumentAndDescendantIDs = async () => ['parent-doc', 'child-doc'];
+            plugin.getDocumentImageAssetPaths = async () => [original];
+            let compressionCount = 0;
+            plugin.compressImageAsset = async (imagePath, image, choice) => {
+                check.equal(imagePath, original);
+                check.equal(image, undefined);
+                check.equal(choice.outputFormat, 'webp');
+                compressionCount++;
+                return { status: 'compressed', originalPath: original, savedPath: saved, originalSize: 100, savedSize: 40 };
+            };
+            const treeItems = [];
+            plugin.openMenuDocTreeHandler({ detail: {
+                type: 'doc', items: [{ id: 'parent-doc', subFileCount: 1 }],
+                menu: { addItem: item => treeItems.push(item) },
+            } });
+            check.equal(treeItems.length, 1);
+            await treeItems[0].click();
+            check.equal(compressionCount, 1, 'Shared assets must only be compressed once');
+            verifySaved();
+            check.ok(lute.BlockDOM2StdMd(closedStored).includes(`![copy](${saved})`));
+            const linkMarkdown = lute.BlockDOM2StdMd(linkStored);
+            check.ok(linkMarkdown.includes(`[original image](${saved}?width=300#preview)`), linkMarkdown);
+            check.ok(linkMarkdown.includes('[unrelated](assets/other.png)'), linkMarkdown);
+            check.ok(liveLinkMarkdown.includes(`[new link](${saved})`), liveLinkMarkdown);
+            check.equal(liveLink.querySelector('[data-href]').getAttribute('data-href'), saved);
+
+            // Native anchors are handled without changing their text or creating image attributes.
+            const anchorBlock = document.createElement('div');
+            anchorBlock.innerHTML = `<div data-node-id="${id}"><a href="${original}#download">keep text</a></div>`;
+            plugin.updateImageAssetReferencesWithPathMap(anchorBlock, new Map([[original, saved]]));
+            const anchor = anchorBlock.querySelector('a');
+            check.equal(anchor.getAttribute('href'), `${saved}#download`);
+            check.equal(anchor.textContent, 'keep text');
+            check.equal(anchor.hasAttribute('src'), false);
             return 'reference update passed';
         };
         const html = path.join(temporary, 'index.html');

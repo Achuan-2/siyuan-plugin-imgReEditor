@@ -646,19 +646,21 @@ export default class PluginSample extends Plugin {
         return Array.from(documentIDs);
     }
 
-    private updateImageElementsWithPathMap(root: ParentNode, pathMap: Map<string, string>) {
+    private updateImageAssetReferencesWithPathMap(root: ParentNode, pathMap: Map<string, string>) {
         const changedBlocks = new Map<string, HTMLElement>();
-        root.querySelectorAll('img').forEach((element: Element) => {
-            const image = element as HTMLImageElement;
-            const currentURL = image.dataset?.src || image.getAttribute('data-src') || image.getAttribute('src');
+        root.querySelectorAll('img, [data-href], a[href]').forEach((element: Element) => {
+            const isImage = element.tagName.toLowerCase() === 'img';
+            const attributes = isImage ? ['data-src', 'src'] : ['data-href', 'href'];
+            const currentURL = element.getAttribute(attributes[0]) || element.getAttribute(attributes[1]);
             const currentPath = normalizeAssetPath(currentURL);
             const newPath = currentPath ? pathMap.get(currentPath) : null;
             if (!newPath) return;
 
             const newURL = newPath + (currentURL?.match(/[?#].*$/)?.[0] || '');
-            image.setAttribute('data-src', newURL);
-            image.setAttribute('src', newURL);
-            const block = image.closest('[data-node-id]') as HTMLElement | null;
+            for (const attribute of attributes) {
+                if (isImage || element.hasAttribute(attribute)) element.setAttribute(attribute, newURL);
+            }
+            const block = element.closest('[data-node-id]') as HTMLElement | null;
             const blockID = block?.getAttribute('data-node-id');
             if (block && blockID) changedBlocks.set(blockID, block);
         });
@@ -706,6 +708,11 @@ export default class PluginSample extends Plugin {
             const id = image.closest('[data-node-id]')?.getAttribute('data-node-id');
             if (id) blockIDs.add(id);
         });
+        document.querySelectorAll<HTMLElement>('.protyle-wysiwyg [data-href], .protyle-wysiwyg a[href]').forEach(link => {
+            if (normalizeAssetPath(link.getAttribute('data-href') || link.getAttribute('href')) !== originalPath) return;
+            const id = link.closest('[data-node-id]')?.getAttribute('data-node-id');
+            if (id) blockIDs.add(id);
+        });
         const sourceID = sourceBlock?.getAttribute('data-node-id');
         if (sourceID) blockIDs.add(sourceID);
 
@@ -744,11 +751,11 @@ export default class PluginSample extends Plugin {
             // Preserve the live content until the reference has been persisted.
             // If the image was removed/replaced during compression, leave it alone.
             const clone = liveBlock.cloneNode(true) as HTMLElement;
-            const changedBlock = this.updateImageElementsWithPathMap(clone, pathMap).get(blockID);
+            const changedBlock = this.updateImageAssetReferencesWithPathMap(clone, pathMap).get(blockID);
             if (!changedBlock) return false;
             const updated = await updateBlock('dom', changedBlock.outerHTML, blockID);
             if (!updated) throw new Error('Unable to save compressed image reference');
-            for (const block of liveBlocks) this.updateImageElementsWithPathMap(block, pathMap);
+            for (const block of liveBlocks) this.updateImageAssetReferencesWithPathMap(block, pathMap);
             return true;
         }
 
@@ -758,7 +765,7 @@ export default class PluginSample extends Plugin {
             typeof blockDOM === 'string' ? blockDOM : blockDOM?.dom || blockDOM?.content || '';
         if (!html) throw new Error('Unable to load image block for WebP reference update');
         const parsed = new DOMParser().parseFromString(html, 'text/html');
-        const changedBlocks = this.updateImageElementsWithPathMap(parsed, pathMap);
+        const changedBlocks = this.updateImageAssetReferencesWithPathMap(parsed, pathMap);
         const changedBlock = changedBlocks.get(blockID);
         if (!changedBlock) return false;
         const updated = await updateBlock('dom', changedBlock.outerHTML, blockID);

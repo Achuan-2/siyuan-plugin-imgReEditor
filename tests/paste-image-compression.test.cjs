@@ -151,6 +151,7 @@ class ImageBlock {
         this.id = id;
         this.text = text;
         this.image = {
+            tagName: 'IMG',
             dataset: { src: path }, src: path,
             getAttribute(name) { return name === 'data-src' ? this.dataset.src : this.src; },
             setAttribute(name, value) { if (name === 'data-src') this.dataset.src = value; else this.src = value; },
