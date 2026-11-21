@@ -632,3 +632,192 @@ test('a paste removed during compression leaves the unused output for explicit S
     await plugin.queueAutomaticImageCompression(['assets/a.png'], 'doc', () => true);
     assert.equal(cleanupCalls, 0);
 });
+
+test('lite protyle without rootID compresses and converts pasted File before upload via respondWith', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    const messages = [];
+    const errors = [];
+    const plugin = createPlugin(
+        {
+            pushMsg: async msg => messages.push(msg),
+            pushErrMsg: async msg => errors.push(msg),
+        },
+        {
+            getMimeByFormat: format => (format === 'webp' ? 'image/webp' : format === 'jpeg' ? 'image/jpeg' : 'image/png'),
+            locatePNGtEXt: () => false,
+            readWebPMetadata: () => null,
+            reencodeImageBlob: async (_blob, format) => new Blob(['tiny'], { type: `image/${format}` }),
+        }
+    );
+    plugin.eventBus = new EventBus();
+    plugin.settings = {
+        enablePasteImageCompression: true,
+        compressionFormat: 'webp',
+        showPasteImageCompressionNotification: true,
+    };
+    plugin.setupAutomaticImageCompression();
+
+    try {
+        const pngFile = new File(['x'.repeat(200)], 'shot.png', { type: 'image/png' });
+        const pdfFile = new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' });
+        let responsePromise;
+        let completeCallback;
+        const detail = {
+            protyle: { lite: true, block: {} },
+            target: 'editor',
+            input: { kind: 'files', files: [pngFile, pdfFile] },
+            signal: new AbortController().signal,
+            respondWith(value) { responsePromise = value; },
+            onComplete(cb) { completeCallback = cb; },
+        };
+        plugin.eventBus.emit('before-upload-assets', detail);
+
+        assert.ok(responsePromise, 'Lite editor image upload must call respondWith synchronously');
+        assert.equal(typeof completeCallback, 'function', 'onComplete must register synchronously');
+
+        const decision = await responsePromise;
+        assert.equal(decision.action, 'replace');
+        assert.equal(decision.input.kind, 'files');
+        assert.equal(decision.input.files.length, 2);
+        assert.equal(decision.input.files[0].name, 'shot.webp');
+        assert.equal(decision.input.files[0].type, 'image/webp');
+        assert.equal(decision.input.files[0].size, 4);
+        assert.equal(decision.input.files[1], pdfFile, 'Non-image files must remain untouched');
+        assert.deepEqual(messages, [], 'Notification waits until upload actually completes');
+
+        completeCallback({ status: 'success', succFiles: [{ path: 'assets/shot-123.webp' }] });
+        await delay(10);
+        assert.equal(messages.length, 1);
+        assert.match(messages[0], /转换.*格式/);
+        assert.deepEqual(errors, []);
+    } finally {
+        plugin.teardownAutomaticImageCompression();
+    }
+});
+
+test('lite protyle skips respondWith for non-image files and preserves originals when compression fails or is not smaller', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    const messages = [];
+    const errors = [];
+    let mode = 'bigger';
+    const plugin = createPlugin(
+        {
+            pushMsg: async msg => messages.push(msg),
+            pushErrMsg: async msg => errors.push(msg),
+        },
+        {
+            getMimeByFormat: format => `image/${format}`,
+            locatePNGtEXt: () => false,
+            readWebPMetadata: () => null,
+            reencodeImageBlob: async () => {
+                if (mode === 'throw') throw new Error('codec failed');
+                return new Blob(['y'.repeat(500)], { type: 'image/png' });
+            },
+        }
+    );
+    plugin.eventBus = new EventBus();
+    plugin.settings = { enablePasteImageCompression: true, compressionFormat: 'original' };
+    plugin.setupAutomaticImageCompression();
+
+    try {
+        // Non-image paste: must not call respondWith at all
+        let called = false;
+        plugin.eventBus.emit('before-upload-assets', {
+            protyle: { lite: true, block: {} },
+            target: 'editor',
+            input: { kind: 'files', files: [new File(['hello'], 'doc.pdf', { type: 'application/pdf' })] },
+            signal: new AbortController().signal,
+            respondWith() { called = true; },
+            onComplete() {},
+        });
+        assert.equal(called, false);
+
+        // Compressed result not smaller: keep original file, no error
+        const smallPng = new File(['small'], 'tiny.png', { type: 'image/png' });
+        let responsePromise;
+        let completeCallback;
+        plugin.eventBus.emit('before-upload-assets', {
+            protyle: { lite: true, block: {} },
+            target: 'editor',
+            input: { kind: 'files', files: [smallPng] },
+            signal: new AbortController().signal,
+            respondWith(v) { responsePromise = v; },
+            onComplete(cb) { completeCallback = cb; },
+        });
+        const biggerDecision = await responsePromise;
+        assert.equal(biggerDecision.action, 'replace');
+        assert.equal(biggerDecision.input.files[0], smallPng);
+        completeCallback({ status: 'success' });
+        await delay(10);
+        assert.deepEqual(messages, []);
+        assert.deepEqual(errors, []);
+
+        // Compression error: keep original file so upload never aborts, report error on complete
+        mode = 'throw';
+        plugin.eventBus.emit('before-upload-assets', {
+            protyle: { lite: true, block: {} },
+            target: 'editor',
+            input: { kind: 'files', files: [smallPng] },
+            signal: new AbortController().signal,
+            respondWith(v) { responsePromise = v; },
+            onComplete(cb) { completeCallback = cb; },
+        });
+        const failedDecision = await responsePromise;
+        assert.equal(failedDecision.action, 'replace');
+        assert.equal(failedDecision.input.files[0], smallPng);
+        completeCallback({ status: 'success' });
+        await delay(10);
+        assert.equal(errors.length, 1);
+    } finally {
+        plugin.teardownAutomaticImageCompression();
+    }
+});
+
+test('lite protyle compresses all-image local-files via fs.promises.readFile before upload', async () => {
+    setBrowser();
+    global.document = { querySelectorAll: () => [] };
+    global.window.require = name => {
+        if (name === 'fs') {
+            return {
+                promises: {
+                    readFile: async () => new Uint8Array(Buffer.from('a'.repeat(300))),
+                },
+            };
+        }
+        throw new Error(`Unexpected require: ${name}`);
+    };
+    const plugin = createPlugin(
+        { pushMsg: async () => {}, pushErrMsg: async () => {} },
+        {
+            getMimeByFormat: format => `image/${format}`,
+            locatePNGtEXt: () => false,
+            readWebPMetadata: () => null,
+            reencodeImageBlob: async (_blob, format) => new Blob(['ok'], { type: `image/${format}` }),
+        }
+    );
+    plugin.eventBus = new EventBus();
+    plugin.settings = { enablePasteImageCompression: true, compressionFormat: 'webp' };
+    plugin.setupAutomaticImageCompression();
+
+    try {
+        let responsePromise;
+        plugin.eventBus.emit('before-upload-assets', {
+            protyle: { lite: true, block: {} },
+            target: 'editor',
+            input: { kind: 'local-files', files: [{ path: 'C:\\Pictures\\desktop.png', size: 300, isDir: false }] },
+            signal: new AbortController().signal,
+            respondWith(v) { responsePromise = v; },
+            onComplete() {},
+        });
+        const decision = await responsePromise;
+        assert.equal(decision.action, 'replace');
+        assert.equal(decision.input.kind, 'files');
+        assert.equal(decision.input.files.length, 1);
+        assert.equal(decision.input.files[0].name, 'desktop.webp');
+        assert.equal(decision.input.files[0].size, 2);
+    } finally {
+        plugin.teardownAutomaticImageCompression();
+    }
+});

@@ -6,11 +6,29 @@ interface AssetUploadResult {
     succMap?: Record<string, string>;
 }
 
-interface BeforeUploadAssetsDetail {
-    protyle?: IProtyle;
+export type BeforeUploadAssetInput =
+    | { kind: 'files'; files: File[] }
+    | { kind: 'local-files'; files: Array<{ path: string; size?: number | null; isDir?: boolean }> };
+
+export type BeforeUploadAssetDecision =
+    | { action: 'cancel' }
+    | { action: 'replace'; input: BeforeUploadAssetInput };
+
+export interface BeforeUploadAssetsDetail {
+    protyle?: IProtyle & { lite?: boolean };
     target: string;
+    input?: BeforeUploadAssetInput;
+    allowedInputKinds?: Array<BeforeUploadAssetInput['kind']>;
     signal: AbortSignal;
+    respondWith?(value: BeforeUploadAssetDecision | PromiseLike<BeforeUploadAssetDecision>): void;
     onComplete(callback: (result: AssetUploadResult) => void): void;
+}
+
+export interface ObserveAssetUploadsOptions {
+    onBeforeLiteUpload?: (
+        input: BeforeUploadAssetInput,
+        detail: BeforeUploadAssetsDetail
+    ) => Promise<BeforeUploadAssetDecision> | null;
 }
 
 // The installed SDK predates this host event. Declare only the fields we consume.
@@ -28,7 +46,8 @@ export function observeAssetUploads<T>(
     enabled: () => boolean,
     onUploaded: UploadedAssetsHandler<T>,
     captureContext: () => T,
-    normalizePath: (path: string | null) => string | null
+    normalizePath: (path: string | null) => string | null,
+    options?: ObserveAssetUploadsOptions
 ): () => void {
     let active = true;
     const pendingPastes = new Map<() => void, { editor: HTMLElement; uploadedPaths: Set<string> }>();
@@ -53,7 +72,20 @@ export function observeAssetUploads<T>(
     const beforeUpload = ({ detail }: CustomEvent<BeforeUploadAssetsDetail>) => {
         if (!isActive() || detail.target !== 'editor') return;
         const documentID = detail.protyle?.block?.rootID || '';
-        if (!documentID) return;
+        if (!documentID) {
+            if (
+                detail.protyle?.lite === true &&
+                detail.input &&
+                typeof detail.respondWith === 'function' &&
+                options?.onBeforeLiteUpload
+            ) {
+                const decision = options.onBeforeLiteUpload(detail.input, detail);
+                if (decision) {
+                    detail.respondWith(decision);
+                }
+            }
+            return;
+        }
         const context = captureContext();
         // Register synchronously. No respondWith or async listener: originals
         // should upload immediately, with compression performed in the background.

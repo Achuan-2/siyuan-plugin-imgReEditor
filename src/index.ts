@@ -12,7 +12,12 @@ import ImageEditorComponent from './components/ImageEditor.svelte';
 import { getDefaultSettings, getCompressionFormat } from "./defaultSettings";
 import { setPluginInstance, t } from "./utils/i18n";
 import { ScreenshotManager } from "./ScreenshotManager";
-import { observeAssetUploads } from './utils/assetUploadObserver';
+import {
+    observeAssetUploads,
+    type BeforeUploadAssetDecision,
+    type BeforeUploadAssetInput,
+    type BeforeUploadAssetsDetail,
+} from './utils/assetUploadObserver';
 import { refreshAssetImages } from './utils/assetImageRefresh';
 import type { ImageCompressionChoice, CompressionPreviewItem } from './utils/imageCompressionDialog';
 import {
@@ -74,6 +79,35 @@ function getCompressibleImageFormat(fileName: string): CompressibleImageFormat |
     if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
     if (ext === 'webp') return 'webp';
     return null;
+}
+
+function getCompressibleImageFormatFromFile(file: File): CompressibleImageFormat | null {
+    const fromName = getCompressibleImageFormat(file.name || '');
+    if (fromName) return fromName;
+    const mime = (file.type || '').toLowerCase();
+    if (mime === 'image/png') return 'png';
+    if (mime === 'image/jpeg' || mime === 'image/jpg') return 'jpeg';
+    if (mime === 'image/webp') return 'webp';
+    return null;
+}
+
+function getFileStem(fileName: string): string {
+    const baseName = fileName.split(/[\\/]/).pop() || fileName;
+    const lastDot = baseName.lastIndexOf('.');
+    return (lastDot > 0 ? baseName.slice(0, lastDot) : baseName).toLowerCase();
+}
+
+function hasSameStemVideoFile(files: File[], target: File): boolean {
+    if (!target.name) return false;
+    const stem = getFileStem(target.name);
+    if (!stem) return false;
+    return files.some(file => {
+        if (file === target) return false;
+        const ext = getFileExtension(file.name || '');
+        const isVideo = (file.type || '').toLowerCase().startsWith('video/') ||
+            ['mov', 'mp4', 'm4v', 'hevc'].includes(ext);
+        return isVideo && getFileStem(file.name || '') === stem;
+    });
 }
 
 function replaceFileExtension(fileName: string, extension: string) {
@@ -2210,9 +2244,178 @@ export default class PluginSample extends Plugin {
                     path: normalizeAssetPath(image.dataset.src || image.getAttribute('src')),
                     blockID: image.closest('[data-node-id]')?.getAttribute('data-node-id') || '',
                 })),
-            normalizeAssetPath
+            normalizeAssetPath,
+            {
+                onBeforeLiteUpload: (input, detail) =>
+                    this.prepareLiteUploadCompression(input, detail, isActive),
+            }
         );
         this.stopObservingAssetUploads = stop;
+    }
+
+    private getNodeFsPromises(): { readFile: (filePath: string) => Promise<Uint8Array> } | null {
+        try {
+            const nodeRequire = (window as any)?.require;
+            const fsModule = typeof nodeRequire === 'function' ? nodeRequire('fs') : null;
+            if (fsModule?.promises && typeof fsModule.promises.readFile === 'function') {
+                return fsModule.promises;
+            }
+        } catch {
+            // Non-Electron environments do not expose Node fs.
+        }
+        return null;
+    }
+
+    /**
+     * 精简版 Protyle（无文档 ID，如任务备注、官方智能体输入框）不在文档树中，
+     * 无法通过 SQL assets 表回写块引用；通过 before-upload-assets.respondWith
+     * 在上传前完成压缩与格式转换，确保插入编辑器与 assets-cleanup-ignore 的都是最终路径。
+     */
+    private prepareLiteUploadCompression(
+        input: BeforeUploadAssetInput,
+        detail: BeforeUploadAssetsDetail,
+        isActive: () => boolean
+    ): Promise<BeforeUploadAssetDecision> | null {
+        if (!isActive() || detail.signal?.aborted) return null;
+        if (detail.allowedInputKinds && !detail.allowedInputKinds.includes('files')) return null;
+
+        const isFilesInput = input.kind === 'files';
+        const isAllCompressibleLocalImages =
+            input.kind === 'local-files' &&
+            input.files.length > 0 &&
+            input.files.every(item => !item.isDir && !!getCompressibleImageFormat(item.path || '')) &&
+            !!this.getNodeFsPromises();
+
+        if (isFilesInput) {
+            const hasCompressible = input.files.some(
+                file => !!getCompressibleImageFormatFromFile(file) && !hasSameStemVideoFile(input.files, file)
+            );
+            if (!hasCompressible) return null;
+        } else if (!isAllCompressibleLocalImages) {
+            return null;
+        }
+
+        const stats = {
+            compressedCount: 0,
+            convertedCount: 0,
+            originalTotalSize: 0,
+            compressedTotalSize: 0,
+            failedCount: 0,
+        };
+
+        // 同步注册完成回调：仅在实际上传成功后提示压缩统计，避免上传失败或取消时误报。
+        detail.onComplete(result => {
+            if (!isActive() || detail.signal?.aborted) return;
+            if (!['success', 'partial'].includes(result.status)) return;
+            if (stats.compressedCount === 0 && stats.failedCount === 0) return;
+            void (async () => {
+                try {
+                    const { pushMsg, pushErrMsg } = await import('./api');
+                    if (stats.compressedCount > 0 && this.settings?.showPasteImageCompressionNotification !== false) {
+                        await pushMsg(getAutomaticImageProcessingMessage(
+                            stats.compressedCount,
+                            stats.convertedCount,
+                            stats.originalTotalSize,
+                            stats.compressedTotalSize
+                        ));
+                    }
+                    if (stats.failedCount > 0) {
+                        await pushErrMsg(`${stats.failedCount} 张图片自动压缩失败，已保留原图`);
+                    }
+                } catch (error) {
+                    console.warn('Failed to notify lite editor image compression result:', error);
+                }
+            })();
+        });
+
+        const compressFileList = async (sourceFiles: File[]): Promise<File[]> => {
+            const maxLongEdge = this.settings?.limitImageLongEdge === true
+                ? getImageMaxLongEdge(this.settings)
+                : undefined;
+            const outputFiles: File[] = [];
+            for (const file of sourceFiles) {
+                if (!isActive() || detail.signal?.aborted) {
+                    return sourceFiles;
+                }
+                const sourceFormat = getCompressibleImageFormatFromFile(file);
+                if (!sourceFormat || hasSameStemVideoFile(sourceFiles, file) || file.size === 0) {
+                    outputFiles.push(file);
+                    continue;
+                }
+                try {
+                    const outputFormat = getCompressionOutputFormat(this.settings, sourceFormat);
+                    const compressionOptions: ReencodeOptions = {
+                        ...getFormatCompressionOptions(this.settings, outputFormat),
+                        maxLongEdge,
+                    };
+                    const compressedBlob = await this.compressImageBlob(
+                        file,
+                        sourceFormat,
+                        outputFormat,
+                        compressionOptions
+                    );
+                    if (!isActive() || detail.signal?.aborted) {
+                        return sourceFiles;
+                    }
+                    if (!shouldUseReencodedImage(file.size, compressedBlob.size)) {
+                        outputFiles.push(file);
+                        continue;
+                    }
+                    const fallbackName = `image.${sourceFormat === 'jpeg' ? 'jpg' : sourceFormat}`;
+                    const originalName = file.name || fallbackName;
+                    const nextName = outputFormat === sourceFormat
+                        ? originalName
+                        : replaceFileExtension(originalName, outputFormat);
+                    const nextFile = new File([compressedBlob], nextName, {
+                        type: getMimeByFormat(outputFormat),
+                        lastModified: file.lastModified || Date.now(),
+                    });
+                    outputFiles.push(nextFile);
+                    stats.compressedCount += 1;
+                    if (outputFormat !== sourceFormat) {
+                        stats.convertedCount += 1;
+                    }
+                    stats.originalTotalSize += file.size;
+                    stats.compressedTotalSize += compressedBlob.size;
+                } catch (error) {
+                    stats.failedCount += 1;
+                    console.warn('Failed to compress pasted image before lite editor upload:', file.name, error);
+                    outputFiles.push(file);
+                }
+            }
+            return outputFiles;
+        };
+
+        return (async (): Promise<BeforeUploadAssetDecision> => {
+            if (input.kind === 'files') {
+                const compressedFiles = await compressFileList(input.files);
+                return { action: 'replace', input: { kind: 'files', files: compressedFiles } };
+            }
+            const fsPromises = this.getNodeFsPromises();
+            if (!fsPromises) {
+                return { action: 'replace', input };
+            }
+            const loadedFiles: File[] = [];
+            try {
+                for (const item of input.files) {
+                    if (!isActive() || detail.signal?.aborted) {
+                        return { action: 'replace', input };
+                    }
+                    const format = getCompressibleImageFormat(item.path || '');
+                    if (!format) {
+                        return { action: 'replace', input };
+                    }
+                    const bytes = await fsPromises.readFile(item.path);
+                    const fileName = item.path.split(/[\\/]/).pop() || `image.${format === 'jpeg' ? 'jpg' : format}`;
+                    loadedFiles.push(new File([bytes as any], fileName, { type: getMimeByFormat(format) }));
+                }
+            } catch (error) {
+                console.warn('Failed to read local image before lite editor upload, falling back to original upload:', error);
+                return { action: 'replace', input };
+            }
+            const compressedFiles = await compressFileList(loadedFiles);
+            return { action: 'replace', input: { kind: 'files', files: compressedFiles } };
+        })();
     }
 
     private teardownAutomaticImageCompression() {
